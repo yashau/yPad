@@ -1,0 +1,28 @@
+name = "ypad"
+main = "src/index.ts"
+compatibility_date = "2024-12-22"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "ypad-db"
+database_id = "YOUR_DATABASE_ID"
+
+# Static assets
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+
+# Durable Objects
+[[durable_objects.bindings]]
+name = "NOTE_SESSIONS"
+class_name = "NoteSessionDurableObject"
+script_name = "ypad"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["NoteSessionDurableObject"]
+
+# Cron trigger to clean up expired notes
+[triggers]
+crons = ["*/15 * * * *"]  # Run every 15 minutes
