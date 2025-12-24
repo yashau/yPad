@@ -24,6 +24,7 @@ export class NoteSessionDurableObject implements DurableObject {
   private doSessionId: string;
   private isInitialized: boolean;
   private lastOperationSessionId: string | null = null;
+  private isEncrypted: boolean = false;
 
   constructor(state: DurableObjectState, env: any) {
     this.state = state;
@@ -49,6 +50,44 @@ export class NoteSessionDurableObject implements DurableObject {
     if (request.method === 'DELETE' && url.pathname === '/reset') {
       this.resetState();
       return new Response('State reset', { status: 200 });
+    }
+
+    // Handle force refresh request (for testing/debugging)
+    if (request.method === 'POST' && url.pathname === '/refresh') {
+      this.isInitialized = false;
+      await this.initializeFromDatabase();
+      return new Response('Refreshed from database', { status: 200 });
+    }
+
+    // Handle encryption change notification
+    if (request.method === 'POST' && url.pathname === '/notify-encryption-change') {
+      try {
+        const body = await request.json() as { is_encrypted: boolean; has_password: boolean; exclude_session_id?: string };
+
+        // Force re-initialization from database to get updated content
+        // This is critical when encryption is removed - the DO has encrypted content in memory
+        // but the database now has plain text
+        this.isInitialized = false;
+        await this.initializeFromDatabase();
+
+        this.broadcastEncryptionChange(body.is_encrypted, body.has_password, body.exclude_session_id);
+        return new Response('OK', { status: 200 });
+      } catch (error) {
+        console.error('Error handling encryption change notification:', error);
+        return new Response('Error', { status: 500 });
+      }
+    }
+
+    // Handle version update notification (for encrypted notes)
+    if (request.method === 'POST' && url.pathname === '/notify-version-update') {
+      try {
+        const body = await request.json() as { version: number; exclude_session_id?: string };
+        this.broadcastVersionUpdate(body.version, body.exclude_session_id);
+        return new Response('OK', { status: 200 });
+      } catch (error) {
+        console.error('Error handling version update notification:', error);
+        return new Response('Error', { status: 500 });
+      }
     }
 
     this.noteId = pathSegments[pathSegments.length - 2]; // /api/notes/:id/ws
@@ -252,15 +291,17 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       const note = await this.env.DB.prepare(
-        'SELECT content, version FROM notes WHERE id = ?'
+        'SELECT content, version, is_encrypted FROM notes WHERE id = ?'
       ).bind(this.noteId).first();
 
       if (note) {
         this.currentContent = note.content || '';
         this.operationVersion = note.version || 1;
+        this.isEncrypted = !!note.is_encrypted;
       } else {
         this.currentContent = '';
         this.operationVersion = 1;
+        this.isEncrypted = false;
       }
 
       this.isInitialized = true;
@@ -321,6 +362,51 @@ export class NoteSessionDurableObject implements DurableObject {
         ws.send(messageStr);
       } catch (error) {
         console.error(`[DO ${this.noteId}] Error broadcasting to client ${session.clientId}:`, error);
+      }
+    }
+  }
+
+  broadcastEncryptionChange(is_encrypted: boolean, has_password: boolean, excludeSessionId?: string): void {
+    // Update internal encryption state
+    this.isEncrypted = is_encrypted;
+
+    const message = {
+      type: 'encryption_changed' as const,
+      is_encrypted,
+      has_password,
+    };
+
+    // Broadcast to all clients except the one who made the change
+    for (const [ws, session] of this.sessions) {
+      if (excludeSessionId && session.sessionId === excludeSessionId) {
+        continue;
+      }
+
+      try {
+        ws.send(JSON.stringify(message));
+      } catch (error) {
+        console.error(`[DO ${this.noteId}] Error broadcasting encryption change to session ${session.sessionId}:`, error);
+      }
+    }
+  }
+
+  broadcastVersionUpdate(version: number, excludeSessionId?: string): void {
+    const message = {
+      type: 'version_update' as const,
+      version,
+      message: 'Note was updated by another user'
+    };
+
+    // Broadcast to all clients except the one who made the change
+    for (const [ws, session] of this.sessions) {
+      if (excludeSessionId && session.sessionId === excludeSessionId) {
+        continue;
+      }
+
+      try {
+        ws.send(JSON.stringify(message));
+      } catch (error) {
+        console.error(`[DO ${this.noteId}] Error broadcasting version update to session ${session.sessionId}:`, error);
       }
     }
   }

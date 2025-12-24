@@ -14,8 +14,10 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 ### Security & Privacy
 - **Client-Side Encryption**: Zero-knowledge AES-GCM 256-bit encryption
 - **Password Protection**: PBKDF2 key derivation with 100,000 iterations
+- **Password Verification**: Required password confirmation before removing encryption
 - **Encrypted at Rest**: Server never sees plaintext for protected notes
 - **SHA-256 Hashing**: Secure password verification without storing passwords
+- **Real-Time Collaboration Disabled for Encrypted Notes**: E2E encryption preserved by disabling OT sync
 
 ### Note Management
 - **Auto-Save**: 500ms debounced automatic saving as you type
@@ -28,8 +30,10 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
 - **Line Numbers**: Synchronized line numbers with scroll
 - **Dark/Light Theme**: Theme toggle with persistence
-- **Real-Time Status**: Connection and save status indicators
+- **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
 - **Conflict Detection**: User-friendly conflict resolution dialogs
+- **User Notifications**: Banners for encryption changes, password updates, and conflicts
+- **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
 
 ### Smart Features
 - **Version Tracking**: Prevents edit conflicts across sessions
@@ -371,6 +375,14 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 2. Toggle **Password Protection**
 3. Enter password (client-side encryption)
 4. Note content is encrypted before sending to server
+5. Real-time collaboration is automatically disabled to preserve E2E encryption
+
+### Removing Password Protection
+
+1. Click the password icon in the header
+2. Enter the current password to verify
+3. Password is verified before decryption
+4. Real-time collaboration is automatically re-enabled
 
 ### Configuring Note Options
 
@@ -383,10 +395,14 @@ Click **Options** to set:
 ### Real-Time Collaboration
 
 1. Share your note URL with others
-2. Multiple users can edit simultaneously
-3. Changes appear in real-time
+2. Multiple users can edit simultaneously (for non-encrypted notes)
+3. Changes appear in real-time with operational transform
 4. Conflicts are automatically resolved
-5. Green "Real-time sync active" badge shows connection status
+5. Visual status indicators:
+   - **Green pulse**: Real-time sync active
+   - **Blue pulse**: Connected but collaboration disabled (encrypted note)
+   - **Red**: Disconnected
+6. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
 
 ### Viewing a Protected Note
 
@@ -517,6 +533,32 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
 }
 ```
 
+**Encryption Changed** (server → client):
+```json
+{
+  "type": "encryption_changed",
+  "is_encrypted": true,
+  "has_password": true
+}
+```
+
+**Version Update** (server → client):
+```json
+{
+  "type": "version_update",
+  "version": 44,
+  "message": "Note was updated by another user"
+}
+```
+
+**Note Deleted** (server → client):
+```json
+{
+  "type": "note_deleted",
+  "message": "Note has been deleted"
+}
+```
+
 ## Key Features Explained
 
 ### Operational Transform (OT)
@@ -538,12 +580,15 @@ type Operation =
 
 For password-protected notes:
 1. User enters password
-2. Password derives encryption key (PBKDF2)
-3. Content encrypted with AES-GCM
+2. Password derives encryption key (PBKDF2, 100,000 iterations)
+3. Content encrypted with AES-GCM before transmission
 4. Encrypted content + password hash sent to server
 5. Server stores encrypted content, never sees plaintext
 6. On retrieval, server verifies password hash
 7. Client decrypts content with user's password
+8. **Real-time collaboration is automatically disabled** to maintain E2E encryption
+9. Password verification required before removing encryption
+10. All connected clients notified when encryption status changes
 
 ### Automatic Cleanup
 

@@ -7,6 +7,7 @@
   import * as Popover from './lib/components/ui/popover/index.js';
   import { Textarea } from './lib/components/ui/textarea/index.js';
   import * as Dialog from './lib/components/ui/dialog/index.js';
+  import * as Alert from './lib/components/ui/alert/index.js';
   import ThemeToggle from './lib/components/ui/ThemeToggle.svelte';
   import Check from '@lucide/svelte/icons/check';
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
@@ -33,16 +34,24 @@
   let saveStatus = $state('');
   let showOptions = $state(false);
   let showPasswordDialog = $state(false);
+  let showRemovePasswordDialog = $state(false);
   let showCustomUrlDialog = $state(false);
   let showConflictDialog = $state(false);
+  let showReloadBanner = $state(false);
+  let showPasswordEnabledBanner = $state(false);
+  let showPasswordDisabledBanner = $state(false);
+  let showPasswordDisabledByOtherBanner = $state(false);
   let customUrl = $state('');
   let customUrlAvailable = $state(true);
   let passwordInput = $state('');
+  let removePasswordInput = $state('');
   let passwordRequired = $state(false);
   let viewMode = $state(false);
   let highlightedContent = $state('');
   let hasPassword = $state(false); // Track if note is password protected
   let isEncrypted = $state(false); // Track if note content is encrypted
+  let passwordError = $state(''); // Track password errors
+  let removePasswordError = $state(''); // Track password errors when removing protection
 
   // Session and version tracking
   let sessionId = $state('');
@@ -94,8 +103,8 @@
         return;
       }
 
-      // Send operation via WebSocket if connected
-      if (wsClient && isRealtimeEnabled && !viewMode) {
+      // Send operation via WebSocket if connected (but not for encrypted notes)
+      if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
         const oldContent = lastLocalContent;
         const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
         operations.forEach(op => {
@@ -122,8 +131,8 @@
         return;
       }
 
-      // Send operation via WebSocket if connected
-      if (wsClient && isRealtimeEnabled && !viewMode) {
+      // Send operation via WebSocket if connected (but not for encrypted notes)
+      if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
         const oldContent = lastLocalContent;
         // Generate operations - they don't have versions yet, server will assign them
         const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
@@ -468,10 +477,17 @@
       return;
     }
 
-    // Only HTTP auto-save if WebSocket not connected
+    // For encrypted notes: only auto-save if content actually changed
+    // This prevents false positive "note updated" alerts when users just open the note
+    if (isEncrypted && content === lastLocalContent) {
+      return;
+    }
+
+    // Only HTTP auto-save if WebSocket not connected OR if note is encrypted
     // When WebSocket is connected, the Durable Object handles persistence
+    // For encrypted notes, we always use HTTP save since operations are disabled
     // Also trigger for new notes (when noteId is empty) to create them
-    if (content && !viewMode && !isRealtimeEnabled) {
+    if (content && !viewMode && (!isRealtimeEnabled || isEncrypted)) {
       if (saveTimeout) {
         clearTimeout(saveTimeout);
       }
@@ -489,6 +505,11 @@
       const response = await fetch(url);
 
       if (response.status === 401) {
+        // Wrong password - only show error if user actually tried to enter a password
+        if (passwordInput) {
+          passwordError = 'Invalid password. Please try again.';
+          passwordInput = ''; // Clear the wrong password
+        }
         passwordRequired = true;
         showPasswordDialog = true;
         isLoading = false;
@@ -508,7 +529,28 @@
 
       const data = await response.json() as { content: string; syntax_highlight: string; version: number; has_password: boolean; is_encrypted: boolean };
 
-      // Track password protection status
+      // Decrypt content if it's encrypted (check server data, not local state)
+      // This must happen BEFORE updating local state to avoid race conditions
+      if (data.is_encrypted && passwordInput) {
+        try {
+          content = await decryptContent(data.content, passwordInput);
+          passwordError = ''; // Clear any previous errors
+        } catch (error) {
+          console.error('Failed to decrypt content:', error);
+          // Show error in password dialog instead of corrupting the note
+          passwordError = 'Invalid password. Please try again.';
+          passwordRequired = true;
+          showPasswordDialog = true;
+          passwordInput = ''; // Clear the wrong password
+          isLoading = false;
+          isInitialLoad = false;
+          return;
+        }
+      } else {
+        content = data.content;
+      }
+
+      // Track password protection status AFTER decryption
       hasPassword = data.has_password || false;
       isEncrypted = data.is_encrypted || false;
 
@@ -516,23 +558,6 @@
       // (needed for future operations like removing protection)
       if (hasPassword && passwordInput) {
         password = passwordInput;
-      }
-
-      // Decrypt content if it's encrypted
-      if (isEncrypted && passwordInput) {
-        try {
-          content = await decryptContent(data.content, passwordInput);
-        } catch (error) {
-          console.error('Failed to decrypt content:', error);
-          alert('Failed to decrypt note. Invalid password or corrupted data.');
-          window.history.pushState({}, '', '/');
-          noteId = '';
-          isLoading = false;
-          isInitialLoad = false;
-          return;
-        }
-      } else {
-        content = data.content;
       }
 
       lastLocalContent = content;
@@ -601,6 +626,13 @@
           connectionStatus = 'disconnected';
         },
         onSync: (syncContent, version, operations) => {
+          // For encrypted notes, ignore sync content (no real-time OT)
+          if (isEncrypted) {
+            currentVersion = version;
+            isSyncing = false;
+            return;
+          }
+
           // Update to the server's version
           currentVersion = version;
 
@@ -647,6 +679,68 @@
           }
           isRealtimeEnabled = false;
           connectionStatus = 'disconnected';
+        },
+        onEncryptionChanged: (is_encrypted, has_password) => {
+          // Another user changed encryption status or password
+          if (is_encrypted && has_password) {
+            // Note is now encrypted or password was changed - redirect to password screen
+            // Cancel any pending auto-save to prevent overwriting
+            if (saveTimeout) {
+              clearTimeout(saveTimeout);
+              saveTimeout = null;
+            }
+
+            // Close WebSocket connection
+            if (wsClient) {
+              wsClient.close();
+              wsClient = null;
+            }
+
+            // Clear current state
+            password = '';
+            passwordInput = '';
+            hasPassword = true;
+            isEncrypted = true;
+            isRealtimeEnabled = false;
+            connectionStatus = 'disconnected';
+
+            // Show password dialog
+            passwordRequired = true;
+            showPasswordDialog = true;
+          } else if (!is_encrypted && !has_password) {
+            // Note encryption was removed - immediately update state and reload
+
+            // Cancel any pending auto-save to prevent overwriting with encrypted content
+            if (saveTimeout) {
+              clearTimeout(saveTimeout);
+              saveTimeout = null;
+            }
+
+            // Immediately update encryption state to prevent auto-save from encrypting
+            hasPassword = false;
+            isEncrypted = false;
+
+            // Close WebSocket
+            if (wsClient) {
+              wsClient.close();
+              wsClient = null;
+            }
+
+            // Clear password state BEFORE reloading
+            // This is critical - if passwordInput is set, loadNote() will try to decrypt
+            password = '';
+            passwordInput = '';
+
+            // Show banner and reload the note to get unencrypted content
+            showPasswordDisabledByOtherBanner = true;
+            loadNote();
+          }
+        },
+        onVersionUpdate: (version, message) => {
+          // Show reload banner for encrypted notes when another user saves
+          if (isEncrypted) {
+            showReloadBanner = true;
+          }
         }
       });
     } catch (error) {
@@ -766,11 +860,18 @@
 
     saveStatus = 'Saving...';
     try {
-      // Encrypt content if password is set
+      // Encrypt content if password is set OR if note is already encrypted
       let contentToSave = content;
-      let shouldEncrypt = false;
+      let shouldEncrypt = isEncrypted; // Preserve existing encryption state
 
-      if (password && password.trim()) {
+      if ((password && password.trim()) || isEncrypted) {
+        // If note is encrypted but we don't have password stored, something is wrong
+        if (isEncrypted && (!password || !password.trim())) {
+          console.error('Cannot save encrypted note without password');
+          saveStatus = 'Save failed: password required';
+          return;
+        }
+
         try {
           contentToSave = await encryptContent(content, password);
           shouldEncrypt = true;
@@ -802,7 +903,9 @@
       if (noteId) {
         // Update existing note with version tracking
         payload.session_id = sessionId;
-        payload.expected_version = currentVersion;
+        // For encrypted notes, skip version checking (use last-write-wins)
+        // since we can't do operational transforms on encrypted content
+        payload.expected_version = isEncrypted ? null : currentVersion;
 
         const response = await fetch(`/api/notes/${noteId}`, {
           method: 'PUT',
@@ -927,6 +1030,7 @@
   }
 
   function submitPassword() {
+    passwordError = ''; // Clear any previous errors
     loadNote();
   }
 
@@ -936,41 +1040,44 @@
       return;
     }
 
+    // Cancel any pending auto-save to prevent conflicts
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+
+    // Store the fact that we're changing from unencrypted to encrypted
+    const wasEncrypted = isEncrypted;
+
     password = passwordToSet;
     hasPassword = true;
     isEncrypted = true;
 
     // Trigger a save to apply password protection
-    await saveNote();
-
-    passwordToSet = '';
-    alert('Password protection enabled! Your note is now encrypted.');
-  }
-
-  async function removePasswordProtection() {
-    if (!confirm('Remove password protection? This will decrypt and save your note.')) {
-      return;
-    }
-
-    // Store the current password to authorize the update
-    const currentPassword = password;
-
-    // Clear password protection flags
-    password = '';
-    passwordToSet = '';
-    hasPassword = false;
-    isEncrypted = false;
-
-    // Trigger a save with the old password for authorization, but new flags to remove protection
+    // We need to handle version checking specially here
     saveStatus = 'Saving...';
     try {
+      // Encrypt content
+      let contentToSave = content;
+      try {
+        contentToSave = await encryptContent(content, password);
+      } catch (error) {
+        console.error('Failed to encrypt content:', error);
+        saveStatus = 'Encryption failed';
+        // Restore state
+        password = '';
+        hasPassword = false;
+        isEncrypted = false;
+        return;
+      }
+
       const payload: any = {
-        content: content, // Save unencrypted content
+        content: contentToSave,
         syntax_highlight: syntaxHighlight || 'plaintext',
-        is_encrypted: false,
-        password: currentPassword, // Send current password for authorization
+        is_encrypted: true,
+        password: password,
         session_id: sessionId,
-        expected_version: currentVersion
+        expected_version: null // Skip version check - this is an encryption state change
       };
 
       if (maxViews) {
@@ -990,6 +1097,87 @@
       if (response.status === 409) {
         saveStatus = 'Conflict!';
         showConflictDialog = true;
+        // Restore state
+        password = '';
+        hasPassword = false;
+        isEncrypted = wasEncrypted;
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Failed to enable password protection');
+      }
+
+      const data = await response.json() as { version: number };
+      currentVersion = data.version;
+
+      passwordToSet = '';
+      saveStatus = 'Saved';
+      setTimeout(() => {
+        saveStatus = '';
+      }, 2000);
+
+      showPasswordEnabledBanner = true;
+    } catch (error) {
+      console.error('Failed to enable password protection:', error);
+      saveStatus = 'Failed to save';
+      // Restore state
+      password = '';
+      hasPassword = false;
+      isEncrypted = wasEncrypted;
+    }
+  }
+
+  function removePasswordProtection() {
+    // Show dialog to verify password
+    removePasswordInput = '';
+    removePasswordError = '';
+    showRemovePasswordDialog = true;
+  }
+
+  async function confirmRemovePasswordProtection() {
+    // Cancel any pending auto-save to prevent conflicts
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+
+    // Trigger a save with the password for authorization, but new flags to remove protection
+    saveStatus = 'Saving...';
+    try {
+      const payload: any = {
+        content: content, // Save unencrypted content
+        syntax_highlight: syntaxHighlight || 'plaintext',
+        is_encrypted: false,
+        password: removePasswordInput, // Send entered password for authorization
+        session_id: sessionId,
+        expected_version: null // Skip version check - this is a metadata change, not content
+      };
+
+      if (maxViews) {
+        payload.max_views = maxViews;
+      }
+
+      if (expiresIn && expiresIn !== 'null') {
+        payload.expires_in = parseInt(expiresIn);
+      }
+
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (response.status === 401) {
+        removePasswordError = 'Incorrect password';
+        saveStatus = '';
+        return;
+      }
+
+      if (response.status === 409) {
+        saveStatus = 'Conflict!';
+        showConflictDialog = true;
+        showRemovePasswordDialog = false;
         return;
       }
 
@@ -1000,17 +1188,25 @@
       const data = await response.json() as { version: number };
       currentVersion = data.version;
 
+      // Success - clear password protection flags
+      password = '';
+      passwordToSet = '';
+      hasPassword = false;
+      isEncrypted = false;
+
       saveStatus = 'Saved';
       setTimeout(() => {
         saveStatus = '';
       }, 2000);
+
+      showPasswordDisabledBanner = true;
+      showRemovePasswordDialog = false;
+      removePasswordInput = '';
+      removePasswordError = '';
     } catch (error) {
       console.error('Failed to remove password protection:', error);
       saveStatus = 'Failed to save';
-      // Restore password protection state on error
-      password = currentPassword;
-      hasPassword = true;
-      isEncrypted = true;
+      removePasswordError = 'Failed to remove password protection';
     }
   }
 
@@ -1081,7 +1277,9 @@
         <div class="flex items-center gap-2">
           <h1 class="text-2xl font-bold">yPad</h1>
           {#if noteId}
-            {#if connectionStatus === 'connected'}
+            {#if connectionStatus === 'connected' && isEncrypted}
+              <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" title="Connected - Real-time collaboration disabled for encrypted notes. Changes are saved automatically."></div>
+            {:else if connectionStatus === 'connected'}
               <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Real-time sync active - Your changes are synced instantly"></div>
             {:else if connectionStatus === 'connecting'}
               <div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" title="Connecting to real-time sync..."></div>
@@ -1099,7 +1297,7 @@
       </div>
       <div class="flex items-center gap-2 flex-wrap">
         {#if hasPassword}
-          <div class="flex items-center gap-1 px-2 py-1 md:px-3 md:py-1.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 rounded-md text-xs md:text-sm border border-green-300 dark:border-green-700" title="This note is password protected">
+          <div class="flex items-center gap-1 px-2 py-1 md:px-3 md:py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded-md text-xs md:text-sm border border-blue-300 dark:border-blue-700" title="This note is password protected">
             <Lock class="h-3 w-3 md:h-3.5 md:w-3.5" />
             <span>Protected</span>
           </div>
@@ -1183,7 +1381,7 @@
                 <button
                   onclick={hasPassword ? removePasswordProtection : setPasswordProtection}
                   disabled={viewMode || (!hasPassword && !passwordToSet.trim())}
-                  class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md transition-all hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed {hasPassword ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground hover:text-foreground'}"
+                  class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md transition-all hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed {hasPassword ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground'}"
                   title={hasPassword ? "Click to remove password protection" : "Click to set password protection"}
                   type="button"
                 >
@@ -1226,6 +1424,99 @@
       </div>
     {/if}
   </header>
+
+  <!-- Reload banner for encrypted notes -->
+  {#if showReloadBanner && isEncrypted}
+    <div class="px-4 py-3 border-b">
+      <div class="max-w-7xl mx-auto">
+        <Alert.Root variant="default" class="border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/20">
+          <Alert.Description class="text-yellow-800 dark:text-yellow-200 flex items-center justify-between gap-4">
+            <span>This note was updated by another user. Reload to see the latest changes.</span>
+            <div class="flex gap-2 flex-shrink-0">
+              <Button
+                size="sm"
+                onclick={() => { showReloadBanner = false; loadNote(); }}
+                class="bg-yellow-600 hover:bg-yellow-700 text-white"
+              >
+                Reload
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onclick={() => showReloadBanner = false}
+                class="text-yellow-800 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </Alert.Description>
+        </Alert.Root>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Password protection enabled banner -->
+  {#if showPasswordEnabledBanner}
+    <div class="px-4 py-3 border-b">
+      <div class="max-w-7xl mx-auto">
+        <Alert.Root variant="default" class="border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/20">
+          <Alert.Description class="text-blue-800 dark:text-blue-200 flex items-center justify-between gap-4">
+            <span>Password protection enabled! Your note is now encrypted. Real-time collaboration is disabled to preserve E2E encryption.</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onclick={() => showPasswordEnabledBanner = false}
+              class="text-blue-800 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-800 flex-shrink-0"
+            >
+              Dismiss
+            </Button>
+          </Alert.Description>
+        </Alert.Root>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Password protection disabled banner (by you) -->
+  {#if showPasswordDisabledBanner}
+    <div class="px-4 py-3 border-b">
+      <div class="max-w-7xl mx-auto">
+        <Alert.Root variant="default" class="border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20">
+          <Alert.Description class="text-green-800 dark:text-green-200 flex items-center justify-between gap-4">
+            <span>Password protection removed! Real-time collaboration is now enabled.</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onclick={() => showPasswordDisabledBanner = false}
+              class="text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 flex-shrink-0"
+            >
+              Dismiss
+            </Button>
+          </Alert.Description>
+        </Alert.Root>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Password protection disabled banner (by another user) -->
+  {#if showPasswordDisabledByOtherBanner}
+    <div class="px-4 py-3 border-b">
+      <div class="max-w-7xl mx-auto">
+        <Alert.Root variant="default" class="border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20">
+          <Alert.Description class="text-green-800 dark:text-green-200 flex items-center justify-between gap-4">
+            <span>Password protection was removed by another user. Real-time collaboration is now enabled.</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onclick={() => showPasswordDisabledByOtherBanner = false}
+              class="text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 flex-shrink-0"
+            >
+              Dismiss
+            </Button>
+          </Alert.Description>
+        </Alert.Root>
+      </div>
+    </div>
+  {/if}
 
   <!-- Main content area -->
   <main class="flex-1 overflow-hidden flex">
@@ -1272,6 +1563,11 @@
         <Dialog.Title>Password Required</Dialog.Title>
         <Dialog.Description>This note is password protected.</Dialog.Description>
       </Dialog.Header>
+      {#if passwordError}
+        <Alert.Root variant="destructive" class="mb-4 border-destructive/50 bg-destructive/10 dark:border-destructive">
+          <Alert.Description>{passwordError}</Alert.Description>
+        </Alert.Root>
+      {/if}
       <Input
         type="password"
         bind:value={passwordInput}
@@ -1284,12 +1580,50 @@
       <Dialog.Footer>
         <Button variant="outline" onclick={() => {
           showPasswordDialog = false;
+          passwordError = '';
           window.history.pushState({}, '', '/');
           noteId = '';
         }}>
           Cancel
         </Button>
         <Button onclick={submitPassword}>Submit</Button>
+      </Dialog.Footer>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
+
+<!-- Remove Password Dialog -->
+<Dialog.Root bind:open={showRemovePasswordDialog}>
+  <Dialog.Portal>
+    <Dialog.Overlay />
+    <Dialog.Content>
+      <Dialog.Header>
+        <Dialog.Title>Remove Password Protection</Dialog.Title>
+        <Dialog.Description>Enter the current password to remove encryption and enable real-time collaboration.</Dialog.Description>
+      </Dialog.Header>
+      {#if removePasswordError}
+        <Alert.Root variant="destructive" class="mb-4 border-destructive/50 bg-destructive/10 dark:border-destructive">
+          <Alert.Description>{removePasswordError}</Alert.Description>
+        </Alert.Root>
+      {/if}
+      <Input
+        type="password"
+        bind:value={removePasswordInput}
+        placeholder="Enter current password"
+        class="mb-4"
+        onkeydown={(e) => {
+          if (e.key === 'Enter') confirmRemovePasswordProtection();
+        }}
+      />
+      <Dialog.Footer>
+        <Button variant="outline" onclick={() => {
+          showRemovePasswordDialog = false;
+          removePasswordInput = '';
+          removePasswordError = '';
+        }}>
+          Cancel
+        </Button>
+        <Button onclick={confirmRemovePasswordProtection} variant="destructive">Remove Protection</Button>
       </Dialog.Footer>
     </Dialog.Content>
   </Dialog.Portal>

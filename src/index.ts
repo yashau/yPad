@@ -217,6 +217,56 @@ app.put('/api/notes/:id', async (c) => {
     }, 409);
   }
 
+  // Check if encryption status or password changed
+  const encryptionChanged = (is_encrypted !== undefined) &&
+    (!!is_encrypted !== !!existing.is_encrypted);
+  const passwordChanged = password_hash !== existing.password_hash;
+
+  // Notify clients if encryption status changed OR password changed on an encrypted note
+  if (encryptionChanged || (passwordChanged && !!password_hash)) {
+    // Notify all connected clients via Durable Object
+    try {
+      const doId = c.env.NOTE_SESSIONS.idFromName(id);
+      const stub = c.env.NOTE_SESSIONS.get(doId);
+
+      // Send a POST request to notify about encryption change
+      await stub.fetch(new Request(`http://do/notify-encryption-change`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_encrypted: !!is_encrypted !== undefined ? !!is_encrypted : !!existing.is_encrypted,
+          has_password: !!password_hash,
+          exclude_session_id: session_id // Don't notify the user who made the change
+        })
+      }));
+    } catch (error) {
+      console.error('Failed to notify encryption change:', error);
+      // Don't fail the request if broadcast fails
+    }
+  }
+
+  // For encrypted notes, notify other clients about the version update
+  // (since they don't get operation-based updates via WebSocket)
+  const finalIsEncrypted = is_encrypted !== undefined ? !!is_encrypted : !!existing.is_encrypted;
+  if (finalIsEncrypted && content !== undefined) {
+    try {
+      const doId = c.env.NOTE_SESSIONS.idFromName(id);
+      const stub = c.env.NOTE_SESSIONS.get(doId);
+
+      await stub.fetch(new Request(`http://do/notify-version-update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: result.version,
+          exclude_session_id: session_id // Don't notify the user who made the change
+        })
+      }));
+    } catch (error) {
+      console.error('Failed to notify version update:', error);
+      // Don't fail the request if broadcast fails
+    }
+  }
+
   return c.json({ success: true, version: result.version });
 });
 
@@ -228,6 +278,22 @@ app.get('/api/check/:id', async (c) => {
   ).bind(id).first();
 
   return c.json({ available: !note });
+});
+
+app.post('/api/notes/:id/refresh', async (c) => {
+  const id = c.req.param('id');
+
+  // Force Durable Object to refresh from database
+  try {
+    const doId = c.env.NOTE_SESSIONS.idFromName(id);
+    const stub = c.env.NOTE_SESSIONS.get(doId);
+
+    await stub.fetch(new Request(`http://internal/refresh`, { method: 'POST' }));
+    return c.json({ success: true, message: 'Durable Object refreshed from database' });
+  } catch (error) {
+    console.error('Failed to refresh Durable Object:', error);
+    return c.json({ success: false, error: 'Failed to refresh' }, 500);
+  }
 });
 
 app.delete('/api/notes/:id', async (c) => {

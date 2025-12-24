@@ -57,6 +57,18 @@ export type NoteDeletedMessage = {
   type: 'note_deleted';
 };
 
+export type EncryptionChangedMessage = {
+  type: 'encryption_changed';
+  is_encrypted: boolean;
+  has_password: boolean;
+};
+
+export type VersionUpdateMessage = {
+  type: 'version_update';
+  version: number;
+  message: string;
+};
+
 export type WSMessage =
   | OperationMessage
   | SyncMessage
@@ -64,7 +76,9 @@ export type WSMessage =
   | ErrorMessage
   | ReloadMessage
   | NoteExpiredMessage
-  | NoteDeletedMessage;
+  | NoteDeletedMessage
+  | EncryptionChangedMessage
+  | VersionUpdateMessage;
 
 // Client session information
 export interface ClientSession {

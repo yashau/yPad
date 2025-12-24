@@ -12,6 +12,8 @@ export interface WebSocketClientOptions {
   onSync?: (content: string, version: number, operations: Operation[]) => void;
   onAck?: (version: number) => void;
   onNoteDeleted?: () => void;
+  onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
+  onVersionUpdate?: (version: number, message: string) => void;
   autoReconnect?: boolean;
 }
 
@@ -125,6 +127,20 @@ export class WebSocketClient {
           this.options.onNoteDeleted();
         }
         this.close();
+        break;
+
+      case 'encryption_changed':
+        console.log('[WebSocket] Encryption status changed:', message);
+        if (this.options.onEncryptionChanged) {
+          this.options.onEncryptionChanged(message.is_encrypted, message.has_password);
+        }
+        break;
+
+      case 'version_update':
+        console.log('[WebSocket] Version update:', message);
+        if (this.options.onVersionUpdate) {
+          this.options.onVersionUpdate(message.version, message.message);
+        }
         break;
 
       default:
