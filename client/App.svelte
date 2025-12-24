@@ -56,6 +56,10 @@
   let clientId = $state('');
   let lastLocalContent = $state('');
 
+  // Track pending local changes during WebSocket connection/sync
+  let pendingLocalContent = $state<string | null>(null);
+  let isSyncing = $state(false);
+
   // Auto-save timeout
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -83,6 +87,13 @@
     if (editorRef && !isUpdating) {
       const newContent = getEditorTextContent();
 
+      // If we're syncing, save the content as pending instead of sending operations
+      if (isSyncing) {
+        pendingLocalContent = newContent;
+        content = newContent;
+        return;
+      }
+
       // Send operation via WebSocket if connected
       if (wsClient && isRealtimeEnabled && !viewMode) {
         const oldContent = lastLocalContent;
@@ -103,6 +114,13 @@
   function handleTextareaInput(event: Event) {
     if (textareaScrollRef && !isUpdating) {
       const newContent = textareaScrollRef.value;
+
+      // If we're syncing, save the content as pending instead of sending operations
+      if (isSyncing) {
+        pendingLocalContent = newContent;
+        content = newContent;
+        return;
+      }
 
       // Send operation via WebSocket if connected
       if (wsClient && isRealtimeEnabled && !viewMode) {
@@ -445,6 +463,11 @@
       return;
     }
 
+    // Don't auto-save during sync to prevent version conflicts
+    if (isSyncing) {
+      return;
+    }
+
     // Only HTTP auto-save if WebSocket not connected
     // When WebSocket is connected, the Durable Object handles persistence
     // Also trigger for new notes (when noteId is empty) to create them
@@ -539,6 +562,12 @@
     if (!noteId || wsClient) return;
 
     connectionStatus = 'connecting';
+    // Mark that we're starting sync - this prevents losing content during connection
+    isSyncing = true;
+    // Capture current content as pending in case user is still typing
+    if (content && content !== lastLocalContent) {
+      pendingLocalContent = content;
+    }
 
     try {
       wsClient = new WebSocketClient(noteId, {
@@ -574,13 +603,37 @@
         onSync: (syncContent, version, operations) => {
           // Update to the server's version
           currentVersion = version;
-          // Update content to match server if different
-          if (syncContent !== content) {
+
+          // If we have pending local content (user typed during sync), preserve it
+          if (pendingLocalContent !== null && pendingLocalContent !== syncContent) {
+            // Generate operations from sync content to pending content
+            const ops = generateOperations(syncContent, pendingLocalContent, clientId, currentVersion);
+
+            // Send the operations to sync server with our local changes
+            ops.forEach(op => {
+              if (wsClient) {
+                wsClient.sendOperation(op, currentVersion);
+                currentVersion++;
+              }
+            });
+
+            // Keep the local content that user typed
+            isUpdating = true;
+            content = pendingLocalContent;
+            lastLocalContent = pendingLocalContent;
+            isUpdating = false;
+
+            pendingLocalContent = null;
+          } else if (syncContent !== content) {
+            // No pending changes, just sync with server
             isUpdating = true;
             content = syncContent;
             lastLocalContent = syncContent;
             isUpdating = false;
           }
+
+          // Mark sync as complete
+          isSyncing = false;
         },
         onAck: (version) => {
           // Update our version when server acknowledges our operation
@@ -599,6 +652,9 @@
     } catch (error) {
       console.error('[App] Failed to create WebSocket client:', error);
       connectionStatus = 'disconnected';
+      // Clear syncing flag on error
+      isSyncing = false;
+      pendingLocalContent = null;
     }
   }
 
@@ -761,6 +817,12 @@
           return;
         }
 
+        if (response.status === 404) {
+          // Note was deleted - silently ignore the save attempt
+          saveStatus = '';
+          return;
+        }
+
         if (!response.ok) {
           throw new Error('Failed to update note');
         }
@@ -784,8 +846,11 @@
         currentVersion = data.version || 1;
         window.history.pushState({}, '', `/${noteId}`);
 
-        // Connect to WebSocket for real-time collaboration on newly created note
-        connectWebSocket();
+        // Small delay before connecting WebSocket to ensure database write completes
+        // and Durable Object can initialize with the saved content
+        setTimeout(() => {
+          connectWebSocket();
+        }, 100);
       }
 
       saveStatus = 'Saved';
@@ -977,6 +1042,12 @@
     }
 
     try {
+      // Cancel any pending auto-save to prevent race condition
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        saveTimeout = null;
+      }
+
       // Close WebSocket connection before deleting
       if (wsClient) {
         wsClient.close();
