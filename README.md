@@ -160,13 +160,7 @@ cd yPad
 # Install dependencies
 npm install
 
-# Create D1 database
-npm run db:create
-
-# Copy the database ID from output and update wrangler.toml:
-# database_id = "YOUR_DATABASE_ID_HERE"
-
-# Run migrations
+# Run migrations (creates local database automatically)
 npm run db:migrate
 
 # Start development server

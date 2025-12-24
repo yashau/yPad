@@ -1076,33 +1076,49 @@
 <div class="h-full flex flex-col">
   <!-- Header -->
   <header class="border-b border-border bg-card p-4">
-    <div class="max-w-7xl mx-auto flex items-center justify-between">
-      <div class="flex items-center gap-4">
-        <h1 class="text-2xl font-bold">yPad</h1>
-        {#if saveStatus}
-          <span class="text-sm text-muted-foreground">{saveStatus}</span>
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+      <div class="flex items-center justify-between md:justify-start md:gap-4">
+        <div class="flex items-center gap-2">
+          <h1 class="text-2xl font-bold">yPad</h1>
+          {#if noteId}
+            {#if connectionStatus === 'connected'}
+              <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Real-time sync active - Your changes are synced instantly"></div>
+            {:else if connectionStatus === 'connecting'}
+              <div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" title="Connecting to real-time sync..."></div>
+            {:else if connectionStatus === 'disconnected' && isRealtimeEnabled}
+              <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="Disconnected from real-time sync - Attempting to reconnect..."></div>
+            {/if}
+          {/if}
+        </div>
+        {#if saveStatus && !isRealtimeEnabled}
+          <span class="text-sm text-muted-foreground hidden md:inline">{saveStatus}</span>
         {/if}
+        <div class="md:hidden">
+          <ThemeToggle />
+        </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
         {#if hasPassword}
-          <div class="flex items-center gap-1 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 rounded-md text-sm border border-green-300 dark:border-green-700">
-            <Lock class="h-3.5 w-3.5" />
+          <div class="flex items-center gap-1 px-2 py-1 md:px-3 md:py-1.5 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 rounded-md text-xs md:text-sm border border-green-300 dark:border-green-700" title="This note is password protected">
+            <Lock class="h-3 w-3 md:h-3.5 md:w-3.5" />
             <span>Protected</span>
           </div>
         {/if}
         {#if noteId}
-          <Button variant="outline" onclick={newNote}>New</Button>
-          <Button variant="destructive" onclick={deleteNote}>Delete</Button>
+          <Button variant="outline" onclick={newNote} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Create a new note">New</Button>
+          <Button variant="destructive" onclick={deleteNote} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Delete this note permanently">Delete</Button>
         {/if}
-        <Button variant="outline" onclick={() => showOptions = !showOptions}>
+        <Button variant="outline" onclick={() => showOptions = !showOptions} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Configure note options (syntax highlighting, expiration, password protection)">
           Options
         </Button>
         {#if !viewMode}
-          <Button onclick={() => showCustomUrlDialog = true}>
+          <Button onclick={() => showCustomUrlDialog = true} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Set a custom URL for this note">
             Custom URL
           </Button>
         {/if}
-        <ThemeToggle />
+        <div class="hidden md:block">
+          <ThemeToggle />
+        </div>
       </div>
     </div>
 
@@ -1116,6 +1132,7 @@
                 bind:ref={comboboxTriggerRef}
                 class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={viewMode}
+                title="Choose a programming language for syntax highlighting"
               >
                 {syntaxHighlightLabel}
                 <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -1156,6 +1173,7 @@
                   placeholder={hasPassword ? "Protected" : "Enter password"}
                   disabled={viewMode || hasPassword}
                   class="pr-10"
+                  title={hasPassword ? "This note is already password protected" : "Enter a password to encrypt and protect this note"}
                   onkeydown={(e) => {
                     if (e.key === 'Enter' && !hasPassword && passwordToSet.trim()) {
                       setPasswordProtection();
@@ -1186,12 +1204,13 @@
               bind:value={maxViews}
               placeholder="Unlimited"
               disabled={viewMode}
+              title="Set maximum number of times this note can be viewed before being deleted"
             />
           </div>
           <div>
             <label for="expires-in" class="block text-sm font-medium mb-2">Expires In</label>
             <Select.Root bind:value={expiresIn} disabled={viewMode} type="single">
-              <Select.Trigger class="w-full">
+              <Select.Trigger class="w-full" title="Set when this note should automatically expire and be deleted">
                 {expiresInLabel}
               </Select.Trigger>
               <Select.Content>
