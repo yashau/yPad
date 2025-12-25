@@ -21,6 +21,7 @@
   import { transformCursorPosition } from '../src/ot/transform';
   import type { Operation } from '../src/ot/types';
   import { encryptContent, decryptContent } from './lib/crypto';
+  import RemoteCursor from './lib/components/RemoteCursor.svelte';
 
   // State with runes
   let content = $state('');
@@ -69,6 +70,20 @@
   let pendingLocalContent = $state<string | null>(null);
   let isSyncing = $state(false);
 
+  // Remote cursors tracking
+  interface RemoteCursorData {
+    position: number;
+    color: string;
+    label: string;
+  }
+  let remoteCursors = $state<Map<string, RemoteCursorData>>(new Map());
+  const CURSOR_COLORS = ['blue', 'green', 'red', 'amber', 'purple', 'pink', 'orange', 'cyan'];
+  const clientColorMap = new Map<string, string>();
+  let cursorUpdateThrottle: ReturnType<typeof setTimeout> | null = null;
+
+  // Connected users tracking
+  let connectedUsers = $state<Set<string>>(new Set());
+
   // Auto-save timeout
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -89,6 +104,31 @@
     // Use textContent instead of innerText to preserve exact whitespace
     // textContent maintains all spaces and newlines exactly as they are
     return editorRef.textContent || '';
+  }
+
+  // Get color for a remote client
+  function getClientColor(clientId: string): string {
+    if (!clientColorMap.has(clientId)) {
+      const colorIndex = clientColorMap.size % CURSOR_COLORS.length;
+      clientColorMap.set(clientId, CURSOR_COLORS[colorIndex]);
+    }
+    return clientColorMap.get(clientId)!;
+  }
+
+  // Send cursor update to other clients (throttled)
+  function sendCursorUpdate() {
+    if (!wsClient || !isRealtimeEnabled || isEncrypted) {
+      return;
+    }
+
+    if (cursorUpdateThrottle) {
+      clearTimeout(cursorUpdateThrottle);
+    }
+
+    cursorUpdateThrottle = setTimeout(() => {
+      const cursorPos = getCurrentCursorPosition();
+      wsClient?.sendCursorUpdate(cursorPos, clientId);
+    }, 100); // Throttle to every 100ms
   }
 
   // Handle contenteditable input
@@ -116,6 +156,9 @@
 
       content = newContent;
       lastLocalContent = newContent;
+
+      // Send cursor update
+      sendCursorUpdate();
     }
   }
 
@@ -145,6 +188,9 @@
 
       content = newContent;
       lastLocalContent = newContent;
+
+      // Send cursor update
+      sendCursorUpdate();
     }
   }
 
@@ -441,6 +487,21 @@
     tick().then(() => comboboxTriggerRef?.focus());
   }
 
+  // Track cursor position changes (for clicks, arrow keys, etc.)
+  $effect(() => {
+    if (!editorRef && !textareaScrollRef) return;
+
+    const handleSelectionChange = () => {
+      sendCursorUpdate();
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  });
+
   onMount(() => {
     // Initialize or retrieve session ID (persists across refreshes, not tab close)
     const existingSessionId = sessionStorage.getItem('paste-session-id');
@@ -613,6 +674,10 @@
           saveStatus = 'Disconnected';
           wsClient = null;
 
+          // Clear remote cursors on disconnect
+          remoteCursors.clear();
+          remoteCursors = remoteCursors;
+
           // Attempt to reconnect after a brief delay (handles server reloads)
           // This will trigger onSync which will update our version to match server
           setTimeout(() => {
@@ -741,6 +806,54 @@
           if (isEncrypted) {
             showReloadBanner = true;
           }
+        },
+        onCursorUpdate: (remoteClientId, position) => {
+          // Update remote cursor position
+          if (remoteClientId !== clientId) {
+            const color = getClientColor(remoteClientId);
+            const label = `User ${remoteClientId.substring(0, 4)}`;
+
+            remoteCursors.set(remoteClientId, {
+              position,
+              color,
+              label
+            });
+            remoteCursors = remoteCursors; // Trigger reactivity
+          }
+        },
+        onUserJoined: (joinedClientId, allConnectedUsers) => {
+          // Update connected users list
+          connectedUsers = new Set(allConnectedUsers);
+
+          // Clean up stale remote cursors - remove any cursors for users not in the connected list
+          const staleCursors: string[] = [];
+          remoteCursors.forEach((_, cursorClientId) => {
+            if (!allConnectedUsers.includes(cursorClientId)) {
+              staleCursors.push(cursorClientId);
+            }
+          });
+
+          if (staleCursors.length > 0) {
+            staleCursors.forEach(id => remoteCursors.delete(id));
+            remoteCursors = remoteCursors; // Trigger reactivity
+          }
+        },
+        onUserLeft: (leftClientId, allConnectedUsers) => {
+          // Update connected users list
+          connectedUsers = new Set(allConnectedUsers);
+
+          // Clean up stale remote cursors - remove any cursors for users not in the connected list
+          const staleCursors: string[] = [];
+          remoteCursors.forEach((_, cursorClientId) => {
+            if (!allConnectedUsers.includes(cursorClientId)) {
+              staleCursors.push(cursorClientId);
+            }
+          });
+
+          if (staleCursors.length > 0) {
+            staleCursors.forEach(id => remoteCursors.delete(id));
+            remoteCursors = remoteCursors; // Trigger reactivity
+          }
         }
       });
     } catch (error) {
@@ -758,11 +871,21 @@
 
     try {
       // Save current cursor position
-      const selection = window.getSelection();
       let cursorPos = getCurrentCursorPosition();
 
       // Transform cursor based on operation
       cursorPos = transformCursorPosition(cursorPos, operation);
+
+      // Transform all remote cursor positions based on the operation
+      const updatedRemoteCursors = new Map<string, RemoteCursorData>();
+      remoteCursors.forEach((cursorData, remoteClientId) => {
+        const transformedPosition = transformCursorPosition(cursorData.position, operation);
+        updatedRemoteCursors.set(remoteClientId, {
+          ...cursorData,
+          position: transformedPosition
+        });
+      });
+      remoteCursors = updatedRemoteCursors;
 
       // Apply operation to content
       content = applyOperation(content, operation);
@@ -1278,9 +1401,16 @@
           <h1 class="text-2xl font-bold">yPad</h1>
           {#if noteId}
             {#if connectionStatus === 'connected' && isEncrypted}
-              <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" title="Connected - Real-time collaboration disabled for encrypted notes. Changes are saved automatically."></div>
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" title="Connected - Real-time collaboration disabled for encrypted notes. Changes are saved automatically."></div>
+              </div>
             {:else if connectionStatus === 'connected'}
-              <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Real-time sync active - Your changes are synced instantly"></div>
+              <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Real-time sync active - Your changes are synced instantly"></div>
+                <span class="text-xs text-muted-foreground">
+                  {clientId.substring(0, 4)}{#if connectedUsers.size > 1} +{connectedUsers.size - 1}{/if}
+                </span>
+              </div>
             {:else if connectionStatus === 'connecting'}
               <div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" title="Connecting to real-time sync..."></div>
             {:else if connectionStatus === 'disconnected' && isRealtimeEnabled}
@@ -1528,7 +1658,7 @@
         <div class="leading-6">{i + 1}</div>
       {/each}
     </div>
-    <div class="flex-1 overflow-auto">
+    <div class="flex-1 overflow-auto relative">
       {#if syntaxHighlight === 'plaintext'}
         <Textarea
           bind:ref={textareaScrollRef}
@@ -1549,6 +1679,18 @@
           class="w-full h-full p-4 pl-3 pb-8 font-mono text-sm leading-6 outline-none whitespace-pre overflow-auto"
           spellcheck={false}
         ></div>
+      {/if}
+
+      <!-- Remote cursors -->
+      {#if isRealtimeEnabled && !isEncrypted}
+        {#each Array.from(remoteCursors.entries()) as [remoteClientId, cursorData] (remoteClientId)}
+          <RemoteCursor
+            position={cursorData.position}
+            editorRef={syntaxHighlight === 'plaintext' ? textareaScrollRef : editorRef}
+            color={cursorData.color}
+            label={cursorData.label}
+          />
+        {/each}
       {/if}
     </div>
   </main>

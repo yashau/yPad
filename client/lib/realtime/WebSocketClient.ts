@@ -1,6 +1,6 @@
 // WebSocket client for real-time collaboration
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage } from '../../../src/ot/types';
+import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, UserJoinedMessage, UserLeftMessage } from '../../../src/ot/types';
 
 export interface WebSocketClientOptions {
   password?: string;
@@ -14,6 +14,9 @@ export interface WebSocketClientOptions {
   onNoteDeleted?: () => void;
   onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
   onVersionUpdate?: (version: number, message: string) => void;
+  onCursorUpdate?: (clientId: string, position: number) => void;
+  onUserJoined?: (clientId: string, connectedUsers: string[]) => void;
+  onUserLeft?: (clientId: string, connectedUsers: string[]) => void;
   autoReconnect?: boolean;
 }
 
@@ -143,6 +146,18 @@ export class WebSocketClient {
         }
         break;
 
+      case 'cursor_update':
+        this.handleCursorUpdate(message as CursorUpdateMessage);
+        break;
+
+      case 'user_joined':
+        this.handleUserJoined(message as UserJoinedMessage);
+        break;
+
+      case 'user_left':
+        this.handleUserLeft(message as UserLeftMessage);
+        break;
+
       default:
         console.warn('[WebSocket] Unknown message type:', message);
     }
@@ -166,6 +181,24 @@ export class WebSocketClient {
     }
   }
 
+  private handleCursorUpdate(message: CursorUpdateMessage): void {
+    if (this.options.onCursorUpdate) {
+      this.options.onCursorUpdate(message.clientId, message.position);
+    }
+  }
+
+  private handleUserJoined(message: UserJoinedMessage): void {
+    if (this.options.onUserJoined) {
+      this.options.onUserJoined(message.clientId, message.connectedUsers);
+    }
+  }
+
+  private handleUserLeft(message: UserLeftMessage): void {
+    if (this.options.onUserLeft) {
+      this.options.onUserLeft(message.clientId, message.connectedUsers);
+    }
+  }
+
   sendOperation(operation: Operation, baseVersion: number): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       // Don't queue operations if not connected - they'll be stale
@@ -178,6 +211,21 @@ export class WebSocketClient {
       operation,
       baseVersion,
       clientId: operation.clientId,
+      sessionId: this.options.sessionId,
+    };
+
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendCursorUpdate(position: number, clientId: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message: CursorUpdateMessage = {
+      type: 'cursor_update',
+      clientId,
+      position,
       sessionId: this.options.sessionId,
     };
 

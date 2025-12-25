@@ -9,6 +9,8 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Operational Transform**: Character-level conflict-free concurrent editing using OT algorithm
 - **Automatic Conflict Resolution**: Smart merging of concurrent edits with no data loss
 - **Session Awareness**: Cursor position preservation during remote edits
+- **Remote Cursor Tracking**: See other users' cursor positions in real-time with color-coded labels
+- **User Presence**: Live count of connected collaborators in the header status indicator
 - **WebSocket-Based**: Real-time synchronization via Durable Objects
 
 ### Security & Privacy
@@ -237,21 +239,47 @@ yPad/
 │   ├── lib/
 │   │   ├── components/
 │   │   │   └── ui/              # shadcn-svelte components
+│   │   │       ├── alert/       # Alert component (banners)
+│   │   │       ├── button/      # Button component
+│   │   │       ├── combobox/    # Combobox for syntax selection
+│   │   │       ├── dialog/      # Dialog/modal component
+│   │   │       ├── input/       # Input component
+│   │   │       ├── label/       # Label component
+│   │   │       ├── popover/     # Popover component
+│   │   │       ├── select/      # Select dropdown
+│   │   │       └── ...          # Other UI components
 │   │   ├── realtime/            # WebSocket & OT client logic
+│   │   │   └── WebSocketClient.ts  # WebSocket client with OT
 │   │   ├── stores/              # Svelte stores (theme, etc.)
 │   │   ├── utils/               # Utility functions
-│   │   └── crypto.ts            # Client-side encryption
-│   ├── App.svelte               # Main app component (1,274 lines)
-│   ├── index.html               # HTML entry point
+│   │   └── crypto.ts            # Client-side encryption (AES-GCM)
+│   ├── App.svelte               # Main app component (~1,650 lines)
+│   ├── index.html               # HTML entry point with favicons
 │   └── main.ts                  # JS entry point
+├── public/                      # Static assets (copied to dist)
+│   ├── icons/                   # Favicon icons
+│   │   ├── android-chrome-192x192.png
+│   │   ├── android-chrome-512x512.png
+│   │   ├── apple-touch-icon.png
+│   │   ├── favicon-16x16.png
+│   │   └── favicon-32x32.png
+│   ├── favicon.ico              # Root favicon
+│   └── site.webmanifest         # PWA manifest
 ├── src/                         # Backend Cloudflare Workers
 │   ├── durable-objects/
-│   │   └── NoteSessionDurableObject.ts  # WebSocket coordinator
+│   │   └── NoteSessionDurableObject.ts  # WebSocket coordinator with OT
 │   ├── ot/                      # Operational Transform
-│   │   ├── types.ts             # OT type definitions
+│   │   ├── types.ts             # OT type definitions & WebSocket messages
 │   │   ├── transform.ts         # OT algorithm implementation
 │   │   └── apply.ts             # Operation application
-│   └── index.ts                 # Hono API server
+│   └── index.ts                 # Hono API server & routes
+├── dist/                        # Build output (gitignored)
+│   ├── client/
+│   │   └── index.html           # Built HTML with hashed assets
+│   ├── assets/                  # Hashed JS/CSS bundles
+│   ├── icons/                   # Copied favicon icons
+│   ├── favicon.ico              # Copied favicon
+│   └── site.webmanifest         # Copied manifest
 ├── scripts/                     # Automation scripts
 │   ├── dev.ps1                  # Windows dev server script
 │   ├── dev.sh                   # Mac/Linux dev server script
@@ -261,7 +289,7 @@ yPad/
 │   └── 0001_initial_schema.sql
 ├── .env.example                 # Example environment config
 ├── wrangler.toml                # Cloudflare Workers config
-├── vite.config.ts               # Vite build config
+├── vite.config.ts               # Vite build config with publicDir
 ├── tailwind.config.js           # Tailwind CSS config
 └── package.json                 # Dependencies & scripts
 ```
@@ -398,11 +426,13 @@ Click **Options** to set:
 2. Multiple users can edit simultaneously (for non-encrypted notes)
 3. Changes appear in real-time with operational transform
 4. Conflicts are automatically resolved
-5. Visual status indicators:
+5. See other users' cursors with color-coded position indicators
+6. Visual status indicators in the header:
    - **Green pulse**: Real-time sync active
+   - **User count**: Shows your client ID and `+N` for N other connected users
    - **Blue pulse**: Connected but collaboration disabled (encrypted note)
    - **Red**: Disconnected
-6. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
+7. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
 
 ### Viewing a Protected Note
 
@@ -556,6 +586,33 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
 {
   "type": "note_deleted",
   "message": "Note has been deleted"
+}
+```
+
+**Cursor Update** (client ↔ server):
+```json
+{
+  "type": "cursor_update",
+  "clientId": "abc123",
+  "position": 42
+}
+```
+
+**User Joined** (server → client):
+```json
+{
+  "type": "user_joined",
+  "clientId": "abc123",
+  "connectedUsers": ["abc123", "def456", "ghi789"]
+}
+```
+
+**User Left** (server → client):
+```json
+{
+  "type": "user_left",
+  "clientId": "abc123",
+  "connectedUsers": ["def456", "ghi789"]
 }
 ```
 

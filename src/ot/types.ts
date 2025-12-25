@@ -69,6 +69,25 @@ export type VersionUpdateMessage = {
   message: string;
 };
 
+export type CursorUpdateMessage = {
+  type: 'cursor_update';
+  clientId: string;
+  position: number;
+  sessionId?: string;
+};
+
+export type UserJoinedMessage = {
+  type: 'user_joined';
+  clientId: string;
+  connectedUsers: string[]; // All currently connected client IDs
+};
+
+export type UserLeftMessage = {
+  type: 'user_left';
+  clientId: string;
+  connectedUsers: string[]; // All currently connected client IDs
+};
+
 export type WSMessage =
   | OperationMessage
   | SyncMessage
@@ -78,7 +97,10 @@ export type WSMessage =
   | NoteExpiredMessage
   | NoteDeletedMessage
   | EncryptionChangedMessage
-  | VersionUpdateMessage;
+  | VersionUpdateMessage
+  | CursorUpdateMessage
+  | UserJoinedMessage
+  | UserLeftMessage;
 
 // Client session information
 export interface ClientSession {

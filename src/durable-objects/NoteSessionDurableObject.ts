@@ -9,6 +9,9 @@ import type {
   OperationMessage,
   SyncMessage,
   AckMessage,
+  CursorUpdateMessage,
+  UserJoinedMessage,
+  UserLeftMessage,
 } from '../ot/types';
 
 export class NoteSessionDurableObject implements DurableObject {
@@ -145,6 +148,9 @@ export class NoteSessionDurableObject implements DurableObject {
 
     ws.send(JSON.stringify(syncMessage));
 
+    // Broadcast user joined to all other clients
+    this.broadcastUserJoined(clientId);
+
     // Set up message handler
     ws.addEventListener('message', async (event) => {
       try {
@@ -158,7 +164,11 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Set up close handler
     ws.addEventListener('close', () => {
+      const closingClientId = session.clientId;
       this.sessions.delete(ws);
+
+      // Broadcast user left to remaining clients
+      this.broadcastUserLeft(closingClientId);
 
       // Schedule hibernation if no clients connected
       if (this.sessions.size === 0) {
@@ -181,6 +191,8 @@ export class NoteSessionDurableObject implements DurableObject {
 
     if (message.type === 'operation') {
       await this.handleOperation(ws, message as OperationMessage);
+    } else if (message.type === 'cursor_update') {
+      this.handleCursorUpdate(ws, message as CursorUpdateMessage);
     }
     // Add more message type handlers as needed
   }
@@ -235,6 +247,37 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Schedule persistence (debounced)
     this.schedulePersistence(false);
+  }
+
+  handleCursorUpdate(ws: WebSocket, message: CursorUpdateMessage): void {
+    const session = this.sessions.get(ws);
+    if (!session || !session.isAuthenticated) {
+      return;
+    }
+
+    // Broadcast cursor position to all other clients
+    this.broadcastCursorUpdate(message.clientId, message.position);
+  }
+
+  broadcastCursorUpdate(clientId: string, position: number): void {
+    const message: CursorUpdateMessage = {
+      type: 'cursor_update',
+      clientId,
+      position,
+    };
+
+    const messageStr = JSON.stringify(message);
+
+    for (const [ws, session] of this.sessions) {
+      // Don't send back to sender
+      if (session.clientId !== clientId) {
+        try {
+          ws.send(messageStr);
+        } catch (error) {
+          console.error(`[DO ${this.noteId}] Error broadcasting cursor update to client ${session.clientId}:`, error);
+        }
+      }
+    }
   }
 
   broadcastOperation(operation: Operation, senderClientId: string): void {
@@ -407,6 +450,48 @@ export class NoteSessionDurableObject implements DurableObject {
         ws.send(JSON.stringify(message));
       } catch (error) {
         console.error(`[DO ${this.noteId}] Error broadcasting version update to session ${session.sessionId}:`, error);
+      }
+    }
+  }
+
+  broadcastUserJoined(joinedClientId: string): void {
+    const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
+
+    const message: UserJoinedMessage = {
+      type: 'user_joined',
+      clientId: joinedClientId,
+      connectedUsers,
+    };
+
+    const messageStr = JSON.stringify(message);
+
+    // Broadcast to all clients (including the one who just joined)
+    for (const [ws] of this.sessions) {
+      try {
+        ws.send(messageStr);
+      } catch (error) {
+        console.error(`[DO ${this.noteId}] Error broadcasting user joined:`, error);
+      }
+    }
+  }
+
+  broadcastUserLeft(leftClientId: string): void {
+    const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
+
+    const message: UserLeftMessage = {
+      type: 'user_left',
+      clientId: leftClientId,
+      connectedUsers,
+    };
+
+    const messageStr = JSON.stringify(message);
+
+    // Broadcast to remaining clients
+    for (const [ws] of this.sessions) {
+      try {
+        ws.send(messageStr);
+      } catch (error) {
+        console.error(`[DO ${this.noteId}] Error broadcasting user left:`, error);
       }
     }
   }
