@@ -2,8 +2,6 @@
 # Production Deployment Script
 # Backs up wrangler.toml, generates production config from .env, runs migrations, builds, and deploys
 
-set -e  # Exit on error
-
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,6 +11,10 @@ WHITE='\033[1;37m'
 NC='\033[0m' # No Color
 
 echo -e "\n${CYAN}=== Starting Production Deployment ===${NC}"
+
+# Retry configuration for Cloudflare API operations
+MAX_RETRIES=3
+RETRY_DELAY=2
 
 # Step 1: Check if .env file exists
 echo -e "\n${YELLOW}[1/8] Checking for .env file...${NC}"
@@ -88,6 +90,33 @@ else
     exit 1
 fi
 
+# Function to remove backup file
+remove_backup_file() {
+    if [ -f "$BACKUP_FILE" ]; then
+        if rm "$BACKUP_FILE"; then
+            echo -e "  ${GREEN}Backup file cleaned up${NC}"
+        else
+            echo -e "  ${YELLOW}WARNING: Failed to cleanup backup file: $BACKUP_FILE${NC}"
+        fi
+    fi
+}
+
+# Function to restore backup
+restore_backup() {
+    local reason="$1"
+
+    if [ -n "$reason" ]; then
+        echo -e "  ${RED}$reason${NC}"
+    fi
+    echo -e "  ${YELLOW}Restoring backup wrangler.toml...${NC}"
+    if cp "$BACKUP_FILE" wrangler.toml; then
+        echo -e "  ${GREEN}Original wrangler.toml restored${NC}"
+    else
+        echo -e "  ${RED}ERROR: Failed to restore backup. Manual restore required from: $BACKUP_FILE${NC}"
+    fi
+    remove_backup_file
+}
+
 # Step 4: Generate production wrangler.toml
 echo -e "\n${YELLOW}[4/8] Generating production wrangler.toml...${NC}"
 
@@ -140,22 +169,39 @@ echo -e "    ${CYAN}Worker: $WORKER_NAME${NC}"
 echo -e "    ${CYAN}Database: $DB_NAME ($DB_ID)${NC}"
 echo -e "    ${CYAN}DO Script: $DO_SCRIPT_NAME${NC}"
 
-# Step 5: Run production database migrations
+# Step 5: Run production database migrations with retry
 echo -e "\n${YELLOW}[5/8] Running production database migrations...${NC}"
 
-if npm run db:migrate:prod 2>&1 | tee /tmp/migrate_prod_output.txt; then
-    if grep -q "No migrations to apply" /tmp/migrate_prod_output.txt; then
-        echo -e "  ${CYAN}No migrations to apply (database is up to date)${NC}"
-    else
-        echo -e "  ${GREEN}Migrations completed successfully${NC}"
+MIGRATION_SUCCESS=false
+
+for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
+    if [ $attempt -gt 1 ]; then
+        echo -e "  ${CYAN}Retry attempt $attempt of $MAX_RETRIES...${NC}"
+        sleep $RETRY_DELAY
     fi
-else
-    echo -e "  ${YELLOW}WARNING: Migration command failed${NC}"
+
+    if npm run db:migrate:prod 2>&1 | tee /tmp/migrate_prod_output.txt; then
+        if grep -q "No migrations to apply" /tmp/migrate_prod_output.txt; then
+            echo -e "  ${CYAN}No migrations to apply (database is up to date)${NC}"
+        else
+            echo -e "  ${GREEN}Migrations completed successfully${NC}"
+        fi
+        MIGRATION_SUCCESS=true
+        break
+    else
+        if [ $attempt -lt $MAX_RETRIES ]; then
+            echo -e "  ${YELLOW}Migration attempt $attempt failed${NC}"
+        fi
+    fi
+done
+
+rm -f /tmp/migrate_prod_output.txt
+
+if [ "$MIGRATION_SUCCESS" = false ]; then
+    echo -e "  ${YELLOW}WARNING: Migration failed after $MAX_RETRIES attempts${NC}"
     echo -e "  ${YELLOW}You may need to run migrations manually${NC}"
     echo -e "  ${CYAN}Continuing with build...${NC}"
 fi
-
-rm -f /tmp/migrate_prod_output.txt
 
 # Step 6: Build the project
 echo -e "\n${YELLOW}[6/8] Building project...${NC}"
@@ -164,21 +210,39 @@ if npm run build; then
     echo -e "  ${GREEN}Build completed successfully${NC}"
 else
     echo -e "  ${RED}Build failed${NC}"
-    echo -e "  ${YELLOW}Restoring backup wrangler.toml...${NC}"
-    cp "$BACKUP_FILE" wrangler.toml
+    restore_backup "Build failed"
     echo -e "\n${RED}=== Deployment Failed ===${NC}"
     exit 1
 fi
 
-# Step 7: Deploy to Cloudflare
+# Step 7: Deploy to Cloudflare with retry
 echo -e "\n${YELLOW}[7/8] Deploying to Cloudflare...${NC}"
 
-if npm run deploy; then
-    echo -e "  ${GREEN}Deployment completed successfully${NC}"
-else
-    echo -e "  ${RED}Deployment failed${NC}"
-    echo -e "  ${YELLOW}Restoring backup wrangler.toml...${NC}"
-    cp "$BACKUP_FILE" wrangler.toml
+DEPLOYMENT_SUCCESS=false
+
+for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
+    if [ $attempt -gt 1 ]; then
+        echo -e "  ${CYAN}Retry attempt $attempt of $MAX_RETRIES...${NC}"
+        sleep $RETRY_DELAY
+    fi
+
+    if npm run deploy 2>&1 | tee /tmp/deploy_output.txt; then
+        echo -e "  ${GREEN}Deployment completed successfully${NC}"
+        cat /tmp/deploy_output.txt
+        DEPLOYMENT_SUCCESS=true
+        break
+    else
+        if [ $attempt -lt $MAX_RETRIES ]; then
+            echo -e "  ${YELLOW}Deployment attempt $attempt failed${NC}"
+        fi
+    fi
+done
+
+rm -f /tmp/deploy_output.txt
+
+if [ "$DEPLOYMENT_SUCCESS" = false ]; then
+    echo -e "  ${RED}Deployment failed after $MAX_RETRIES attempts${NC}"
+    restore_backup "Deployment failed"
     echo -e "\n${RED}=== Deployment Failed ===${NC}"
     exit 1
 fi
@@ -188,17 +252,12 @@ echo -e "\n${YELLOW}[8/8] Restoring original wrangler.toml...${NC}"
 
 if cp "$BACKUP_FILE" wrangler.toml; then
     echo -e "  ${GREEN}Original wrangler.toml restored${NC}"
-
-    # Remove the backup file
-    if rm "$BACKUP_FILE"; then
-        echo -e "  ${GREEN}Backup file removed${NC}"
-    else
-        echo -e "  ${YELLOW}WARNING: Failed to remove backup file${NC}"
-    fi
 else
     echo -e "  ${YELLOW}WARNING: Failed to restore original wrangler.toml${NC}"
     echo -e "  ${YELLOW}You can manually restore from: $BACKUP_FILE${NC}"
 fi
+
+remove_backup_file
 
 echo -e "\n${GREEN}=== Production Deployment Complete ===${NC}"
 echo -e "\n${CYAN}Deployment Summary:${NC}"

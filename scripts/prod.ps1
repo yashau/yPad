@@ -3,6 +3,10 @@
 
 Write-Host "`n=== Starting Production Deployment ===" -ForegroundColor Cyan
 
+# Retry configuration for Cloudflare API operations
+$maxRetries = 3
+$retryDelay = 2
+
 # Step 1: Check if .env file exists
 Write-Host "`n[1/8] Checking for .env file..." -ForegroundColor Yellow
 
@@ -81,6 +85,37 @@ catch {
     exit 1
 }
 
+# Function to remove backup file
+function Remove-BackupFile {
+    try {
+        if (Test-Path $backupFile) {
+            Remove-Item $backupFile -Force -ErrorAction Stop
+            Write-Host "  Backup file cleaned up" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Host "  WARNING: Failed to cleanup backup file: $backupFile" -ForegroundColor Yellow
+    }
+}
+
+# Function to restore backup
+function Restore-Backup {
+    param([string]$reason = "")
+
+    if ($reason) {
+        Write-Host "  $reason" -ForegroundColor Red
+    }
+    Write-Host "  Restoring backup wrangler.toml..." -ForegroundColor Yellow
+    try {
+        Copy-Item $backupFile "wrangler.toml" -Force -ErrorAction Stop
+        Write-Host "  Original wrangler.toml restored" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "  ERROR: Failed to restore backup. Manual restore required from: $backupFile" -ForegroundColor Red
+    }
+    Remove-BackupFile
+}
+
 # Step 4: Generate production wrangler.toml
 Write-Host "`n[4/8] Generating production wrangler.toml..." -ForegroundColor Yellow
 
@@ -134,35 +169,51 @@ try {
 }
 catch {
     Write-Host "  ERROR: Failed to write wrangler.toml: $_" -ForegroundColor Red
-    Write-Host "  Restoring backup..." -ForegroundColor Yellow
-    Copy-Item $backupFile "wrangler.toml" -Force
+    Restore-Backup
     Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
     exit 1
 }
 
-# Step 5: Run production database migrations
+# Step 5: Run production database migrations with retry
 Write-Host "`n[5/8] Running production database migrations..." -ForegroundColor Yellow
 
-try {
-    $migrateOutput = & npm run db:migrate:prod 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  WARNING: Migration command failed with exit code $LASTEXITCODE" -ForegroundColor Yellow
-        Write-Host $migrateOutput -ForegroundColor Yellow
-        Write-Host "  You may need to run migrations manually" -ForegroundColor Yellow
-        Write-Host "  Continuing with build..." -ForegroundColor Cyan
+$migrationSuccess = $false
+
+for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+    if ($attempt -gt 1) {
+        Write-Host "  Retry attempt $attempt of $maxRetries..." -ForegroundColor Cyan
+        Start-Sleep -Seconds $retryDelay
     }
-    else {
-        # Check if there were no migrations or if migrations applied
-        if ($migrateOutput -match "No migrations to apply") {
-            Write-Host "  No migrations to apply (database is up to date)" -ForegroundColor Cyan
+
+    try {
+        $migrateOutput = & npm run db:migrate:prod 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            # Check if there were no migrations or if migrations applied
+            if ($migrateOutput -match "No migrations to apply") {
+                Write-Host "  No migrations to apply (database is up to date)" -ForegroundColor Cyan
+            }
+            else {
+                Write-Host "  Migrations completed successfully" -ForegroundColor Green
+            }
+            $migrationSuccess = $true
+            break
         }
         else {
-            Write-Host "  Migrations completed successfully" -ForegroundColor Green
+            if ($attempt -lt $maxRetries) {
+                Write-Host "  Migration attempt $attempt failed (exit code $LASTEXITCODE)" -ForegroundColor Yellow
+            }
+        }
+    }
+    catch {
+        if ($attempt -lt $maxRetries) {
+            Write-Host "  Migration attempt $attempt failed: $_" -ForegroundColor Yellow
         }
     }
 }
-catch {
-    Write-Host "  WARNING: Migration check failed: $_" -ForegroundColor Yellow
+
+if (-not $migrationSuccess) {
+    Write-Host "  WARNING: Migration failed after $maxRetries attempts" -ForegroundColor Yellow
+    Write-Host "  You may need to run migrations manually" -ForegroundColor Yellow
     Write-Host "  Continuing with build..." -ForegroundColor Cyan
 }
 
@@ -174,8 +225,7 @@ try {
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
         Write-Host $buildOutput -ForegroundColor Red
-        Write-Host "  Restoring backup wrangler.toml..." -ForegroundColor Yellow
-        Copy-Item $backupFile "wrangler.toml" -Force
+        Restore-Backup "Build failed"
         Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
         exit 1
     }
@@ -183,32 +233,47 @@ try {
 }
 catch {
     Write-Host "  Build failed: $_" -ForegroundColor Red
-    Write-Host "  Restoring backup wrangler.toml..." -ForegroundColor Yellow
-    Copy-Item $backupFile "wrangler.toml" -Force
+    Restore-Backup
     Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
     exit 1
 }
 
-# Step 7: Deploy to Cloudflare
+# Step 7: Deploy to Cloudflare with retry
 Write-Host "`n[7/8] Deploying to Cloudflare..." -ForegroundColor Yellow
 
-try {
-    $deployOutput = & npm run deploy 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  Deployment failed with exit code $LASTEXITCODE" -ForegroundColor Red
-        Write-Host $deployOutput -ForegroundColor Red
-        Write-Host "  Restoring backup wrangler.toml..." -ForegroundColor Yellow
-        Copy-Item $backupFile "wrangler.toml" -Force
-        Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
-        exit 1
+$deploymentSuccess = $false
+
+for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+    if ($attempt -gt 1) {
+        Write-Host "  Retry attempt $attempt of $maxRetries..." -ForegroundColor Cyan
+        Start-Sleep -Seconds $retryDelay
     }
-    Write-Host "  Deployment completed successfully" -ForegroundColor Green
-    Write-Host $deployOutput -ForegroundColor Cyan
+
+    try {
+        $deployOutput = & npm run deploy 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "  Deployment completed successfully" -ForegroundColor Green
+            Write-Host $deployOutput -ForegroundColor Cyan
+            $deploymentSuccess = $true
+            break
+        }
+        else {
+            if ($attempt -lt $maxRetries) {
+                Write-Host "  Deployment attempt $attempt failed (exit code $LASTEXITCODE)" -ForegroundColor Yellow
+            }
+        }
+    }
+    catch {
+        if ($attempt -lt $maxRetries) {
+            Write-Host "  Deployment attempt $attempt failed: $_" -ForegroundColor Yellow
+        }
+    }
 }
-catch {
-    Write-Host "  Deployment failed: $_" -ForegroundColor Red
-    Write-Host "  Restoring backup wrangler.toml..." -ForegroundColor Yellow
-    Copy-Item $backupFile "wrangler.toml" -Force
+
+if (-not $deploymentSuccess) {
+    Write-Host "  Deployment failed after $maxRetries attempts" -ForegroundColor Red
+    Write-Host $deployOutput -ForegroundColor Red
+    Restore-Backup "Deployment failed"
     Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
     exit 1
 }
@@ -219,15 +284,13 @@ Write-Host "`n[8/8] Restoring original wrangler.toml..." -ForegroundColor Yellow
 try {
     Copy-Item $backupFile "wrangler.toml" -Force -ErrorAction Stop
     Write-Host "  Original wrangler.toml restored" -ForegroundColor Green
-
-    # Remove the backup file
-    Remove-Item $backupFile -Force -ErrorAction Stop
-    Write-Host "  Backup file removed" -ForegroundColor Green
 }
 catch {
-    Write-Host "  WARNING: Failed to restore original wrangler.toml or cleanup backup" -ForegroundColor Yellow
+    Write-Host "  WARNING: Failed to restore original wrangler.toml" -ForegroundColor Yellow
     Write-Host "  You can manually restore from: $backupFile" -ForegroundColor Yellow
 }
+
+Remove-BackupFile
 
 Write-Host "`n=== Production Deployment Complete ===" -ForegroundColor Green
 Write-Host "`nDeployment Summary:" -ForegroundColor Cyan
