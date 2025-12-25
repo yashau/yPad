@@ -32,6 +32,7 @@ export type SyncMessage = {
   content: string;
   version: number;
   operations: Operation[];
+  clientId: string; // Server-assigned client ID for this connection
 };
 
 export type AckMessage = {

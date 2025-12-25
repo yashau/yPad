@@ -138,12 +138,13 @@ export class NoteSessionDurableObject implements DurableObject {
 
     this.sessions.set(ws, session);
 
-    // Send initial sync message
+    // Send initial sync message with server-assigned clientId
     const syncMessage: SyncMessage = {
       type: 'sync',
       content: this.currentContent,
       version: this.operationVersion,
       operations: this.operationHistory.slice(-50), // Last 50 operations
+      clientId, // Send the server-assigned clientId to the client
     };
 
     ws.send(JSON.stringify(syncMessage));
@@ -256,7 +257,8 @@ export class NoteSessionDurableObject implements DurableObject {
     }
 
     // Broadcast cursor position to all other clients
-    this.broadcastCursorUpdate(message.clientId, message.position);
+    // Use session.clientId to ensure we're broadcasting the authenticated client's ID
+    this.broadcastCursorUpdate(session.clientId, message.position);
   }
 
   broadcastCursorUpdate(clientId: string, position: number): void {

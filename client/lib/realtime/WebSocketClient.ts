@@ -9,7 +9,7 @@ export interface WebSocketClientOptions {
   onOperation?: (operation: Operation) => void;
   onClose?: () => void;
   onError?: (error: Error) => void;
-  onSync?: (content: string, version: number, operations: Operation[]) => void;
+  onSync?: (content: string, version: number, operations: Operation[], clientId: string) => void;
   onAck?: (version: number) => void;
   onNoteDeleted?: () => void;
   onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
@@ -165,7 +165,7 @@ export class WebSocketClient {
 
   private handleSync(message: SyncMessage): void {
     if (this.options.onSync) {
-      this.options.onSync(message.content, message.version, message.operations);
+      this.options.onSync(message.content, message.version, message.operations, message.clientId);
     }
   }
 

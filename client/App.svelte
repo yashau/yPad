@@ -512,8 +512,7 @@
       sessionStorage.setItem('paste-session-id', sessionId);
     }
 
-    // Initialize client ID for real-time collaboration
-    clientId = crypto.randomUUID();
+    // Client ID will be assigned by server during WebSocket sync
 
     const path = window.location.pathname;
     if (path !== '/' && path.length > 1) {
@@ -690,7 +689,10 @@
           console.error('[App] WebSocket error:', error);
           connectionStatus = 'disconnected';
         },
-        onSync: (syncContent, version, operations) => {
+        onSync: (syncContent, version, operations, serverClientId) => {
+          // Update to use server-assigned clientId
+          clientId = serverClientId;
+
           // For encrypted notes, ignore sync content (no real-time OT)
           if (isEncrypted) {
             currentVersion = version;
@@ -877,13 +879,20 @@
       cursorPos = transformCursorPosition(cursorPos, operation);
 
       // Transform all remote cursor positions based on the operation
+      // Skip the cursor of the user who created this operation - their cursor will be updated via cursor updates
       const updatedRemoteCursors = new Map<string, RemoteCursorData>();
       remoteCursors.forEach((cursorData, remoteClientId) => {
-        const transformedPosition = transformCursorPosition(cursorData.position, operation);
-        updatedRemoteCursors.set(remoteClientId, {
-          ...cursorData,
-          position: transformedPosition
-        });
+        if (remoteClientId === operation.clientId) {
+          // Don't transform the operation author's cursor - keep it as is
+          updatedRemoteCursors.set(remoteClientId, cursorData);
+        } else {
+          // Transform other users' cursors based on this operation
+          const transformedPosition = transformCursorPosition(cursorData.position, operation);
+          updatedRemoteCursors.set(remoteClientId, {
+            ...cursorData,
+            position: transformedPosition
+          });
+        }
       });
       remoteCursors = updatedRemoteCursors;
 
