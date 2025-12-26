@@ -62,6 +62,7 @@
   // WebSocket real-time collaboration
   let wsClient = $state<WebSocketClient | null>(null);
   let isRealtimeEnabled = $state(false);
+  let lastSentCursorPos = $state(0); // Track cursor position based on operations sent
   let connectionStatus = $state<'connected' | 'disconnected' | 'connecting'>('disconnected');
   let clientId = $state('');
   let lastLocalContent = $state('');
@@ -115,20 +116,15 @@
     return clientColorMap.get(clientId)!;
   }
 
-  // Send cursor update to other clients (throttled)
+  // Send cursor update to other clients in real-time
   function sendCursorUpdate() {
     if (!wsClient || !isRealtimeEnabled || isEncrypted) {
       return;
     }
 
-    if (cursorUpdateThrottle) {
-      clearTimeout(cursorUpdateThrottle);
-    }
-
-    cursorUpdateThrottle = setTimeout(() => {
-      const cursorPos = getCurrentCursorPosition();
-      wsClient?.sendCursorUpdate(cursorPos, clientId);
-    }, 100); // Throttle to every 100ms
+    const cursorPos = getCurrentCursorPosition();
+    wsClient.sendCursorUpdate(cursorPos, clientId);
+    lastSentCursorPos = cursorPos;
   }
 
   // Handle contenteditable input
@@ -147,18 +143,20 @@
       if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
         const oldContent = lastLocalContent;
         const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
+
         operations.forEach(op => {
           wsClient!.sendOperation(op, currentVersion);
           // Optimistically increment version for next operation
           currentVersion++;
         });
+
+        // Send cursor update after browser updates selection
+        // Use setTimeout to ensure DOM selection is updated after the input event completes
+        setTimeout(() => sendCursorUpdate(), 0);
       }
 
       content = newContent;
       lastLocalContent = newContent;
-
-      // Send cursor update
-      sendCursorUpdate();
     }
   }
 
@@ -177,20 +175,21 @@
       // Send operation via WebSocket if connected (but not for encrypted notes)
       if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
         const oldContent = lastLocalContent;
-        // Generate operations - they don't have versions yet, server will assign them
         const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
+
         operations.forEach(op => {
           wsClient!.sendOperation(op, currentVersion);
           // Optimistically increment version for next operation
           currentVersion++;
         });
+
+        // Send cursor update after browser updates selection
+        // Use setTimeout to ensure DOM selection is updated after the input event completes
+        setTimeout(() => sendCursorUpdate(), 0);
       }
 
       content = newContent;
       lastLocalContent = newContent;
-
-      // Send cursor update
-      sendCursorUpdate();
     }
   }
 
@@ -492,6 +491,7 @@
     if (!editorRef && !textareaScrollRef) return;
 
     const handleSelectionChange = () => {
+      // Send cursor update in real-time for all selection changes
       sendCursorUpdate();
     };
 
@@ -703,6 +703,9 @@
           // Update to the server's version
           currentVersion = version;
 
+          // Initialize cursor position to end of synced content
+          lastSentCursorPos = syncContent.length;
+
           // If we have pending local content (user typed during sync), preserve it
           if (pendingLocalContent !== null && pendingLocalContent !== syncContent) {
             // Generate operations from sync content to pending content
@@ -872,19 +875,44 @@
     isUpdating = true;
 
     try {
-      // Save current cursor position
+      // Transform our tracked cursor position based on remote operation
+      lastSentCursorPos = transformCursorPosition(lastSentCursorPos, operation);
+
+      // Save current cursor position for DOM restoration
       let cursorPos = getCurrentCursorPosition();
 
       // Transform cursor based on operation
       cursorPos = transformCursorPosition(cursorPos, operation);
 
       // Transform all remote cursor positions based on the operation
-      // Skip the cursor of the user who created this operation - their cursor will be updated via cursor updates
       const updatedRemoteCursors = new Map<string, RemoteCursorData>();
       remoteCursors.forEach((cursorData, remoteClientId) => {
         if (remoteClientId === operation.clientId) {
-          // Don't transform the operation author's cursor - keep it as is
-          updatedRemoteCursors.set(remoteClientId, cursorData);
+          // For the operation author, update their cursor to be right after the operation
+          // This gives immediate visual feedback before the cursor update message arrives
+          let newPosition = cursorData.position;
+
+          if (operation.type === 'insert') {
+            // If they inserted at or before their cursor, move cursor forward by insert length
+            if (operation.position <= cursorData.position) {
+              newPosition = cursorData.position + operation.text.length;
+            }
+          } else if (operation.type === 'delete') {
+            // If they deleted at or before their cursor, move cursor back
+            const deleteEnd = operation.position + operation.length;
+            if (deleteEnd <= cursorData.position) {
+              // Delete was entirely before cursor - move cursor back by delete length
+              newPosition = cursorData.position - operation.length;
+            } else if (operation.position < cursorData.position) {
+              // Delete overlapped cursor position - move cursor to delete start
+              newPosition = operation.position;
+            }
+          }
+
+          updatedRemoteCursors.set(remoteClientId, {
+            ...cursorData,
+            position: newPosition
+          });
         } else {
           // Transform other users' cursors based on this operation
           const transformedPosition = transformCursorPosition(cursorData.position, operation);

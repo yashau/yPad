@@ -1,6 +1,6 @@
 // WebSocket client for real-time collaboration
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, UserJoinedMessage, UserLeftMessage } from '../../../src/ot/types';
+import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage } from '../../../src/ot/types';
 
 export interface WebSocketClientOptions {
   password?: string;
@@ -20,6 +20,17 @@ export interface WebSocketClientOptions {
   autoReconnect?: boolean;
 }
 
+interface QueuedInboundMessage {
+  message: WSMessage;
+  timestamp: number;
+}
+
+interface QueuedOutboundOperation {
+  operation: Operation;
+  baseVersion: number;
+  timestamp: number;
+}
+
 export class WebSocketClient {
   private ws: WebSocket | null = null;
   private noteId: string;
@@ -28,7 +39,25 @@ export class WebSocketClient {
   private maxReconnectAttempts = 5;
   private reconnectTimeout: number | null = null;
   private isIntentionallyClosed = false;
-  private pendingOperations: Operation[] = [];
+
+  // Inbound message queue for sequential processing
+  private inboundQueue: QueuedInboundMessage[] = [];
+  private isProcessingInbound = false;
+
+  // Outbound operation queue for sequential sending
+  private outboundQueue: QueuedOutboundOperation[] = [];
+  private isProcessingOutbound = false;
+  private waitingForAck = false;
+
+  // Version-based ordering for operations (OT transform)
+  private nextExpectedVersion: number = 1;
+
+  // Global sequence ordering for ALL broadcast messages (operations, cursors, presence)
+  private nextExpectedSeq: number = 1;
+  private pendingMessages: Map<number, WSMessage> = new Map();
+  private maxPendingMessages = 20; // Max buffered out-of-order messages
+  private gapTimer: number | null = null;
+  private gapTimeout = 5000; // 5 seconds
 
   constructor(noteId: string, options: WebSocketClientOptions) {
     this.noteId = noteId;
@@ -54,8 +83,8 @@ export class WebSocketClient {
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
-        // Clear pending operations - they're stale now, sync will provide current state
-        this.pendingOperations = [];
+        // Clear pending messages - they're stale now, sync will provide current state
+        this.pendingMessages.clear();
         if (this.options.onOpen) {
           this.options.onOpen();
         }
@@ -64,7 +93,7 @@ export class WebSocketClient {
       this.ws.onmessage = (event) => {
         try {
           const message: WSMessage = JSON.parse(event.data);
-          this.handleMessage(message);
+          this.enqueueInboundMessage(message);
         } catch (error) {
           console.error('[WebSocket] Error parsing message:', error);
         }
@@ -97,19 +126,80 @@ export class WebSocketClient {
     }
   }
 
-  private handleMessage(message: WSMessage): void {
+  /**
+   * Enqueue an inbound message for sequential processing
+   */
+  private enqueueInboundMessage(message: WSMessage): void {
+    this.inboundQueue.push({
+      message,
+      timestamp: Date.now(),
+    });
+
+    // Start processing if not already processing
+    if (!this.isProcessingInbound) {
+      this.processInboundQueue();
+    }
+  }
+
+  /**
+   * Process inbound messages sequentially
+   */
+  private async processInboundQueue(): Promise<void> {
+    // Prevent concurrent processing
+    if (this.isProcessingInbound) {
+      return;
+    }
+
+    this.isProcessingInbound = true;
+
+    try {
+      while (this.inboundQueue.length > 0) {
+        const queuedMessage = this.inboundQueue.shift();
+        if (!queuedMessage) {
+          break;
+        }
+
+        try {
+          await this.handleMessage(queuedMessage.message);
+        } catch (error) {
+          console.error('[WebSocket] Error processing queued message:', error);
+          // Continue processing other messages even if one fails
+        }
+      }
+    } finally {
+      this.isProcessingInbound = false;
+    }
+  }
+
+  private async handleMessage(message: WSMessage): Promise<void> {
+    // Process sync immediately - it sets up sequence tracking, so it can't be sequenced
+    if (message.type === 'sync') {
+      await this.handleSync(message as SyncMessage);
+      return;
+    }
+
+    // Process ACK immediately - even though it has seqNum, it's not a broadcast message
+    if (message.type === 'ack') {
+      await this.handleAck(message as AckMessage);
+      return;
+    }
+
+    // Process cursor ACK immediately - it tells us what sequence number was used
+    if (message.type === 'cursor_ack') {
+      await this.handleCursorAck(message as CursorAckMessage);
+      return;
+    }
+
+    // Check if this message has a global sequence number (operations, cursor updates, user presence)
+    const seqNum = (message as any).seqNum;
+
+    if (seqNum !== undefined) {
+      // This message has a sequence number - enforce ordering
+      return this.handleSequencedMessage(message, seqNum);
+    }
+
+    // Messages without sequence numbers (error, etc.) process immediately
     switch (message.type) {
-      case 'sync':
-        this.handleSync(message as SyncMessage);
-        break;
-
-      case 'operation':
-        this.handleOperation(message as OperationMessage);
-        break;
-
-      case 'ack':
-        this.handleAck(message as AckMessage);
-        break;
 
       case 'error':
         console.error('[WebSocket] Server error:', message.message);
@@ -146,56 +236,262 @@ export class WebSocketClient {
         }
         break;
 
-      case 'cursor_update':
-        this.handleCursorUpdate(message as CursorUpdateMessage);
-        break;
-
-      case 'user_joined':
-        this.handleUserJoined(message as UserJoinedMessage);
-        break;
-
-      case 'user_left':
-        this.handleUserLeft(message as UserLeftMessage);
-        break;
-
       default:
         console.warn('[WebSocket] Unknown message type:', message);
     }
   }
 
-  private handleSync(message: SyncMessage): void {
+  /**
+   * Handle messages with global sequence numbers (operations, cursor updates, presence)
+   * Ensures these messages are processed in the exact order the server sent them
+   */
+  private async handleSequencedMessage(message: WSMessage, seqNum: number): Promise<void> {
+    // Check if this is the next expected sequence
+    if (seqNum === this.nextExpectedSeq) {
+      // Process this message immediately
+      await this.processSequencedMessage(message);
+      this.nextExpectedSeq++;
+
+      // Check if we have pending messages that can now be processed
+      await this.applyPendingMessages();
+
+      // Clear gap detection timer if no more pending messages
+      if (this.pendingMessages.size === 0 && this.gapTimer !== null) {
+        clearTimeout(this.gapTimer);
+        this.gapTimer = null;
+      }
+    } else if (seqNum > this.nextExpectedSeq) {
+      // Future message - buffer it
+      // Check buffer size limit
+      if (this.pendingMessages.size >= this.maxPendingMessages) {
+        console.error(`[WebSocket] Pending messages buffer full (${this.maxPendingMessages}), requesting resync`);
+        this.requestResync();
+        return;
+      }
+
+      this.pendingMessages.set(seqNum, message);
+
+      // Start gap detection timer if not already running
+      if (this.gapTimer === null) {
+        this.startGapTimer();
+      }
+    }
+    // Ignore old messages (seqNum < nextExpectedSeq) - already processed
+  }
+
+  /**
+   * Process a sequenced message (operation, cursor update, or presence event)
+   */
+  private async processSequencedMessage(message: WSMessage): Promise<void> {
+    switch (message.type) {
+      case 'operation':
+        await this.handleOperation(message as OperationMessage);
+        break;
+
+      case 'cursor_update':
+        await this.handleCursorUpdate(message as CursorUpdateMessage);
+        break;
+
+      case 'user_joined':
+        await this.handleUserJoined(message as UserJoinedMessage);
+        break;
+
+      case 'user_left':
+        await this.handleUserLeft(message as UserLeftMessage);
+        break;
+
+      default:
+        console.warn('[WebSocket] Unknown sequenced message type:', message);
+    }
+  }
+
+  /**
+   * Apply any pending messages that are now in sequence
+   */
+  private async applyPendingMessages(): Promise<void> {
+    while (this.pendingMessages.has(this.nextExpectedSeq)) {
+      const message = this.pendingMessages.get(this.nextExpectedSeq);
+      this.pendingMessages.delete(this.nextExpectedSeq);
+
+      if (message) {
+        await this.processSequencedMessage(message);
+      }
+
+      this.nextExpectedSeq++;
+    }
+  }
+
+  /**
+   * Start gap detection timer
+   */
+  private startGapTimer(): void {
+    this.gapTimer = setTimeout(() => {
+      if (this.pendingMessages.size > 0) {
+        const pendingSeqs = Array.from(this.pendingMessages.keys()).sort((a, b) => a - b);
+        console.error(
+          `[WebSocket] Gap detection timeout! Expected seq ${this.nextExpectedSeq}, ` +
+          `have pending: [${pendingSeqs.join(', ')}]`
+        );
+        this.requestResync();
+      }
+    }, this.gapTimeout) as unknown as number;
+  }
+
+  private async handleSync(message: SyncMessage): Promise<void> {
+    // Initialize expected version to the synced version + 1 (for OT transforms)
+    this.nextExpectedVersion = message.version + 1;
+
+    // Initialize global sequence tracking from sync message
+    // Next expected message will be current + 1
+    this.nextExpectedSeq = message.seqNum + 1;
+    this.pendingMessages.clear();
+
+    // Clear gap detection timer
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+      this.gapTimer = null;
+    }
+
     if (this.options.onSync) {
       this.options.onSync(message.content, message.version, message.operations, message.clientId);
     }
   }
 
-  private handleOperation(message: OperationMessage): void {
+  private async handleOperation(message: OperationMessage): Promise<void> {
+    // Apply operation immediately - sequencing is handled by global seqNum
+    // We still track version for OT transform purposes
+    const opVersion = message.operation.version;
+
+    if (opVersion >= this.nextExpectedVersion) {
+      // Update our expected version
+      this.nextExpectedVersion = opVersion + 1;
+    }
+
     if (this.options.onOperation) {
       this.options.onOperation(message.operation);
     }
   }
 
-  private handleAck(message: AckMessage): void {
-    if (this.options.onAck) {
-      this.options.onAck(message.version);
+  /**
+   * Request a full resync from the server
+   */
+  private requestResync(): void {
+    console.warn('[WebSocket] Requesting full resync due to gap');
+
+    // Clear gap detection timer
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+      this.gapTimer = null;
+    }
+
+    // Clear pending messages
+    this.pendingMessages.clear();
+
+    // Close and reconnect to trigger sync
+    if (this.ws) {
+      this.ws.close();
     }
   }
 
-  private handleCursorUpdate(message: CursorUpdateMessage): void {
+  private async handleAck(message: AckMessage): Promise<void> {
+    if (this.options.onAck) {
+      this.options.onAck(message.version);
+    }
+
+    // If ACK includes a sequence number, it means the server broadcast an event
+    // We need to advance our expected sequence to stay in sync
+    if (message.seqNum !== undefined) {
+      // The server has broadcast something with this seqNum
+      // Since we're the sender, we didn't receive the broadcast
+      // But we need to acknowledge that this seqNum was used
+      if (message.seqNum >= this.nextExpectedSeq) {
+        this.nextExpectedSeq = message.seqNum + 1;
+      }
+    }
+
+    // ACK received, we can send the next operation
+    this.waitingForAck = false;
+
+    // Continue processing outbound queue
+    if (this.outboundQueue.length > 0 && !this.isProcessingOutbound) {
+      this.processOutboundQueue();
+    }
+  }
+
+  private async handleCursorAck(message: CursorAckMessage): Promise<void> {
+    // The server has broadcast a cursor update with this seqNum
+    // Since we're the sender, we didn't receive the broadcast
+    // But we need to acknowledge that this seqNum was used
+    if (message.seqNum >= this.nextExpectedSeq) {
+      this.nextExpectedSeq = message.seqNum + 1;
+    }
+  }
+
+  private async handleCursorUpdate(message: CursorUpdateMessage): Promise<void> {
     if (this.options.onCursorUpdate) {
       this.options.onCursorUpdate(message.clientId, message.position);
     }
   }
 
-  private handleUserJoined(message: UserJoinedMessage): void {
+  private async handleUserJoined(message: UserJoinedMessage): Promise<void> {
     if (this.options.onUserJoined) {
       this.options.onUserJoined(message.clientId, message.connectedUsers);
     }
   }
 
-  private handleUserLeft(message: UserLeftMessage): void {
+  private async handleUserLeft(message: UserLeftMessage): Promise<void> {
     if (this.options.onUserLeft) {
       this.options.onUserLeft(message.clientId, message.connectedUsers);
+    }
+  }
+
+  /**
+   * Process outbound operations sequentially
+   * Only sends next operation after receiving ACK for previous one
+   */
+  private processOutboundQueue(): void {
+    // Prevent concurrent processing
+    if (this.isProcessingOutbound || this.waitingForAck) {
+      return;
+    }
+
+    // Check if we have operations to send
+    if (this.outboundQueue.length === 0) {
+      return;
+    }
+
+    // Check connection
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WebSocket] Cannot process outbound queue - not connected');
+      return;
+    }
+
+    this.isProcessingOutbound = true;
+
+    try {
+      const queuedOp = this.outboundQueue.shift();
+      if (!queuedOp) {
+        return;
+      }
+
+      const message: OperationMessage = {
+        type: 'operation',
+        operation: queuedOp.operation,
+        baseVersion: queuedOp.baseVersion,
+        clientId: queuedOp.operation.clientId,
+        sessionId: this.options.sessionId,
+      };
+
+      this.ws.send(JSON.stringify(message));
+
+      // Mark that we're waiting for ACK before sending next operation
+      this.waitingForAck = true;
+    } catch (error) {
+      console.error('[WebSocket] Error processing outbound operation:', error);
+      // Reset state so we can try again
+      this.waitingForAck = false;
+    } finally {
+      this.isProcessingOutbound = false;
     }
   }
 
@@ -206,15 +502,17 @@ export class WebSocketClient {
       return;
     }
 
-    const message: OperationMessage = {
-      type: 'operation',
+    // Enqueue operation for sequential sending
+    this.outboundQueue.push({
       operation,
       baseVersion,
-      clientId: operation.clientId,
-      sessionId: this.options.sessionId,
-    };
+      timestamp: Date.now(),
+    });
 
-    this.ws.send(JSON.stringify(message));
+    // Start processing if not already processing
+    if (!this.isProcessingOutbound && !this.waitingForAck) {
+      this.processOutboundQueue();
+    }
   }
 
   sendCursorUpdate(position: number, clientId: string): void {
@@ -255,6 +553,12 @@ export class WebSocketClient {
     if (this.reconnectTimeout !== null) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
+    }
+
+    // Clear gap detection timer
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+      this.gapTimer = null;
     }
 
     if (this.ws) {

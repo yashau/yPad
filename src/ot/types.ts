@@ -25,6 +25,7 @@ export type OperationMessage = {
   baseVersion: number;
   clientId: string;
   sessionId: string;
+  seqNum?: number; // Server-assigned global sequence number for ordering all events
 };
 
 export type SyncMessage = {
@@ -33,11 +34,13 @@ export type SyncMessage = {
   version: number;
   operations: Operation[];
   clientId: string; // Server-assigned client ID for this connection
+  seqNum: number; // Current global sequence number - next broadcast will be seqNum + 1
 };
 
 export type AckMessage = {
   type: 'ack';
   version: number;
+  seqNum?: number; // Global sequence number for the broadcast triggered by this operation
 };
 
 export type ErrorMessage = {
@@ -75,18 +78,26 @@ export type CursorUpdateMessage = {
   clientId: string;
   position: number;
   sessionId?: string;
+  seqNum?: number; // Server-assigned global sequence number for ordering all events
+};
+
+export type CursorAckMessage = {
+  type: 'cursor_ack';
+  seqNum: number; // The sequence number used for the cursor update broadcast
 };
 
 export type UserJoinedMessage = {
   type: 'user_joined';
   clientId: string;
   connectedUsers: string[]; // All currently connected client IDs
+  seqNum?: number; // Server-assigned global sequence number for ordering all events
 };
 
 export type UserLeftMessage = {
   type: 'user_left';
   clientId: string;
   connectedUsers: string[]; // All currently connected client IDs
+  seqNum?: number; // Server-assigned global sequence number for ordering all events
 };
 
 export type WSMessage =
@@ -100,6 +111,7 @@ export type WSMessage =
   | EncryptionChangedMessage
   | VersionUpdateMessage
   | CursorUpdateMessage
+  | CursorAckMessage
   | UserJoinedMessage
   | UserLeftMessage;
 

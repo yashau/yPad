@@ -10,9 +10,17 @@ import type {
   SyncMessage,
   AckMessage,
   CursorUpdateMessage,
+  CursorAckMessage,
   UserJoinedMessage,
   UserLeftMessage,
 } from '../ot/types';
+
+// Message queue item for sequential processing
+interface QueuedMessage {
+  ws: WebSocket;
+  message: WSMessage;
+  timestamp: number;
+}
 
 export class NoteSessionDurableObject implements DurableObject {
   private state: DurableObjectState;
@@ -28,6 +36,13 @@ export class NoteSessionDurableObject implements DurableObject {
   private isInitialized: boolean;
   private lastOperationSessionId: string | null = null;
   private isEncrypted: boolean = false;
+
+  // Message queue for sequential processing
+  private messageQueue: QueuedMessage[] = [];
+  private isProcessingQueue: boolean = false;
+
+  // Global sequence number for ensuring client-side ordering of ALL events
+  private globalSeqNum: number = 0;
 
   constructor(state: DurableObjectState, env: any) {
     this.state = state;
@@ -136,29 +151,33 @@ export class NoteSessionDurableObject implements DurableObject {
       ws,
     };
 
-    this.sessions.set(ws, session);
-
-    // Send initial sync message with server-assigned clientId
+    // Send initial sync message BEFORE adding to sessions
+    // This ensures the new client gets sync first, with the current globalSeqNum
     const syncMessage: SyncMessage = {
       type: 'sync',
       content: this.currentContent,
       version: this.operationVersion,
       operations: this.operationHistory.slice(-50), // Last 50 operations
       clientId, // Send the server-assigned clientId to the client
+      seqNum: this.globalSeqNum, // Current global sequence before any broadcasts
     };
 
     ws.send(JSON.stringify(syncMessage));
 
-    // Broadcast user joined to all other clients
+    // NOW add the session to the map
+    this.sessions.set(ws, session);
+
+    // Broadcast user joined to all clients (this increments globalSeqNum to seqNum + 1)
+    // The new client will receive this as their first sequenced message (seqNum + 1)
     this.broadcastUserJoined(clientId);
 
-    // Set up message handler
+    // Set up message handler - enqueue messages for sequential processing
     ws.addEventListener('message', async (event) => {
       try {
         const message: WSMessage = JSON.parse(event.data as string);
-        await this.handleMessage(ws, message);
+        this.enqueueMessage(ws, message);
       } catch (error) {
-        console.error(`[DO ${this.noteId}] Error handling message:`, error);
+        console.error(`[DO ${this.noteId}] Error parsing message:`, error);
         this.sendError(ws, 'Invalid message format');
       }
     });
@@ -184,6 +203,52 @@ export class NoteSessionDurableObject implements DurableObject {
     });
   }
 
+  /**
+   * Enqueue a message for sequential processing
+   */
+  enqueueMessage(ws: WebSocket, message: WSMessage): void {
+    this.messageQueue.push({
+      ws,
+      message,
+      timestamp: Date.now(),
+    });
+
+    // Start processing if not already processing
+    if (!this.isProcessingQueue) {
+      this.processQueue();
+    }
+  }
+
+  /**
+   * Process queued messages sequentially
+   */
+  async processQueue(): Promise<void> {
+    // Prevent concurrent processing
+    if (this.isProcessingQueue) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    try {
+      while (this.messageQueue.length > 0) {
+        const queuedMessage = this.messageQueue.shift();
+        if (!queuedMessage) {
+          break;
+        }
+
+        try {
+          await this.handleMessage(queuedMessage.ws, queuedMessage.message);
+        } catch (error) {
+          console.error(`[DO ${this.noteId}] Error processing queued message:`, error);
+          // Continue processing other messages even if one fails
+        }
+      }
+    } finally {
+      this.isProcessingQueue = false;
+    }
+  }
+
   async handleMessage(ws: WebSocket, message: WSMessage): Promise<void> {
     const session = this.sessions.get(ws);
     if (!session) {
@@ -193,7 +258,7 @@ export class NoteSessionDurableObject implements DurableObject {
     if (message.type === 'operation') {
       await this.handleOperation(ws, message as OperationMessage);
     } else if (message.type === 'cursor_update') {
-      this.handleCursorUpdate(ws, message as CursorUpdateMessage);
+      await this.handleCursorUpdate(ws, message as CursorUpdateMessage);
     }
     // Add more message type handlers as needed
   }
@@ -236,13 +301,15 @@ export class NoteSessionDurableObject implements DurableObject {
     this.operationsSincePersist++;
     this.lastOperationSessionId = session.sessionId;
 
-    // Broadcast to all other clients
-    this.broadcastOperation(operation, session.clientId);
+    // Broadcast to all other clients and get the sequence number
+    const broadcastSeqNum = this.broadcastOperation(operation, session.clientId);
 
-    // Send acknowledgment to sender
+    // Send acknowledgment to sender with the sequence number of the broadcast
+    // This allows the sender to stay in sync with the global sequence
     const ackMessage: AckMessage = {
       type: 'ack',
       version: this.operationVersion,
+      seqNum: broadcastSeqNum,
     };
     ws.send(JSON.stringify(ackMessage));
 
@@ -250,22 +317,33 @@ export class NoteSessionDurableObject implements DurableObject {
     this.schedulePersistence(false);
   }
 
-  handleCursorUpdate(ws: WebSocket, message: CursorUpdateMessage): void {
+  async handleCursorUpdate(ws: WebSocket, message: CursorUpdateMessage): Promise<void> {
     const session = this.sessions.get(ws);
     if (!session || !session.isAuthenticated) {
       return;
     }
 
-    // Broadcast cursor position to all other clients
-    // Use session.clientId to ensure we're broadcasting the authenticated client's ID
-    this.broadcastCursorUpdate(session.clientId, message.position);
+    // Broadcast cursor position to all other clients and get the sequence number
+    const broadcastSeqNum = this.broadcastCursorUpdate(session.clientId, message.position);
+
+    // Send acknowledgment to sender with the sequence number of the broadcast
+    // This allows the sender to stay in sync with the global sequence
+    const ackMessage: CursorAckMessage = {
+      type: 'cursor_ack',
+      seqNum: broadcastSeqNum,
+    };
+    ws.send(JSON.stringify(ackMessage));
   }
 
-  broadcastCursorUpdate(clientId: string, position: number): void {
+  broadcastCursorUpdate(clientId: string, position: number): number {
+    // Increment global sequence number for ordering
+    this.globalSeqNum++;
+
     const message: CursorUpdateMessage = {
       type: 'cursor_update',
       clientId,
       position,
+      seqNum: this.globalSeqNum,
     };
 
     const messageStr = JSON.stringify(message);
@@ -280,15 +358,22 @@ export class NoteSessionDurableObject implements DurableObject {
         }
       }
     }
+
+    // Return the sequence number so the sender can stay in sync
+    return this.globalSeqNum;
   }
 
-  broadcastOperation(operation: Operation, senderClientId: string): void {
+  broadcastOperation(operation: Operation, senderClientId: string): number {
+    // Increment global sequence number
+    this.globalSeqNum++;
+
     const message: OperationMessage = {
       type: 'operation',
       operation,
       baseVersion: operation.version - 1,
       clientId: operation.clientId,
       sessionId: '', // Not needed for broadcast
+      seqNum: this.globalSeqNum, // Global sequence number for ordering all events
     };
 
     const messageStr = JSON.stringify(message);
@@ -303,6 +388,9 @@ export class NoteSessionDurableObject implements DurableObject {
         }
       }
     }
+
+    // Return the sequence number so the sender can stay in sync
+    return this.globalSeqNum;
   }
 
   schedulePersistence(immediate: boolean): void {
@@ -457,12 +545,16 @@ export class NoteSessionDurableObject implements DurableObject {
   }
 
   broadcastUserJoined(joinedClientId: string): void {
+    // Increment global sequence number for ordering
+    this.globalSeqNum++;
+
     const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
 
     const message: UserJoinedMessage = {
       type: 'user_joined',
       clientId: joinedClientId,
       connectedUsers,
+      seqNum: this.globalSeqNum,
     };
 
     const messageStr = JSON.stringify(message);
@@ -478,12 +570,16 @@ export class NoteSessionDurableObject implements DurableObject {
   }
 
   broadcastUserLeft(leftClientId: string): void {
+    // Increment global sequence number for ordering
+    this.globalSeqNum++;
+
     const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
 
     const message: UserLeftMessage = {
       type: 'user_left',
       clientId: leftClientId,
       connectedUsers,
+      seqNum: this.globalSeqNum,
     };
 
     const messageStr = JSON.stringify(message);
