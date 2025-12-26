@@ -232,8 +232,7 @@ export class NoteSessionDurableObject implements DurableObject {
     });
 
     // Set up error handler
-    ws.addEventListener('error', (event) => {
-      console.error(`[DO ${this.noteId}] WebSocket error:`, event);
+    ws.addEventListener('error', () => {
       this.sessions.delete(ws);
     });
   }

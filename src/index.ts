@@ -186,7 +186,36 @@ app.post('/api/notes', async (c) => {
     }
   }
 
-  const noteId = id || generateId();
+  // Generate unique ID with adaptive length
+  let noteId = id;
+  if (!id) {
+    let length = 4; // Start with 4 characters
+    let attempts = 0;
+    const maxAttemptsPerLength = 3;
+
+    while (!noteId) {
+      attempts++;
+      const candidateId = generateId(length);
+
+      // Check if ID already exists
+      const existing = await c.env.DB.prepare(
+        'SELECT id FROM notes WHERE id = ?'
+      ).bind(candidateId).first();
+
+      if (!existing) {
+        noteId = candidateId;
+      } else if (attempts >= maxAttemptsPerLength) {
+        // After 3 failed attempts, increase length and reset attempts
+        length++;
+        attempts = 0;
+
+        // Safety limit: don't exceed 10 characters
+        if (length > 10) {
+          return c.json({ error: 'Failed to generate unique ID' }, 500);
+        }
+      }
+    }
+  }
 
   const password_hash = password ? await hashPassword(password) : null;
   const expires_at = expires_in ? Date.now() + expires_in : null;

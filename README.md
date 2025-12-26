@@ -26,6 +26,7 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 ### Note Management
 - **Auto-Save**: 500ms debounced automatic saving as you type
 - **Custom URLs**: Set custom note IDs with real-time availability checking
+- **Adaptive ID Generation**: 4-character default IDs with automatic collision detection and length scaling
 - **Self-Destructing Notes**: Max view count limits (one-time viewing)
 - **Time-Based Expiration**: Set expiration (1 hour, 1 day, 1 week, 1 month)
 - **Inactivity-Based Cleanup**: Notes automatically deleted after 90 days of no access
@@ -434,7 +435,10 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 
 1. Visit the homepage
 2. Start typing in the editor
-3. A unique 4-character ID is automatically generated
+3. A unique 4-character ID is automatically generated with collision detection
+   - If a collision occurs, the system retries up to 3 times
+   - After 3 failed attempts, ID length increases to 5 characters
+   - Process repeats with adaptive length scaling (max 10 characters)
 4. Note auto-saves every 500ms
 
 ### Setting a Custom URL
