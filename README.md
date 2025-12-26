@@ -7,11 +7,13 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 ### Real-Time Collaboration
 - **Multi-User Editing**: Live collaborative editing with multiple users simultaneously
 - **Operational Transform**: Character-level conflict-free concurrent editing using OT algorithm
+- **Global Message Sequencing**: Server-side message ordering ensures consistent operation application across all clients
 - **Automatic Conflict Resolution**: Smart merging of concurrent edits with no data loss
 - **Session Awareness**: Cursor position preservation during remote edits
 - **Remote Cursor Tracking**: See other users' cursor positions in real-time with color-coded labels
+- **Syntax Highlighting Sync**: Real-time synchronization of syntax highlighting changes across all collaborators
 - **User Presence**: Live count of connected collaborators in the header status indicator
-- **WebSocket-Based**: Real-time synchronization via Durable Objects
+- **WebSocket-Based**: Real-time synchronization via Durable Objects with optimized reconnection
 
 ### Security & Privacy
 - **Client-Side Encryption**: Zero-knowledge AES-GCM 256-bit encryption
@@ -34,8 +36,10 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Dark/Light Theme**: Theme toggle with persistence
 - **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
 - **Conflict Detection**: User-friendly conflict resolution dialogs
-- **User Notifications**: Banners for encryption changes, password updates, and conflicts
+- **User Notifications**: Banners for encryption changes, password updates, conflicts, and note deletion
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
+- **Modular Architecture**: Component-based design with separate hooks for editor, collaboration, and note operations
+- **Info Dialog**: Interactive about dialog accessible from the header with app information
 
 ### Smart Features
 - **Version Tracking**: Prevents edit conflicts across sessions
@@ -236,6 +240,29 @@ npm run db:migrate:prod
 ```
 yPad/
 ├── client/                       # Frontend Svelte application
+│   ├── components/              # Feature components
+│   │   ├── Banners/            # Notification banners
+│   │   │   ├── EncryptionDisabledBanner.svelte
+│   │   │   ├── EncryptionEnabledBanner.svelte
+│   │   │   ├── NoteDeletedBanner.svelte
+│   │   │   └── ReloadBanner.svelte
+│   │   ├── Dialogs/            # Modal dialogs
+│   │   │   ├── ConflictDialog.svelte
+│   │   │   ├── CustomUrlDialog.svelte
+│   │   │   ├── InfoDialog.svelte
+│   │   │   ├── PasswordDialog.svelte
+│   │   │   └── RemovePasswordDialog.svelte
+│   │   ├── Editor/             # Editor components
+│   │   │   ├── EditorView.svelte
+│   │   │   └── LineNumbers.svelte
+│   │   ├── Header/             # Header components
+│   │   │   ├── AppHeader.svelte
+│   │   │   ├── ConnectionStatus.svelte
+│   │   │   └── ProtectedBadge.svelte
+│   │   └── Toolbar/            # Toolbar components
+│   │       ├── LanguageSelector.svelte
+│   │       ├── OptionsPanel.svelte
+│   │       └── PasswordInput.svelte
 │   ├── lib/
 │   │   ├── components/
 │   │   │   └── ui/              # shadcn-svelte components
@@ -248,12 +275,19 @@ yPad/
 │   │   │       ├── popover/     # Popover component
 │   │   │       ├── select/      # Select dropdown
 │   │   │       └── ...          # Other UI components
+│   │   ├── hooks/              # Svelte 5 hooks with state management
+│   │   │   ├── useCollaboration.svelte.ts  # Real-time collab logic
+│   │   │   ├── useEditor.svelte.ts         # Editor state & operations
+│   │   │   ├── useNoteOperations.svelte.ts # Note CRUD operations
+│   │   │   ├── useNoteState.svelte.ts      # Note state management
+│   │   │   ├── useSecurity.svelte.ts       # Security & encryption
+│   │   │   └── useWebSocketConnection.svelte.ts # WebSocket management
 │   │   ├── realtime/            # WebSocket & OT client logic
 │   │   │   └── WebSocketClient.ts  # WebSocket client with OT
 │   │   ├── stores/              # Svelte stores (theme, etc.)
 │   │   ├── utils/               # Utility functions
 │   │   └── crypto.ts            # Client-side encryption (AES-GCM)
-│   ├── App.svelte               # Main app component (~1,650 lines)
+│   ├── App.svelte               # Main app component (refactored, modular)
 │   ├── index.html               # HTML entry point with favicons
 │   └── main.ts                  # JS entry point
 ├── public/                      # Static assets (copied to dist)
@@ -287,7 +321,10 @@ yPad/
 │   └── prod.sh                  # Mac/Linux production deployment
 ├── migrations/                  # D1 database migrations
 │   └── 0001_initial_schema.sql
+├── config/                      # Configuration files
+│   └── constants.ts            # Application constants & validation
 ├── .env.example                 # Example environment config
+├── .env                         # Local environment config (gitignored)
 ├── wrangler.toml                # Cloudflare Workers config
 ├── vite.config.ts               # Vite build config with publicDir
 ├── tailwind.config.js           # Tailwind CSS config
@@ -321,6 +358,9 @@ yPad includes automated deployment scripts that handle environment configuration
 
    # Durable Objects Configuration
    DO_SCRIPT_NAME=ypad
+
+   # Contact Information
+   ABUSE_EMAIL=abuse@example.com
    ```
 
 3. **Create production database** (if not already created):
@@ -346,9 +386,10 @@ The deployment script automatically:
 2. ✅ Backs up your local `wrangler.toml`
 3. ✅ Generates production `wrangler.toml` from `.env`
 4. ✅ Runs production database migrations
-5. ✅ Builds the frontend
-6. ✅ Deploys to Cloudflare Workers
-7. ✅ Restores your local `wrangler.toml`
+5. ✅ Injects environment variables into constants.ts
+6. ✅ Builds the frontend
+7. ✅ Deploys to Cloudflare Workers
+8. ✅ Restores your local `wrangler.toml` and `constants.ts`
 
 **Features**:
 - Automatic rollback on failure
@@ -616,6 +657,14 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
 }
 ```
 
+**Syntax Update** (client ↔ server):
+```json
+{
+  "type": "syntax_update",
+  "syntax": "javascript"
+}
+```
+
 ## Key Features Explained
 
 ### Operational Transform (OT)
@@ -665,6 +714,9 @@ async scheduled(event, env, ctx) {
 - **Automatic Scaling**: Handles traffic spikes without configuration
 - **Durable Objects**: Stateful coordination with global uniqueness
 - **Debounced Saves**: Reduces database writes by batching operations
+- **Optimized Cursor Updates**: Debounced cursor position updates to reduce WebSocket traffic
+- **Efficient Memory Management**: Reduced object allocations in hot paths for better performance
+- **Connection Management**: Optimized WebSocket version synchronization and reconnection logic
 
 ## Security Considerations
 
@@ -674,6 +726,18 @@ async scheduled(event, env, ctx) {
 - **Password Hashing**: SHA-256 with salt for verification
 - **PBKDF2**: 100,000 iterations for key derivation
 - **No Session Cookies**: Stateless authentication via password parameter
+- **Input Validation**: Comprehensive validation using centralized constants and patterns
+- **Type Safety**: Enhanced TypeScript types throughout the codebase
+
+## Code Quality & Architecture
+
+- **Modular Design**: Refactored from monolithic App.svelte into focused, reusable components
+- **Separation of Concerns**: Clear boundaries between UI, state management, and business logic
+- **Custom Hooks**: Svelte 5 hooks for editor, collaboration, note operations, security, and WebSocket management
+- **Centralized Configuration**: All constants, validation patterns, and security headers in [config/constants.ts](config/constants.ts)
+- **Component Library**: Organized components into logical groups (Banners, Dialogs, Editor, Header, Toolbar)
+- **Enhanced Documentation**: Comprehensive inline documentation for complex algorithms and workflows
+- **Bug Fixes**: Improved encryption handling, deletion notifications, cursor synchronization, and version tracking
 
 ## Contributing
 
