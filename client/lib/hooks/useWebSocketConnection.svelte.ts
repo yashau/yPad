@@ -95,7 +95,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             ops.forEach(op => {
               if (collaboration.wsClient) {
                 collaboration.wsClient.sendOperation(op, noteState.currentVersion);
-                noteState.currentVersion++;
+                // Don't increment version optimistically - wait for ACK
+                // This prevents false conflicts if WebSocket fails before ACK
               }
             });
 
@@ -193,26 +194,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       cursorPos = transformCursorPosition(cursorPos, operation);
 
       // Update cursor positions and trigger reactivity
+      // Only transform cursors that are NOT from the operation's client
+      // The operation client's cursor position comes from their cursor_update messages
       const updatedCursors = new Map(collaboration.remoteCursors);
       updatedCursors.forEach((cursorData, remoteClientId) => {
-        if (remoteClientId === operation.clientId) {
-          let newPosition = cursorData.position;
-
-          if (operation.type === 'insert') {
-            if (operation.position <= cursorData.position) {
-              newPosition = cursorData.position + operation.text.length;
-            }
-          } else if (operation.type === 'delete') {
-            const deleteEnd = operation.position + operation.length;
-            if (deleteEnd <= cursorData.position) {
-              newPosition = cursorData.position - operation.length;
-            } else if (operation.position < cursorData.position) {
-              newPosition = operation.position;
-            }
-          }
-
-          cursorData.position = newPosition;
-        } else {
+        if (remoteClientId !== operation.clientId) {
           cursorData.position = transformCursorPosition(cursorData.position, operation);
         }
       });
@@ -306,6 +292,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       return;
     }
 
+    // Only send cursor updates when the document has focus
+    // This prevents sending incorrect cursor positions when the tab is not active
+    if (!document.hasFocus()) {
+      return;
+    }
+
     const cursorPos = getCurrentCursorPosition();
     collaboration.wsClient.sendCursorUpdate(cursorPos, collaboration.clientId);
     collaboration.lastSentCursorPos = cursorPos;
@@ -314,7 +306,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
   function sendOperation(operation: Operation) {
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
       collaboration.wsClient.sendOperation(operation, noteState.currentVersion);
-      noteState.currentVersion++;
+      // Don't increment version optimistically - wait for ACK
+      // This prevents false conflicts if WebSocket fails before ACK
     }
   }
 
