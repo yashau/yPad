@@ -116,6 +116,21 @@
     return clientColorMap.get(clientId)!;
   }
 
+  // Clean up stale remote cursors for users no longer in the connected list
+  function cleanupStaleCursors(connectedUserIds: string[]) {
+    const staleCursors: string[] = [];
+    remoteCursors.forEach((_, cursorClientId) => {
+      if (!connectedUserIds.includes(cursorClientId)) {
+        staleCursors.push(cursorClientId);
+      }
+    });
+
+    if (staleCursors.length > 0) {
+      staleCursors.forEach(id => remoteCursors.delete(id));
+      remoteCursors = remoteCursors; // Trigger reactivity
+    }
+  }
+
   // Send cursor update to other clients in real-time
   function sendCursorUpdate() {
     if (!wsClient || !isRealtimeEnabled || isEncrypted) {
@@ -829,36 +844,14 @@
         onUserJoined: (joinedClientId, allConnectedUsers) => {
           // Update connected users list
           connectedUsers = new Set(allConnectedUsers);
-
-          // Clean up stale remote cursors - remove any cursors for users not in the connected list
-          const staleCursors: string[] = [];
-          remoteCursors.forEach((_, cursorClientId) => {
-            if (!allConnectedUsers.includes(cursorClientId)) {
-              staleCursors.push(cursorClientId);
-            }
-          });
-
-          if (staleCursors.length > 0) {
-            staleCursors.forEach(id => remoteCursors.delete(id));
-            remoteCursors = remoteCursors; // Trigger reactivity
-          }
+          // Clean up any stale cursors
+          cleanupStaleCursors(allConnectedUsers);
         },
         onUserLeft: (leftClientId, allConnectedUsers) => {
           // Update connected users list
           connectedUsers = new Set(allConnectedUsers);
-
-          // Clean up stale remote cursors - remove any cursors for users not in the connected list
-          const staleCursors: string[] = [];
-          remoteCursors.forEach((_, cursorClientId) => {
-            if (!allConnectedUsers.includes(cursorClientId)) {
-              staleCursors.push(cursorClientId);
-            }
-          });
-
-          if (staleCursors.length > 0) {
-            staleCursors.forEach(id => remoteCursors.delete(id));
-            remoteCursors = remoteCursors; // Trigger reactivity
-          }
+          // Clean up any stale cursors
+          cleanupStaleCursors(allConnectedUsers);
         }
       });
     } catch (error) {

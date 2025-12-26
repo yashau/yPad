@@ -1,4 +1,36 @@
-// Durable Object for coordinating real-time WebSocket connections per note
+/**
+ * Durable Object for coordinating real-time WebSocket connections per note
+ *
+ * ARCHITECTURE OVERVIEW:
+ * This server implements a dual-tracking system for collaborative editing:
+ *
+ * 1. OPERATION VERSION TRACKING (Operational Transform - OT):
+ *    - Stored as `operationVersion` in Durable Object state and database
+ *    - Incremented with each operation, persisted to database
+ *    - Used for OT conflict resolution and ensuring correct transform order
+ *    - Required for ALL notes (encrypted and unencrypted)
+ *    - Enables conflict detection when users save without real-time connection
+ *
+ * 2. GLOBAL SEQUENCE NUMBER TRACKING (WebSocket Message Ordering):
+ *    - Stored as `globalSeqNum` in Durable Object (NOT persisted to database)
+ *    - Incremented for each broadcast (operations, cursor updates, presence events)
+ *    - Ensures clients receive ALL messages in exact broadcast order
+ *    - Only relevant during active WebSocket sessions
+ *    - Resets when Durable Object hibernates/restarts (clients resync on reconnect)
+ *
+ * WHY BOTH EXIST:
+ * - operationVersion: Persistent state for OT transforms and conflict detection
+ * - globalSeqNum: Transient session state for real-time message ordering
+ * - E2E encrypted notes use version-only (WebSocket disabled to preserve encryption)
+ * - Unencrypted notes use both (version for DB, sequence for WebSocket ordering)
+ *
+ * MESSAGE FLOW:
+ * 1. Client sends operation → enqueued for sequential processing
+ * 2. Server transforms operation against history using operationVersion
+ * 3. Server broadcasts to other clients with next globalSeqNum
+ * 4. Server sends ACK to sender with the globalSeqNum used
+ * 5. Sender updates their sequence counter to stay in sync
+ */
 
 import { transform } from '../ot/transform';
 import { applyOperation } from '../ot/apply';
@@ -19,7 +51,6 @@ import type {
 interface QueuedMessage {
   ws: WebSocket;
   message: WSMessage;
-  timestamp: number;
 }
 
 export class NoteSessionDurableObject implements DurableObject {
@@ -210,7 +241,6 @@ export class NoteSessionDurableObject implements DurableObject {
     this.messageQueue.push({
       ws,
       message,
-      timestamp: Date.now(),
     });
 
     // Start processing if not already processing
@@ -232,10 +262,7 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       while (this.messageQueue.length > 0) {
-        const queuedMessage = this.messageQueue.shift();
-        if (!queuedMessage) {
-          break;
-        }
+        const queuedMessage = this.messageQueue.shift()!;
 
         try {
           await this.handleMessage(queuedMessage.ws, queuedMessage.message);
@@ -335,15 +362,23 @@ export class NoteSessionDurableObject implements DurableObject {
     ws.send(JSON.stringify(ackMessage));
   }
 
+  /**
+   * Get the next global sequence number for a broadcast message.
+   * All sequenced broadcasts (operations, cursors, presence) must use this
+   * to ensure proper ordering across all clients.
+   */
+  private getNextSeqNum(): number {
+    return ++this.globalSeqNum;
+  }
+
   broadcastCursorUpdate(clientId: string, position: number): number {
-    // Increment global sequence number for ordering
-    this.globalSeqNum++;
+    const seqNum = this.getNextSeqNum();
 
     const message: CursorUpdateMessage = {
       type: 'cursor_update',
       clientId,
       position,
-      seqNum: this.globalSeqNum,
+      seqNum,
     };
 
     const messageStr = JSON.stringify(message);
@@ -360,12 +395,11 @@ export class NoteSessionDurableObject implements DurableObject {
     }
 
     // Return the sequence number so the sender can stay in sync
-    return this.globalSeqNum;
+    return seqNum;
   }
 
   broadcastOperation(operation: Operation, senderClientId: string): number {
-    // Increment global sequence number
-    this.globalSeqNum++;
+    const seqNum = this.getNextSeqNum();
 
     const message: OperationMessage = {
       type: 'operation',
@@ -373,7 +407,7 @@ export class NoteSessionDurableObject implements DurableObject {
       baseVersion: operation.version - 1,
       clientId: operation.clientId,
       sessionId: '', // Not needed for broadcast
-      seqNum: this.globalSeqNum, // Global sequence number for ordering all events
+      seqNum, // Global sequence number for ordering all events
     };
 
     const messageStr = JSON.stringify(message);
@@ -390,7 +424,7 @@ export class NoteSessionDurableObject implements DurableObject {
     }
 
     // Return the sequence number so the sender can stay in sync
-    return this.globalSeqNum;
+    return seqNum;
   }
 
   schedulePersistence(immediate: boolean): void {
@@ -483,22 +517,6 @@ export class NoteSessionDurableObject implements DurableObject {
     );
   }
 
-  broadcast(message: WSMessage, excludeClientId?: string): void {
-    const messageStr = JSON.stringify(message);
-
-    for (const [ws, session] of this.sessions) {
-      if (excludeClientId && session.clientId === excludeClientId) {
-        continue;
-      }
-
-      try {
-        ws.send(messageStr);
-      } catch (error) {
-        console.error(`[DO ${this.noteId}] Error broadcasting to client ${session.clientId}:`, error);
-      }
-    }
-  }
-
   broadcastEncryptionChange(is_encrypted: boolean, has_password: boolean, excludeSessionId?: string): void {
     // Update internal encryption state
     this.isEncrypted = is_encrypted;
@@ -545,16 +563,14 @@ export class NoteSessionDurableObject implements DurableObject {
   }
 
   broadcastUserJoined(joinedClientId: string): void {
-    // Increment global sequence number for ordering
-    this.globalSeqNum++;
-
+    const seqNum = this.getNextSeqNum();
     const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
 
     const message: UserJoinedMessage = {
       type: 'user_joined',
       clientId: joinedClientId,
       connectedUsers,
-      seqNum: this.globalSeqNum,
+      seqNum,
     };
 
     const messageStr = JSON.stringify(message);
@@ -570,16 +586,14 @@ export class NoteSessionDurableObject implements DurableObject {
   }
 
   broadcastUserLeft(leftClientId: string): void {
-    // Increment global sequence number for ordering
-    this.globalSeqNum++;
-
+    const seqNum = this.getNextSeqNum();
     const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
 
     const message: UserLeftMessage = {
       type: 'user_left',
       clientId: leftClientId,
       connectedUsers,
-      seqNum: this.globalSeqNum,
+      seqNum,
     };
 
     const messageStr = JSON.stringify(message);

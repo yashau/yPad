@@ -1,4 +1,30 @@
-// WebSocket client for real-time collaboration
+/**
+ * WebSocket client for real-time collaboration
+ *
+ * ARCHITECTURE OVERVIEW:
+ * This client implements a dual-tracking system for collaborative editing:
+ *
+ * 1. VERSION TRACKING (Operation Transform - OT):
+ *    - Used for ALL notes (encrypted and unencrypted)
+ *    - Tracked at database level and in App.svelte as `currentVersion`
+ *    - Ensures operations are applied in correct logical order for OT transforms
+ *    - Required for conflict detection when real-time collaboration is disabled
+ *    - Critical for E2E encrypted notes where WebSocket collaboration is turned off
+ *
+ * 2. GLOBAL SEQUENCE TRACKING (WebSocket Message Ordering):
+ *    - Only used when WebSockets are active (unencrypted notes with real-time collab)
+ *    - Tracked client-side as `nextExpectedSeq`
+ *    - Server assigns monotonically increasing `seqNum` to ALL broadcast messages
+ *    - Ensures correct ordering of operations, cursor updates, and presence events
+ *    - Solves race conditions when 3+ users collaborate simultaneously
+ *    - Messages received out-of-order are buffered until gaps are filled
+ *
+ * WHY BOTH EXIST:
+ * - Version: Persistent, survives disconnections, enables conflict detection
+ * - Sequence: Transient, WebSocket session only, ensures real-time message ordering
+ * - E2E encrypted notes use version-only (no WebSocket collaboration to preserve E2E)
+ * - Unencrypted notes use both (version for persistence, sequence for real-time ordering)
+ */
 
 import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage } from '../../../src/ot/types';
 
@@ -22,13 +48,11 @@ export interface WebSocketClientOptions {
 
 interface QueuedInboundMessage {
   message: WSMessage;
-  timestamp: number;
 }
 
 interface QueuedOutboundOperation {
   operation: Operation;
   baseVersion: number;
-  timestamp: number;
 }
 
 export class WebSocketClient {
@@ -48,9 +72,6 @@ export class WebSocketClient {
   private outboundQueue: QueuedOutboundOperation[] = [];
   private isProcessingOutbound = false;
   private waitingForAck = false;
-
-  // Version-based ordering for operations (OT transform)
-  private nextExpectedVersion: number = 1;
 
   // Global sequence ordering for ALL broadcast messages (operations, cursors, presence)
   private nextExpectedSeq: number = 1;
@@ -130,10 +151,7 @@ export class WebSocketClient {
    * Enqueue an inbound message for sequential processing
    */
   private enqueueInboundMessage(message: WSMessage): void {
-    this.inboundQueue.push({
-      message,
-      timestamp: Date.now(),
-    });
+    this.inboundQueue.push({ message });
 
     // Start processing if not already processing
     if (!this.isProcessingInbound) {
@@ -154,10 +172,7 @@ export class WebSocketClient {
 
     try {
       while (this.inboundQueue.length > 0) {
-        const queuedMessage = this.inboundQueue.shift();
-        if (!queuedMessage) {
-          break;
-        }
+        const queuedMessage = this.inboundQueue.shift()!;
 
         try {
           await this.handleMessage(queuedMessage.message);
@@ -322,9 +337,31 @@ export class WebSocketClient {
   }
 
   /**
+   * Update sequence tracking when receiving an ACK for our own message.
+   *
+   * When a client sends an operation or cursor update, the server broadcasts it
+   * to all OTHER clients (excluding the sender to avoid processing own changes twice).
+   * The sender receives an ACK with the sequence number used for that broadcast.
+   *
+   * Since the sender is excluded from the broadcast, they need to advance their
+   * sequence counter to account for the broadcast they skipped.
+   */
+  private updateSequenceFromAck(seqNum: number | undefined): void {
+    if (seqNum !== undefined && seqNum >= this.nextExpectedSeq) {
+      this.nextExpectedSeq = seqNum + 1;
+    }
+  }
+
+  /**
    * Start gap detection timer
+   * Defensive: clears any existing timer first to prevent memory leaks
    */
   private startGapTimer(): void {
+    // Clear any existing timer first
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+    }
+
     this.gapTimer = setTimeout(() => {
       if (this.pendingMessages.size > 0) {
         const pendingSeqs = Array.from(this.pendingMessages.keys()).sort((a, b) => a - b);
@@ -338,9 +375,6 @@ export class WebSocketClient {
   }
 
   private async handleSync(message: SyncMessage): Promise<void> {
-    // Initialize expected version to the synced version + 1 (for OT transforms)
-    this.nextExpectedVersion = message.version + 1;
-
     // Initialize global sequence tracking from sync message
     // Next expected message will be current + 1
     this.nextExpectedSeq = message.seqNum + 1;
@@ -359,14 +393,7 @@ export class WebSocketClient {
 
   private async handleOperation(message: OperationMessage): Promise<void> {
     // Apply operation immediately - sequencing is handled by global seqNum
-    // We still track version for OT transform purposes
-    const opVersion = message.operation.version;
-
-    if (opVersion >= this.nextExpectedVersion) {
-      // Update our expected version
-      this.nextExpectedVersion = opVersion + 1;
-    }
-
+    // Version tracking for OT transforms happens in App.svelte
     if (this.options.onOperation) {
       this.options.onOperation(message.operation);
     }
@@ -398,16 +425,8 @@ export class WebSocketClient {
       this.options.onAck(message.version);
     }
 
-    // If ACK includes a sequence number, it means the server broadcast an event
-    // We need to advance our expected sequence to stay in sync
-    if (message.seqNum !== undefined) {
-      // The server has broadcast something with this seqNum
-      // Since we're the sender, we didn't receive the broadcast
-      // But we need to acknowledge that this seqNum was used
-      if (message.seqNum >= this.nextExpectedSeq) {
-        this.nextExpectedSeq = message.seqNum + 1;
-      }
-    }
+    // Update sequence tracking based on the broadcast we didn't receive
+    this.updateSequenceFromAck(message.seqNum);
 
     // ACK received, we can send the next operation
     this.waitingForAck = false;
@@ -419,12 +438,8 @@ export class WebSocketClient {
   }
 
   private async handleCursorAck(message: CursorAckMessage): Promise<void> {
-    // The server has broadcast a cursor update with this seqNum
-    // Since we're the sender, we didn't receive the broadcast
-    // But we need to acknowledge that this seqNum was used
-    if (message.seqNum >= this.nextExpectedSeq) {
-      this.nextExpectedSeq = message.seqNum + 1;
-    }
+    // Update sequence tracking based on the cursor broadcast we didn't receive
+    this.updateSequenceFromAck(message.seqNum);
   }
 
   private async handleCursorUpdate(message: CursorUpdateMessage): Promise<void> {
@@ -469,10 +484,7 @@ export class WebSocketClient {
     this.isProcessingOutbound = true;
 
     try {
-      const queuedOp = this.outboundQueue.shift();
-      if (!queuedOp) {
-        return;
-      }
+      const queuedOp = this.outboundQueue.shift()!;
 
       const message: OperationMessage = {
         type: 'operation',
@@ -506,7 +518,6 @@ export class WebSocketClient {
     this.outboundQueue.push({
       operation,
       baseVersion,
-      timestamp: Date.now(),
     });
 
     // Start processing if not already processing
