@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import hljs from 'highlight.js';
   import { generateOperations } from './lib/realtime/OperationGenerator';
 
@@ -286,6 +286,17 @@
       noteState.noteId = path.substring(1);
       noteOps.loadNote();
     }
+  });
+
+  onDestroy(() => {
+    // Clean up WebSocket connection
+    if (collaboration.wsClient) {
+      collaboration.wsClient.close();
+      collaboration.wsClient = null;
+    }
+
+    // Clear any pending save timeout
+    noteState.clearSaveTimeout();
   });
 </script>
 

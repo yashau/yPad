@@ -262,7 +262,12 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       while (this.messageQueue.length > 0) {
-        const queuedMessage = this.messageQueue.shift()!;
+        const queuedMessage = this.messageQueue.shift();
+
+        if (!queuedMessage) {
+          console.error(`[DO ${this.noteId}] Queue empty when message was expected`);
+          break;
+        }
 
         try {
           await this.handleMessage(queuedMessage.ws, queuedMessage.message);

@@ -415,6 +415,22 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 /**
+ * Constant-time string comparison to prevent timing attacks
+ * @param a - First string to compare
+ * @param b - Second string to compare
+ * @returns true if strings are equal, false otherwise
+ */
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+/**
  * Verify password for a note
  * Returns error response if password is invalid, null if valid
  */
@@ -433,7 +449,7 @@ async function verifyNotePassword(
   }
 
   const providedHash = await hashPassword(providedPassword);
-  if (providedHash !== passwordHash) {
+  if (!constantTimeCompare(providedHash, passwordHash)) {
     return context.json({ error: 'Invalid password' }, 401);
   }
 

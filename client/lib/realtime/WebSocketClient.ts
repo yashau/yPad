@@ -172,7 +172,12 @@ export class WebSocketClient {
 
     try {
       while (this.inboundQueue.length > 0) {
-        const queuedMessage = this.inboundQueue.shift()!;
+        const queuedMessage = this.inboundQueue.shift();
+
+        if (!queuedMessage) {
+          console.error('[WebSocket] Queue empty when message was expected');
+          break;
+        }
 
         try {
           await this.handleMessage(queuedMessage.message);
@@ -484,7 +489,13 @@ export class WebSocketClient {
     this.isProcessingOutbound = true;
 
     try {
-      const queuedOp = this.outboundQueue.shift()!;
+      const queuedOp = this.outboundQueue.shift();
+
+      if (!queuedOp) {
+        console.error('[WebSocket] Outbound queue empty when operation was expected');
+        this.isProcessingOutbound = false;
+        return;
+      }
 
       const message: OperationMessage = {
         type: 'operation',
