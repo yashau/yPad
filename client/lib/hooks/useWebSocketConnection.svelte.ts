@@ -176,7 +176,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       let cursorPos = getCurrentCursorPosition();
       cursorPos = transformCursorPosition(cursorPos, operation);
 
-      const updatedRemoteCursors = new Map<string, RemoteCursorData>();
+      // In-place cursor updates for better performance
       collaboration.remoteCursors.forEach((cursorData, remoteClientId) => {
         if (remoteClientId === operation.clientId) {
           let newPosition = cursorData.position;
@@ -194,19 +194,13 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             }
           }
 
-          updatedRemoteCursors.set(remoteClientId, {
-            ...cursorData,
-            position: newPosition
-          });
+          cursorData.position = newPosition;
         } else {
-          const transformedPosition = transformCursorPosition(cursorData.position, operation);
-          updatedRemoteCursors.set(remoteClientId, {
-            ...cursorData,
-            position: transformedPosition
-          });
+          cursorData.position = transformCursorPosition(cursorData.position, operation);
         }
       });
-      collaboration.remoteCursors = updatedRemoteCursors;
+      // Trigger reactivity by reassigning the Map
+      collaboration.remoteCursors = collaboration.remoteCursors;
 
       editor.content = applyOperation(editor.content, operation);
       editor.lastLocalContent = editor.content;

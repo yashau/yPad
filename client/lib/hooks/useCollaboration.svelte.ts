@@ -34,15 +34,16 @@ export function useCollaboration() {
   }
 
   function cleanupStaleCursors(connectedUserIds: string[]) {
-    const staleCursors: string[] = [];
+    let hasChanges = false;
+
     remoteCursors.forEach((_, cursorClientId) => {
       if (!connectedUserIds.includes(cursorClientId)) {
-        staleCursors.push(cursorClientId);
+        remoteCursors.delete(cursorClientId);
+        hasChanges = true;
       }
     });
 
-    if (staleCursors.length > 0) {
-      staleCursors.forEach(id => remoteCursors.delete(id));
+    if (hasChanges) {
       remoteCursors = remoteCursors; // Trigger reactivity
     }
   }
