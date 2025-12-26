@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { LIMITS, ALLOWED_SYNTAX_MODES, CUSTOM_ID_PATTERN, SECURITY_HEADERS } from '../config/constants';
 
 type Bindings = {
   DB: D1Database;
@@ -7,9 +8,45 @@ type Bindings = {
   NOTE_SESSIONS: DurableObjectNamespace;
 };
 
+/**
+ * Payload for creating a new note
+ */
+interface CreateNotePayload {
+  id?: string;
+  content: string;
+  syntax_highlight?: string;
+  password?: string;
+  max_views?: number | null;
+  expires_in?: number;
+  is_encrypted?: boolean;
+}
+
+/**
+ * Payload for updating an existing note
+ */
+interface UpdateNotePayload {
+  content: string;
+  syntax_highlight?: string;
+  password?: string;
+  max_views?: number | null;
+  expires_in?: number;
+  is_encrypted?: boolean;
+  session_id?: string;
+  expected_version?: number | null;
+}
+
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.use('/*', cors());
+
+// Security headers middleware
+app.use('*', async (c, next) => {
+  await next();
+  c.header('Content-Security-Policy', SECURITY_HEADERS.CONTENT_SECURITY_POLICY);
+  c.header('X-Content-Type-Options', SECURITY_HEADERS.X_CONTENT_TYPE_OPTIONS);
+  c.header('X-Frame-Options', SECURITY_HEADERS.X_FRAME_OPTIONS);
+  c.header('Referrer-Policy', SECURITY_HEADERS.REFERRER_POLICY);
+});
 
 // API Routes
 // WebSocket endpoint for real-time collaboration
@@ -33,16 +70,8 @@ app.get('/api/notes/:id/ws', async (c) => {
   }
 
   // Check password if required
-  if (note.password_hash) {
-    if (!password) {
-      return c.json({ error: 'Password required', passwordRequired: true }, 401);
-    }
-
-    const providedHash = await hashPassword(password);
-    if (providedHash !== note.password_hash) {
-      return c.json({ error: 'Invalid password' }, 401);
-    }
-  }
+  const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
+  if (passwordError) return passwordError;
 
   // Get Durable Object instance (one per note ID)
   const doId = c.env.NOTE_SESSIONS.idFromName(id);
@@ -71,9 +100,8 @@ app.get('/api/notes/:id', async (c) => {
   }
 
   // Check password protection
-  if (note.password_hash && (!password || await hashPassword(password) !== note.password_hash)) {
-    return c.json({ error: 'Invalid password', passwordRequired: true }, 401);
-  }
+  const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
+  if (passwordError) return passwordError;
 
   // Increment view count first
   const newViewCount = Number(note.view_count) + 1;
@@ -104,17 +132,27 @@ app.get('/api/notes/:id', async (c) => {
 });
 
 app.post('/api/notes', async (c) => {
-  const body = await c.req.json();
+  const body: CreateNotePayload = await c.req.json();
   const { id, content, password, syntax_highlight, max_views, expires_in, is_encrypted } = body;
 
-  if (!content) {
+  // Validate content
+  if (!content || content.length === 0) {
     return c.json({ error: 'Content is required' }, 400);
   }
+  if (content.length > LIMITS.MAX_CONTENT_SIZE) {
+    return c.json({ error: 'Content too large (max 1MB)' }, 413);
+  }
 
-  const noteId = id || generateId();
-
-  // Check if custom ID is already taken
+  // Validate custom ID format
   if (id) {
+    if (id.length > LIMITS.MAX_ID_LENGTH) {
+      return c.json({ error: 'ID too long (max 100 chars)' }, 400);
+    }
+    if (!CUSTOM_ID_PATTERN.test(id)) {
+      return c.json({ error: 'ID can only contain letters, numbers, hyphens, and underscores' }, 400);
+    }
+
+    // Check if custom ID is already taken
     const existing = await c.env.DB.prepare(
       'SELECT id FROM notes WHERE id = ?'
     ).bind(id).first();
@@ -123,6 +161,27 @@ app.post('/api/notes', async (c) => {
       return c.json({ error: 'ID already taken', available: false }, 409);
     }
   }
+
+  // Validate syntax highlighting mode
+  if (syntax_highlight && !ALLOWED_SYNTAX_MODES.includes(syntax_highlight)) {
+    return c.json({ error: 'Invalid syntax highlighting mode' }, 400);
+  }
+
+  // Validate max_views range
+  if (max_views !== undefined && max_views !== null) {
+    if (max_views < LIMITS.MIN_VIEWS || max_views > LIMITS.MAX_VIEWS) {
+      return c.json({ error: `max_views must be between ${LIMITS.MIN_VIEWS} and ${LIMITS.MAX_VIEWS.toLocaleString()}` }, 400);
+    }
+  }
+
+  // Validate expiration time range
+  if (expires_in !== undefined && expires_in !== null) {
+    if (expires_in < LIMITS.MIN_EXPIRATION || expires_in > LIMITS.MAX_EXPIRATION) {
+      return c.json({ error: 'expires_in must be between 1 minute and 1 year' }, 400);
+    }
+  }
+
+  const noteId = id || generateId();
 
   const password_hash = password ? await hashPassword(password) : null;
   const expires_at = expires_in ? Date.now() + expires_in : null;
@@ -148,7 +207,7 @@ app.post('/api/notes', async (c) => {
 
 app.put('/api/notes/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json();
+  const body: UpdateNotePayload = await c.req.json();
   const { content, syntax_highlight, password, max_views, expires_in, session_id, expected_version, is_encrypted } = body;
 
   const existing = await c.env.DB.prepare(
@@ -160,9 +219,8 @@ app.put('/api/notes/:id', async (c) => {
   }
 
   // Check password for updates
-  if (existing.password_hash && (!password || await hashPassword(password) !== existing.password_hash)) {
-    return c.json({ error: 'Invalid password' }, 401);
-  }
+  const passwordError = await verifyNotePassword(existing.password_hash as string | null, password, c);
+  if (passwordError) return passwordError;
 
   // Determine new password hash:
   // - If is_encrypted is explicitly false, remove password protection (set to null)
@@ -354,6 +412,32 @@ async function hashPassword(password: string): Promise<string> {
   return Array.from(new Uint8Array(hash))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('');
+}
+
+/**
+ * Verify password for a note
+ * Returns error response if password is invalid, null if valid
+ */
+async function verifyNotePassword(
+  passwordHash: string | null,
+  providedPassword: string | null | undefined,
+  context: any
+): Promise<Response | null> {
+  if (!passwordHash) return null; // No password protection
+
+  if (!providedPassword) {
+    return context.json({
+      error: 'Password required',
+      passwordRequired: true
+    }, 401);
+  }
+
+  const providedHash = await hashPassword(providedPassword);
+  if (providedHash !== passwordHash) {
+    return context.json({ error: 'Invalid password' }, 401);
+  }
+
+  return null; // Password valid
 }
 
 export { NoteSessionDurableObject } from './durable-objects/NoteSessionDurableObject';

@@ -142,70 +142,99 @@
     lastSentCursorPos = cursorPos;
   }
 
+  /**
+   * Common input handling logic for both contenteditable and textarea editors
+   * @param getContent Function that retrieves the current content from the editor
+   */
+  function handleEditorInput(getContent: () => string) {
+    if (isUpdating) return;
+
+    const newContent = getContent();
+
+    // If we're syncing, save the content as pending instead of sending operations
+    if (isSyncing) {
+      pendingLocalContent = newContent;
+      content = newContent;
+      return;
+    }
+
+    // Send operation via WebSocket if connected (but not for encrypted notes)
+    if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
+      const oldContent = lastLocalContent;
+      const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
+
+      operations.forEach(op => {
+        wsClient!.sendOperation(op, currentVersion);
+        // Optimistically increment version for next operation
+        currentVersion++;
+      });
+
+      // Send cursor update after browser updates selection
+      // Use setTimeout to ensure DOM selection is updated after the input event completes
+      setTimeout(() => sendCursorUpdate(), 0);
+    }
+
+    content = newContent;
+    lastLocalContent = newContent;
+  }
+
   // Handle contenteditable input
   function handleInput(event: Event) {
-    if (editorRef && !isUpdating) {
-      const newContent = getEditorTextContent();
-
-      // If we're syncing, save the content as pending instead of sending operations
-      if (isSyncing) {
-        pendingLocalContent = newContent;
-        content = newContent;
-        return;
-      }
-
-      // Send operation via WebSocket if connected (but not for encrypted notes)
-      if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
-        const oldContent = lastLocalContent;
-        const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
-
-        operations.forEach(op => {
-          wsClient!.sendOperation(op, currentVersion);
-          // Optimistically increment version for next operation
-          currentVersion++;
-        });
-
-        // Send cursor update after browser updates selection
-        // Use setTimeout to ensure DOM selection is updated after the input event completes
-        setTimeout(() => sendCursorUpdate(), 0);
-      }
-
-      content = newContent;
-      lastLocalContent = newContent;
-    }
+    if (editorRef) handleEditorInput(() => getEditorTextContent());
   }
 
   // Handle textarea input (plaintext mode)
   function handleTextareaInput(event: Event) {
-    if (textareaScrollRef && !isUpdating) {
-      const newContent = textareaScrollRef.value;
+    if (textareaScrollRef) handleEditorInput(() => textareaScrollRef!.value);
+  }
 
-      // If we're syncing, save the content as pending instead of sending operations
-      if (isSyncing) {
-        pendingLocalContent = newContent;
-        content = newContent;
-        return;
-      }
-
-      // Send operation via WebSocket if connected (but not for encrypted notes)
-      if (wsClient && isRealtimeEnabled && !viewMode && !isEncrypted) {
-        const oldContent = lastLocalContent;
-        const operations = generateOperations(oldContent, newContent, clientId, currentVersion);
-
-        operations.forEach(op => {
-          wsClient!.sendOperation(op, currentVersion);
-          // Optimistically increment version for next operation
-          currentVersion++;
-        });
-
-        // Send cursor update after browser updates selection
-        // Use setTimeout to ensure DOM selection is updated after the input event completes
-        setTimeout(() => sendCursorUpdate(), 0);
-      }
-
-      content = newContent;
-      lastLocalContent = newContent;
+  /**
+   * Common cleanup logic before encryption state changes
+   * Cancels auto-save and closes WebSocket connection
+   */
+  function cleanupBeforeEncryptionChange() {
+    // Cancel any pending auto-save to prevent conflicts
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
     }
+
+    // Close WebSocket connection
+    if (wsClient) {
+      wsClient.close();
+      wsClient = null;
+    }
+
+    isRealtimeEnabled = false;
+    connectionStatus = 'disconnected';
+  }
+
+  /**
+   * Handle encryption being enabled on the note
+   * Shows password dialog and updates state
+   */
+  function handleEncryptionEnabled() {
+    cleanupBeforeEncryptionChange();
+    password = '';
+    passwordInput = '';
+    hasPassword = true;
+    isEncrypted = true;
+    passwordRequired = true;
+    showPasswordDialog = true;
+  }
+
+  /**
+   * Handle encryption being disabled on the note
+   * Clears state and reloads note content
+   */
+  function handleEncryptionDisabled() {
+    cleanupBeforeEncryptionChange();
+    hasPassword = false;
+    isEncrypted = false;
+    password = '';
+    passwordInput = '';
+    showPasswordDisabledByOtherBanner = true;
+    loadNote();
   }
 
   // Sync line numbers scroll with editor
@@ -769,56 +798,10 @@
           // Another user changed encryption status or password
           if (is_encrypted && has_password) {
             // Note is now encrypted or password was changed - redirect to password screen
-            // Cancel any pending auto-save to prevent overwriting
-            if (saveTimeout) {
-              clearTimeout(saveTimeout);
-              saveTimeout = null;
-            }
-
-            // Close WebSocket connection
-            if (wsClient) {
-              wsClient.close();
-              wsClient = null;
-            }
-
-            // Clear current state
-            password = '';
-            passwordInput = '';
-            hasPassword = true;
-            isEncrypted = true;
-            isRealtimeEnabled = false;
-            connectionStatus = 'disconnected';
-
-            // Show password dialog
-            passwordRequired = true;
-            showPasswordDialog = true;
+            handleEncryptionEnabled();
           } else if (!is_encrypted && !has_password) {
             // Note encryption was removed - immediately update state and reload
-
-            // Cancel any pending auto-save to prevent overwriting with encrypted content
-            if (saveTimeout) {
-              clearTimeout(saveTimeout);
-              saveTimeout = null;
-            }
-
-            // Immediately update encryption state to prevent auto-save from encrypting
-            hasPassword = false;
-            isEncrypted = false;
-
-            // Close WebSocket
-            if (wsClient) {
-              wsClient.close();
-              wsClient = null;
-            }
-
-            // Clear password state BEFORE reloading
-            // This is critical - if passwordInput is set, loadNote() will try to decrypt
-            password = '';
-            passwordInput = '';
-
-            // Show banner and reload the note to get unencrypted content
-            showPasswordDisabledByOtherBanner = true;
-            loadNote();
+            handleEncryptionDisabled();
           }
         },
         onVersionUpdate: (version, message) => {
