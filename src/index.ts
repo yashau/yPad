@@ -163,7 +163,7 @@ app.post('/api/notes', async (c) => {
   }
 
   // Validate syntax highlighting mode
-  if (syntax_highlight && !ALLOWED_SYNTAX_MODES.includes(syntax_highlight)) {
+  if (syntax_highlight && !ALLOWED_SYNTAX_MODES.includes(syntax_highlight as any)) {
     return c.json({ error: 'Invalid syntax highlighting mode' }, 400);
   }
 
