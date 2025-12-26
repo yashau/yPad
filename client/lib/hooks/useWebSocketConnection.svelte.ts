@@ -68,7 +68,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           console.error('[WebSocket] error:', error);
           collaboration.connectionStatus = 'disconnected';
         },
-        onSync: (syncContent, version, operations, serverClientId) => {
+        onSync: (syncContent, version, operations, serverClientId, syntax) => {
           collaboration.clientId = serverClientId;
 
           if (security.isEncrypted) {
@@ -79,6 +79,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
           noteState.currentVersion = version;
           collaboration.lastSentCursorPos = syncContent.length;
+
+          // Apply syntax from server if provided
+          if (syntax && syntax !== editor.syntaxHighlight) {
+            editor.syntaxHighlight = syntax;
+          }
 
           if (collaboration.pendingLocalContent !== null && collaboration.pendingLocalContent !== syncContent) {
             const ops = generateOperations(syncContent, collaboration.pendingLocalContent, collaboration.clientId, noteState.currentVersion);
@@ -148,6 +153,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         onUserLeft: (leftClientId, allConnectedUsers) => {
           collaboration.connectedUsers = new Set(allConnectedUsers);
           collaboration.cleanupStaleCursors(allConnectedUsers);
+        },
+        onSyntaxChange: (syntax) => {
+          if (syntax !== editor.syntaxHighlight) {
+            editor.syntaxHighlight = syntax;
+          }
         }
       });
     } catch (error) {
@@ -302,11 +312,20 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     }
   }
 
+  function sendSyntaxChange(syntax: string) {
+    if (!collaboration.wsClient || !collaboration.isRealtimeEnabled || security.isEncrypted) {
+      return;
+    }
+
+    collaboration.wsClient.sendSyntaxChange(syntax, collaboration.clientId);
+  }
+
   return {
     connectWebSocket,
     disconnectWebSocket,
     sendCursorUpdate,
     sendOperation,
+    sendSyntaxChange,
     getCurrentCursorPosition
   };
 }

@@ -26,7 +26,7 @@
  * - Unencrypted notes use both (version for persistence, sequence for real-time ordering)
  */
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage } from '../../../src/ot/types';
+import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage } from '../../../src/ot/types';
 
 export interface WebSocketClientOptions {
   password?: string;
@@ -35,7 +35,7 @@ export interface WebSocketClientOptions {
   onOperation?: (operation: Operation) => void;
   onClose?: () => void;
   onError?: (error: Error) => void;
-  onSync?: (content: string, version: number, operations: Operation[], clientId: string) => void;
+  onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
   onAck?: (version: number) => void;
   onNoteDeleted?: () => void;
   onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
@@ -43,6 +43,7 @@ export interface WebSocketClientOptions {
   onCursorUpdate?: (clientId: string, position: number) => void;
   onUserJoined?: (clientId: string, connectedUsers: string[]) => void;
   onUserLeft?: (clientId: string, connectedUsers: string[]) => void;
+  onSyntaxChange?: (syntax: string) => void;
   autoReconnect?: boolean;
 }
 
@@ -210,6 +211,12 @@ export class WebSocketClient {
       return;
     }
 
+    // Process syntax ACK immediately - it tells us what sequence number was used
+    if (message.type === 'syntax_ack') {
+      await this.handleSyntaxAck(message as SyntaxAckMessage);
+      return;
+    }
+
     // Check if this message has a global sequence number (operations, cursor updates, user presence)
     const seqNum = (message as any).seqNum;
 
@@ -300,7 +307,7 @@ export class WebSocketClient {
   }
 
   /**
-   * Process a sequenced message (operation, cursor update, or presence event)
+   * Process a sequenced message (operation, cursor update, presence, or syntax change)
    */
   private async processSequencedMessage(message: WSMessage): Promise<void> {
     switch (message.type) {
@@ -318,6 +325,10 @@ export class WebSocketClient {
 
       case 'user_left':
         await this.handleUserLeft(message as UserLeftMessage);
+        break;
+
+      case 'syntax_change':
+        await this.handleSyntaxChange(message as SyntaxChangeMessage);
         break;
 
       default:
@@ -392,7 +403,7 @@ export class WebSocketClient {
     }
 
     if (this.options.onSync) {
-      this.options.onSync(message.content, message.version, message.operations, message.clientId);
+      this.options.onSync(message.content, message.version, message.operations, message.clientId, message.syntax);
     }
   }
 
@@ -463,6 +474,17 @@ export class WebSocketClient {
     if (this.options.onUserLeft) {
       this.options.onUserLeft(message.clientId, message.connectedUsers);
     }
+  }
+
+  private async handleSyntaxChange(message: SyntaxChangeMessage): Promise<void> {
+    if (this.options.onSyntaxChange) {
+      this.options.onSyntaxChange(message.syntax);
+    }
+  }
+
+  private async handleSyntaxAck(message: SyntaxAckMessage): Promise<void> {
+    // Update sequence tracking based on the syntax broadcast we didn't receive
+    this.updateSequenceFromAck(message.seqNum);
   }
 
   /**
@@ -547,6 +569,20 @@ export class WebSocketClient {
       clientId,
       position,
       sessionId: this.options.sessionId,
+    };
+
+    this.ws.send(JSON.stringify(message));
+  }
+
+  sendSyntaxChange(syntax: string, clientId: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message: SyntaxChangeMessage = {
+      type: 'syntax_change',
+      clientId,
+      syntax,
     };
 
     this.ws.send(JSON.stringify(message));

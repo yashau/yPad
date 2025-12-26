@@ -45,6 +45,8 @@ import type {
   CursorAckMessage,
   UserJoinedMessage,
   UserLeftMessage,
+  SyntaxChangeMessage,
+  SyntaxAckMessage,
 } from '../ot/types';
 
 // Message queue item for sequential processing
@@ -67,6 +69,7 @@ export class NoteSessionDurableObject implements DurableObject {
   private isInitialized: boolean;
   private lastOperationSessionId: string | null = null;
   private isEncrypted: boolean = false;
+  private currentSyntax: string = 'plaintext';
 
   // Message queue for sequential processing
   private messageQueue: QueuedMessage[] = [];
@@ -191,6 +194,7 @@ export class NoteSessionDurableObject implements DurableObject {
       operations: this.operationHistory.slice(-50), // Last 50 operations
       clientId, // Send the server-assigned clientId to the client
       seqNum: this.globalSeqNum, // Current global sequence before any broadcasts
+      syntax: this.currentSyntax, // Current syntax highlighting mode
     };
 
     ws.send(JSON.stringify(syncMessage));
@@ -291,8 +295,9 @@ export class NoteSessionDurableObject implements DurableObject {
       await this.handleOperation(ws, message as OperationMessage);
     } else if (message.type === 'cursor_update') {
       await this.handleCursorUpdate(ws, message as CursorUpdateMessage);
+    } else if (message.type === 'syntax_change') {
+      await this.handleSyntaxChange(ws, message as SyntaxChangeMessage);
     }
-    // Add more message type handlers as needed
   }
 
   async handleOperation(ws: WebSocket, message: OperationMessage): Promise<void> {
@@ -367,6 +372,29 @@ export class NoteSessionDurableObject implements DurableObject {
     ws.send(JSON.stringify(ackMessage));
   }
 
+  async handleSyntaxChange(ws: WebSocket, message: SyntaxChangeMessage): Promise<void> {
+    const session = this.sessions.get(ws);
+    if (!session || !session.isAuthenticated) {
+      return;
+    }
+
+    // Update the current syntax in memory
+    this.currentSyntax = message.syntax;
+
+    // Broadcast syntax change to all other clients and get the sequence number
+    const broadcastSeqNum = this.broadcastSyntaxChange(session.clientId, message.syntax);
+
+    // Send acknowledgment to sender with the sequence number of the broadcast
+    const ackMessage: SyntaxAckMessage = {
+      type: 'syntax_ack',
+      seqNum: broadcastSeqNum,
+    };
+    ws.send(JSON.stringify(ackMessage));
+
+    // Persist syntax change to database
+    this.persistSyntaxToDB(message.syntax);
+  }
+
   /**
    * Get the next global sequence number for a broadcast message.
    * All sequenced broadcasts (operations, cursors, presence) must use this
@@ -401,6 +429,43 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Return the sequence number so the sender can stay in sync
     return seqNum;
+  }
+
+  broadcastSyntaxChange(clientId: string, syntax: string): number {
+    const seqNum = this.getNextSeqNum();
+
+    const message: SyntaxChangeMessage = {
+      type: 'syntax_change',
+      clientId,
+      syntax,
+      seqNum,
+    };
+
+    const messageStr = JSON.stringify(message);
+
+    for (const [ws, session] of this.sessions) {
+      // Don't send back to sender
+      if (session.clientId !== clientId) {
+        try {
+          ws.send(messageStr);
+        } catch (error) {
+          console.error(`[DO ${this.noteId}] Error broadcasting syntax change to client ${session.clientId}:`, error);
+        }
+      }
+    }
+
+    // Return the sequence number so the sender can stay in sync
+    return seqNum;
+  }
+
+  async persistSyntaxToDB(syntax: string): Promise<void> {
+    try {
+      await this.env.DB.prepare(
+        `UPDATE notes SET syntax_highlight = ?, updated_at = ? WHERE id = ?`
+      ).bind(syntax, Date.now(), this.noteId).run();
+    } catch (error) {
+      console.error(`[DO ${this.noteId}] Error persisting syntax to database:`, error);
+    }
   }
 
   broadcastOperation(operation: Operation, senderClientId: string): number {
@@ -463,17 +528,19 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       const note = await this.env.DB.prepare(
-        'SELECT content, version, is_encrypted FROM notes WHERE id = ?'
+        'SELECT content, version, is_encrypted, syntax_highlight FROM notes WHERE id = ?'
       ).bind(this.noteId).first();
 
       if (note) {
         this.currentContent = note.content || '';
         this.operationVersion = note.version || 1;
         this.isEncrypted = !!note.is_encrypted;
+        this.currentSyntax = note.syntax_highlight || 'plaintext';
       } else {
         this.currentContent = '';
         this.operationVersion = 1;
         this.isEncrypted = false;
+        this.currentSyntax = 'plaintext';
       }
 
       this.isInitialized = true;

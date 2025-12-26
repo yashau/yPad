@@ -35,6 +35,7 @@ export type SyncMessage = {
   operations: Operation[];
   clientId: string; // Server-assigned client ID for this connection
   seqNum: number; // Current global sequence number - next broadcast will be seqNum + 1
+  syntax?: string; // Current syntax highlighting mode
 };
 
 export type AckMessage = {
@@ -100,6 +101,18 @@ export type UserLeftMessage = {
   seqNum?: number; // Server-assigned global sequence number for ordering all events
 };
 
+export type SyntaxChangeMessage = {
+  type: 'syntax_change';
+  syntax: string;
+  clientId: string;
+  seqNum?: number; // Server-assigned global sequence number for ordering all events
+};
+
+export type SyntaxAckMessage = {
+  type: 'syntax_ack';
+  seqNum: number; // The sequence number used for the syntax change broadcast
+};
+
 export type WSMessage =
   | OperationMessage
   | SyncMessage
@@ -113,7 +126,9 @@ export type WSMessage =
   | CursorUpdateMessage
   | CursorAckMessage
   | UserJoinedMessage
-  | UserLeftMessage;
+  | UserLeftMessage
+  | SyntaxChangeMessage
+  | SyntaxAckMessage;
 
 // Client session information
 export interface ClientSession {

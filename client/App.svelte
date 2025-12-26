@@ -325,7 +325,10 @@
           bind:maxViews={noteState.maxViews}
           bind:expiresIn={noteState.expiresIn}
           viewMode={noteState.viewMode}
-          onSyntaxChange={(lang) => editor.syntaxHighlight = lang}
+          onSyntaxChange={(lang) => {
+            editor.syntaxHighlight = lang;
+            wsConnection.sendSyntaxChange(lang);
+          }}
           onSetPassword={() => {
             noteOps.setPasswordProtection(security.passwordToSet, () => {
               security.passwordToSet = '';
