@@ -17,6 +17,7 @@ export interface NoteOperationsConfig {
   onEncryptionDisabled?: () => void;
   onConflict?: () => void;
   onNoteDeleted?: () => void;
+  onPasswordRequired?: () => void;
 }
 
 export function useNoteOperations(config: NoteOperationsConfig) {
@@ -36,6 +37,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
           security.passwordInput = '';
         }
         security.passwordRequired = true;
+        config.onPasswordRequired?.();
         noteState.isLoading = false;
         noteState.isInitialLoad = false;
         return;
@@ -89,6 +91,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
       noteState.currentVersion = data.version || 1;
       noteState.viewMode = false;
       security.passwordRequired = false;
+      security.passwordError = '';
 
       config.onLoadSuccess?.();
 
@@ -219,9 +222,18 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     try {
       noteState.clearSaveTimeout();
 
-      const response = await fetch(`/api/notes/${noteState.noteId}`, {
+      const url = security.password
+        ? `/api/notes/${noteState.noteId}?password=${encodeURIComponent(security.password)}`
+        : `/api/notes/${noteState.noteId}`;
+
+      const response = await fetch(url, {
         method: 'DELETE'
       });
+
+      if (response.status === 401) {
+        alert('This note is password-protected. Please decrypt it before deleting.');
+        return;
+      }
 
       if (!response.ok) {
         throw new Error('Failed to delete note');

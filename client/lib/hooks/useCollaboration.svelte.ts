@@ -34,17 +34,18 @@ export function useCollaboration() {
   }
 
   function cleanupStaleCursors(connectedUserIds: string[]) {
+    const updatedCursors = new Map(remoteCursors);
     let hasChanges = false;
 
-    remoteCursors.forEach((_, cursorClientId) => {
+    updatedCursors.forEach((_, cursorClientId) => {
       if (!connectedUserIds.includes(cursorClientId)) {
-        remoteCursors.delete(cursorClientId);
+        updatedCursors.delete(cursorClientId);
         hasChanges = true;
       }
     });
 
     if (hasChanges) {
-      remoteCursors = remoteCursors; // Trigger reactivity
+      remoteCursors = updatedCursors;
     }
   }
 

@@ -22,6 +22,7 @@
   import ReloadBanner from './components/Banners/ReloadBanner.svelte';
   import EncryptionEnabledBanner from './components/Banners/EncryptionEnabledBanner.svelte';
   import EncryptionDisabledBanner from './components/Banners/EncryptionDisabledBanner.svelte';
+  import NoteDeletedBanner from './components/Banners/NoteDeletedBanner.svelte';
 
   // Initialize hooks
   const noteState = useNoteState();
@@ -39,6 +40,7 @@
   let showPasswordEnabledBanner = $state(false);
   let showPasswordDisabledBanner = $state(false);
   let showPasswordDisabledByOtherBanner = $state(false);
+  let showNoteDeletedBanner = $state(false);
   let customUrl = $state('');
   let customUrlAvailable = $state(true);
 
@@ -52,7 +54,8 @@
     onNoteDeleted: () => {
       wsConnection.disconnectWebSocket();
       noteOps.newNote();
-    }
+    },
+    onPasswordRequired: () => showPasswordDialog = true
   });
 
   const wsConnection = useWebSocketConnection({
@@ -94,6 +97,10 @@
       if (security.isEncrypted) {
         showReloadBanner = true;
       }
+    },
+    onNoteDeleted: () => {
+      showNoteDeletedBanner = true;
+      noteState.viewMode = true;
     }
   });
 
@@ -372,6 +379,8 @@
     }}
   />
 
+  <NoteDeletedBanner show={showNoteDeletedBanner} />
+
   <EditorView
     bind:content={editor.content}
     syntaxHighlight={editor.syntaxHighlight}
@@ -398,9 +407,12 @@
   bind:open={showPasswordDialog}
   bind:passwordInput={security.passwordInput}
   passwordError={security.passwordError}
-  onSubmit={() => {
+  onSubmit={async () => {
     security.passwordError = '';
-    noteOps.loadNote();
+    await noteOps.loadNote();
+    if (!security.passwordRequired && !security.passwordError) {
+      showPasswordDialog = false;
+    }
   }}
   onCancel={() => {
     showPasswordDialog = false;

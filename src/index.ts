@@ -356,20 +356,35 @@ app.post('/api/notes/:id/refresh', async (c) => {
 
 app.delete('/api/notes/:id', async (c) => {
   const id = c.req.param('id');
+  const password = c.req.query('password');
 
-  await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
+  // Check if note exists and has password protection
+  const note = await c.env.DB.prepare(
+    'SELECT password_hash FROM notes WHERE id = ?'
+  ).bind(id).first();
 
-  // Notify Durable Object to clear its state
+  if (!note) {
+    return c.json({ error: 'Note not found' }, 404);
+  }
+
+  // Verify password if note is password-protected
+  const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
+  if (passwordError) return passwordError;
+
+  // Notify connected clients before deleting
   try {
     const doId = c.env.NOTE_SESSIONS.idFromName(id);
     const stub = c.env.NOTE_SESSIONS.get(doId);
 
-    // Send a DELETE request to the Durable Object to clear its state
+    // Send a DELETE request to the Durable Object to notify clients and clear state
     await stub.fetch(new Request(`http://internal/reset`, { method: 'DELETE' }));
   } catch (error) {
-    console.error('Failed to reset Durable Object:', error);
-    // Continue even if DO reset fails
+    console.error('Failed to notify Durable Object:', error);
+    // Continue even if DO notification fails
   }
+
+  // Delete the note from database after notifying clients
+  await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
 
   return c.json({ success: true });
 });

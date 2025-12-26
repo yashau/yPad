@@ -21,13 +21,15 @@ export interface WebSocketConfig {
   onEncryptionEnabled?: () => void;
   onEncryptionDisabled?: () => void;
   onVersionUpdate?: () => void;
+  onNoteDeleted?: () => void;
 }
 
 export function useWebSocketConnection(config: WebSocketConfig) {
   const { noteState, editor, security, collaboration } = config;
+  let noteWasDeleted = $state(false);
 
   function connectWebSocket() {
-    if (!noteState.noteId || collaboration.wsClient) return;
+    if (!noteState.noteId || collaboration.wsClient || noteWasDeleted) return;
 
     collaboration.connectionStatus = 'connecting';
     collaboration.isSyncing = true;
@@ -55,14 +57,16 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           noteState.saveStatus = 'Disconnected';
           collaboration.wsClient = null;
 
-          collaboration.remoteCursors.clear();
-          collaboration.remoteCursors = collaboration.remoteCursors;
+          collaboration.remoteCursors = new Map();
 
-          setTimeout(() => {
-            if (noteState.noteId && !collaboration.wsClient) {
-              connectWebSocket();
-            }
-          }, 2000);
+          // Only attempt reconnection if note was not deleted
+          if (!noteWasDeleted) {
+            setTimeout(() => {
+              if (noteState.noteId && !collaboration.wsClient && !noteWasDeleted) {
+                connectWebSocket();
+              }
+            }, 2000);
+          }
         },
         onError: (error) => {
           console.error('[WebSocket] error:', error);
@@ -114,12 +118,15 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           noteState.currentVersion = version;
         },
         onNoteDeleted: () => {
+          noteWasDeleted = true;
           if (collaboration.wsClient) {
             collaboration.wsClient.close();
             collaboration.wsClient = null;
           }
           collaboration.isRealtimeEnabled = false;
           collaboration.connectionStatus = 'disconnected';
+          noteState.saveStatus = '';
+          config.onNoteDeleted?.();
         },
         onEncryptionChanged: (is_encrypted, has_password) => {
           if (is_encrypted && has_password) {
@@ -138,12 +145,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             const color = collaboration.getClientColor(remoteClientId);
             const label = `User ${remoteClientId.substring(0, 4)}`;
 
-            collaboration.remoteCursors.set(remoteClientId, {
+            collaboration.remoteCursors = new Map(collaboration.remoteCursors).set(remoteClientId, {
               position,
               color,
               label
             });
-            collaboration.remoteCursors = collaboration.remoteCursors;
           }
         },
         onUserJoined: (joinedClientId, allConnectedUsers) => {
@@ -186,8 +192,9 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       let cursorPos = getCurrentCursorPosition();
       cursorPos = transformCursorPosition(cursorPos, operation);
 
-      // In-place cursor updates for better performance
-      collaboration.remoteCursors.forEach((cursorData, remoteClientId) => {
+      // Update cursor positions and trigger reactivity
+      const updatedCursors = new Map(collaboration.remoteCursors);
+      updatedCursors.forEach((cursorData, remoteClientId) => {
         if (remoteClientId === operation.clientId) {
           let newPosition = cursorData.position;
 
@@ -209,8 +216,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           cursorData.position = transformCursorPosition(cursorData.position, operation);
         }
       });
-      // Trigger reactivity by reassigning the Map
-      collaboration.remoteCursors = collaboration.remoteCursors;
+      collaboration.remoteCursors = updatedCursors;
 
       editor.content = applyOperation(editor.content, operation);
       editor.lastLocalContent = editor.content;
