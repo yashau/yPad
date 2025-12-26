@@ -73,6 +73,11 @@ app.get('/api/notes/:id/ws', async (c) => {
   const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
   if (passwordError) return passwordError;
 
+  // Update last accessed timestamp
+  await c.env.DB.prepare(
+    'UPDATE notes SET last_accessed_at = ? WHERE id = ?'
+  ).bind(Date.now(), id).run();
+
   // Get Durable Object instance (one per note ID)
   const doId = c.env.NOTE_SESSIONS.idFromName(id);
   const stub = c.env.NOTE_SESSIONS.get(doId);
@@ -112,10 +117,10 @@ app.get('/api/notes/:id', async (c) => {
     return c.json({ error: 'Note has reached max views' }, 410);
   }
 
-  // Update view count
+  // Update view count and last accessed timestamp
   await c.env.DB.prepare(
-    'UPDATE notes SET view_count = ? WHERE id = ?'
-  ).bind(newViewCount, id).run();
+    'UPDATE notes SET view_count = ?, last_accessed_at = ? WHERE id = ?'
+  ).bind(newViewCount, Date.now(), id).run();
 
   return c.json({
     id: note.id,
@@ -188,8 +193,8 @@ app.post('/api/notes', async (c) => {
   const now = Date.now();
 
   await c.env.DB.prepare(
-    `INSERT INTO notes (id, content, password_hash, syntax_highlight, max_views, expires_at, created_at, updated_at, version, last_session_id, is_encrypted)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)`
+    `INSERT INTO notes (id, content, password_hash, syntax_highlight, max_views, expires_at, created_at, updated_at, version, last_session_id, is_encrypted, last_accessed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`
   ).bind(
     noteId,
     content,
@@ -199,7 +204,8 @@ app.post('/api/notes', async (c) => {
     expires_at,
     now,
     now,
-    is_encrypted ? 1 : 0
+    is_encrypted ? 1 : 0,
+    now
   ).run();
 
   return c.json({ id: noteId, available: true, version: 1 });
@@ -476,16 +482,24 @@ export { NoteSessionDurableObject } from './durable-objects/NoteSessionDurableOb
 // Scheduled handler for cron trigger - runs every 15 minutes to clean up expired notes
 export const scheduled: ExportedHandlerScheduledHandler<Bindings> = async (_event, env, _ctx) => {
   const now = Date.now();
+  const inactiveThreshold = now - (LIMITS.INACTIVE_NOTE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
   try {
-    // Delete all expired notes
-    const result = await env.DB.prepare(
+    // Delete all expired notes (by expires_at timestamp)
+    const expiredResult = await env.DB.prepare(
       'DELETE FROM notes WHERE expires_at IS NOT NULL AND expires_at <= ?'
     ).bind(now).run();
 
-    console.log(`Cron job: Cleaned up ${result.meta.changes} expired notes at ${new Date(now).toISOString()}`);
+    console.log(`Cron job: Cleaned up ${expiredResult.meta.changes} expired notes at ${new Date(now).toISOString()}`);
+
+    // Delete all inactive notes (not accessed in INACTIVE_NOTE_EXPIRY_DAYS)
+    const inactiveResult = await env.DB.prepare(
+      'DELETE FROM notes WHERE last_accessed_at IS NOT NULL AND last_accessed_at <= ?'
+    ).bind(inactiveThreshold).run();
+
+    console.log(`Cron job: Cleaned up ${inactiveResult.meta.changes} inactive notes at ${new Date(now).toISOString()}`);
   } catch (error) {
-    console.error('Error cleaning up expired notes:', error);
+    console.error('Error cleaning up notes:', error);
   }
 };
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Button } from '../../lib/components/ui/button/index.js';
   import * as Dialog from '../../lib/components/ui/dialog/index.js';
-  import { CONTACT } from '../../../config/constants.js';
+  import { CONTACT, LIMITS } from '../../../config/constants.js';
 
   interface Props {
     open: boolean;
@@ -51,7 +51,7 @@
               <li><strong>No Account Required:</strong> yPad does not require registration or collect personal information.</li>
               <li><strong>No Tracking:</strong> We do not use analytics, tracking cookies, or third-party advertising.</li>
               <li><strong>IP Addresses:</strong> Server logs may temporarily contain IP addresses for operational purposes.</li>
-              <li><strong>Data Retention:</strong> Notes may be automatically deleted based on expiration settings or view limits you configure.</li>
+              <li><strong>Data Retention:</strong> Notes may be automatically deleted based on expiration settings or view limits you configure. Additionally, notes that haven't been accessed in {LIMITS.INACTIVE_NOTE_EXPIRY_DAYS} days are automatically deleted to manage storage.</li>
               <li><strong>No Liability:</strong> The creator is not responsible for any data loss, unauthorized access, or misuse of content.</li>
             </ul>
             <p class="mt-2">

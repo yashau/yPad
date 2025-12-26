@@ -58,6 +58,9 @@ export const LIMITS = {
 
   /** Number of operations before forcing persistence */
   PERSISTENCE_OPERATION_THRESHOLD: 50,
+
+  /** Number of days before an inactive note is deleted (default: 90 days) */
+  INACTIVE_NOTE_EXPIRY_DAYS: 90,
 } as const;
 
 /**

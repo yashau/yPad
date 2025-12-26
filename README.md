@@ -28,7 +28,9 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Custom URLs**: Set custom note IDs with real-time availability checking
 - **Self-Destructing Notes**: Max view count limits (one-time viewing)
 - **Time-Based Expiration**: Set expiration (1 hour, 1 day, 1 week, 1 month)
-- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired notes
+- **Inactivity-Based Cleanup**: Notes automatically deleted after 90 days of no access
+- **Access Tracking**: Last accessed timestamp updated on every view or WebSocket connection
+- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes
 
 ### Editor Features
 - **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
@@ -146,11 +148,13 @@ CREATE TABLE notes (
     updated_at INTEGER NOT NULL,
     version INTEGER DEFAULT 1,
     last_session_id TEXT,
-    is_encrypted INTEGER DEFAULT 0
+    is_encrypted INTEGER DEFAULT 0,
+    last_accessed_at INTEGER  -- Tracks when note was last viewed
 );
 
 CREATE INDEX idx_notes_expires_at ON notes(expires_at);
 CREATE INDEX idx_notes_created_at ON notes(created_at);
+CREATE INDEX idx_notes_last_accessed_at ON notes(last_accessed_at);
 ```
 
 ## Quick Start
@@ -320,7 +324,8 @@ yPad/
 │   ├── prod.ps1                 # Windows production deployment
 │   └── prod.sh                  # Mac/Linux production deployment
 ├── migrations/                  # D1 database migrations
-│   └── 0001_initial_schema.sql
+│   ├── 0001_initial_schema.sql
+│   └── 0002_add_last_accessed_at.sql
 ├── config/                      # Configuration files
 │   └── constants.ts            # Application constants & validation
 ├── .env.example                 # Example environment config
@@ -487,7 +492,7 @@ Click **Options** to set:
 ### REST Endpoints
 
 #### `GET /api/notes/:id`
-Retrieve a note by ID.
+Retrieve a note by ID. Updates `last_accessed_at` timestamp.
 
 **Query Parameters**:
 - `password` (optional): Password for protected notes
@@ -505,8 +510,12 @@ Retrieve a note by ID.
 }
 ```
 
+**Side Effects**:
+- Increments `view_count`
+- Updates `last_accessed_at` timestamp
+
 #### `POST /api/notes`
-Create a new note.
+Create a new note. Initializes `last_accessed_at` to current timestamp.
 
 **Body**:
 ```json
@@ -519,6 +528,9 @@ Create a new note.
   "expires_in": null
 }
 ```
+
+**Side Effects**:
+- Sets `last_accessed_at` to current timestamp
 
 #### `PUT /api/notes/:id`
 Update an existing note.
@@ -547,6 +559,9 @@ Check if a custom ID is available.
 ```
 ws://localhost:8787/api/notes/:id/ws?password=optional
 ```
+
+**Side Effects**:
+- Updates `last_accessed_at` timestamp when connection is established
 
 #### Message Types
 
@@ -698,14 +713,32 @@ For password-protected notes:
 
 ### Automatic Cleanup
 
-A cron trigger runs every 15 minutes:
+A cron trigger runs every 15 minutes to clean up notes:
 ```javascript
 // Triggered by: crons = ["*/15 * * * *"]
 async scheduled(event, env, ctx) {
-  // Delete expired notes
-  // Update expiration helps prevent long-running queries
+  const now = Date.now();
+  const inactiveThreshold = now - (90 * 24 * 60 * 60 * 1000); // 90 days
+
+  // Delete expired notes (by expires_at timestamp)
+  await env.DB.prepare(
+    'DELETE FROM notes WHERE expires_at IS NOT NULL AND expires_at <= ?'
+  ).bind(now).run();
+
+  // Delete inactive notes (not accessed in 90 days)
+  await env.DB.prepare(
+    'DELETE FROM notes WHERE last_accessed_at IS NOT NULL AND last_accessed_at <= ?'
+  ).bind(inactiveThreshold).run();
 }
 ```
+
+**Cleanup Rules**:
+- Notes with `expires_at` past current time are deleted
+- Notes not accessed in 90 days (configurable via `INACTIVE_NOTE_EXPIRY_DAYS` constant) are deleted
+- Access tracking updates on:
+  - GET `/api/notes/:id` - Note view
+  - WebSocket connection to `/api/notes/:id/ws`
+  - POST `/api/notes` - Note creation (initialized to current time)
 
 ## Performance
 
