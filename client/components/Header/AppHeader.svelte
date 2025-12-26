@@ -3,6 +3,7 @@
   import ThemeToggle from '../../lib/components/ui/ThemeToggle.svelte';
   import ConnectionStatus from './ConnectionStatus.svelte';
   import ProtectedBadge from './ProtectedBadge.svelte';
+  import InfoDialog from '../Dialogs/InfoDialog.svelte';
 
   interface Props {
     noteId: string;
@@ -37,13 +38,22 @@
     onCustomUrl,
     children
   }: Props = $props();
+
+  let showInfoDialog = $state(false);
 </script>
 
 <header class="border-b border-border bg-card p-4">
   <div class="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center md:justify-between gap-2">
     <div class="flex items-center justify-between md:justify-start md:gap-4">
       <div class="flex items-center gap-2">
-        <h1 class="text-2xl font-bold">yPad</h1>
+        <button
+          class="text-2xl font-bold cursor-pointer hover:text-primary transition-colors p-0 border-0 bg-transparent"
+          onclick={() => showInfoDialog = true}
+          type="button"
+          aria-label="About yPad"
+        >
+          yPad
+        </button>
         <ConnectionStatus
           {noteId}
           {connectionStatus}
@@ -82,3 +92,5 @@
 
   {@render children?.()}
 </header>
+
+<InfoDialog bind:open={showInfoDialog} />

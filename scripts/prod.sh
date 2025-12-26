@@ -17,7 +17,7 @@ MAX_RETRIES=3
 RETRY_DELAY=2
 
 # Step 1: Check if .env file exists
-echo -e "\n${YELLOW}[1/8] Checking for .env file...${NC}"
+echo -e "\n${YELLOW}[1/9] Checking for .env file...${NC}"
 
 if [ ! -f ".env" ]; then
     echo -e "  ${RED}ERROR: .env file not found!${NC}"
@@ -29,7 +29,7 @@ fi
 echo -e "  ${GREEN}.env file found${NC}"
 
 # Step 2: Load environment variables from .env
-echo -e "\n${YELLOW}[2/8] Loading environment variables...${NC}"
+echo -e "\n${YELLOW}[2/9] Loading environment variables...${NC}"
 
 # Read .env file and export variables
 while IFS='=' read -r key value; do
@@ -77,7 +77,7 @@ else
 fi
 
 # Step 3: Backup current wrangler.toml
-echo -e "\n${YELLOW}[3/8] Backing up wrangler.toml...${NC}"
+echo -e "\n${YELLOW}[3/9] Backing up wrangler.toml...${NC}"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_FILE="wrangler.toml.backup.$TIMESTAMP"
@@ -118,7 +118,7 @@ restore_backup() {
 }
 
 # Step 4: Generate production wrangler.toml
-echo -e "\n${YELLOW}[4/8] Generating production wrangler.toml...${NC}"
+echo -e "\n${YELLOW}[4/9] Generating production wrangler.toml...${NC}"
 
 # Build the config with optional account_id
 cat > wrangler.toml << EOF
@@ -170,7 +170,7 @@ echo -e "    ${CYAN}Database: $DB_NAME ($DB_ID)${NC}"
 echo -e "    ${CYAN}DO Script: $DO_SCRIPT_NAME${NC}"
 
 # Step 5: Run production database migrations with retry
-echo -e "\n${YELLOW}[5/8] Running production database migrations...${NC}"
+echo -e "\n${YELLOW}[5/9] Running production database migrations...${NC}"
 
 MIGRATION_SUCCESS=false
 
@@ -203,20 +203,56 @@ if [ "$MIGRATION_SUCCESS" = false ]; then
     echo -e "  ${CYAN}Continuing with build...${NC}"
 fi
 
-# Step 6: Build the project
-echo -e "\n${YELLOW}[6/8] Building project...${NC}"
+# Step 6: Inject environment variables into constants.ts
+echo -e "\n${YELLOW}[6/9] Injecting environment variables into constants.ts...${NC}"
+
+CONSTANTS_FILE="config/constants.ts"
+CONSTANTS_BACKUP="config/constants.ts.backup"
+
+# Backup constants.ts
+if cp "$CONSTANTS_FILE" "$CONSTANTS_BACKUP"; then
+    echo -e "  ${GREEN}Backed up constants.ts${NC}"
+else
+    echo -e "  ${RED}ERROR: Failed to backup constants.ts${NC}"
+    restore_backup "Failed to backup constants.ts"
+    echo -e "\n${RED}=== Deployment Failed ===${NC}"
+    exit 1
+fi
+
+# Replace ABUSE_EMAIL with value from .env
+if [ -n "$ABUSE_EMAIL" ]; then
+    sed -i "s|ABUSE_EMAIL: '.*'|ABUSE_EMAIL: '$ABUSE_EMAIL'|g" "$CONSTANTS_FILE"
+    echo -e "  ${GREEN}Injected ABUSE_EMAIL: $ABUSE_EMAIL${NC}"
+else
+    echo -e "  ${YELLOW}WARNING: ABUSE_EMAIL not set in .env, using default${NC}"
+fi
+
+# Step 7: Build the project
+echo -e "\n${YELLOW}[7/9] Building project...${NC}"
 
 if npm run build; then
     echo -e "  ${GREEN}Build completed successfully${NC}"
 else
     echo -e "  ${RED}Build failed${NC}"
+    # Restore constants.ts
+    cp "$CONSTANTS_BACKUP" "$CONSTANTS_FILE"
+    rm -f "$CONSTANTS_BACKUP"
     restore_backup "Build failed"
     echo -e "\n${RED}=== Deployment Failed ===${NC}"
     exit 1
 fi
 
-# Step 7: Deploy to Cloudflare with retry
-echo -e "\n${YELLOW}[7/8] Deploying to Cloudflare...${NC}"
+# Restore original constants.ts after build
+echo -e "\n${YELLOW}Restoring original constants.ts...${NC}"
+if cp "$CONSTANTS_BACKUP" "$CONSTANTS_FILE"; then
+    echo -e "  ${GREEN}Original constants.ts restored${NC}"
+    rm -f "$CONSTANTS_BACKUP"
+else
+    echo -e "  ${YELLOW}WARNING: Failed to restore constants.ts${NC}"
+fi
+
+# Step 8: Deploy to Cloudflare with retry
+echo -e "\n${YELLOW}[8/9] Deploying to Cloudflare...${NC}"
 
 DEPLOYMENT_SUCCESS=false
 
@@ -226,7 +262,7 @@ for ((attempt=1; attempt<=MAX_RETRIES; attempt++)); do
         sleep $RETRY_DELAY
     fi
 
-    if npm run deploy 2>&1 | tee /tmp/deploy_output.txt; then
+    if npx wrangler deploy 2>&1 | tee /tmp/deploy_output.txt; then
         echo -e "  ${GREEN}Deployment completed successfully${NC}"
         cat /tmp/deploy_output.txt
         DEPLOYMENT_SUCCESS=true
@@ -247,8 +283,8 @@ if [ "$DEPLOYMENT_SUCCESS" = false ]; then
     exit 1
 fi
 
-# Step 8: Restore original wrangler.toml and cleanup
-echo -e "\n${YELLOW}[8/8] Restoring original wrangler.toml...${NC}"
+# Step 9: Restore original wrangler.toml and cleanup
+echo -e "\n${YELLOW}[9/9] Restoring original wrangler.toml...${NC}"
 
 if cp "$BACKUP_FILE" wrangler.toml; then
     echo -e "  ${GREEN}Original wrangler.toml restored${NC}"

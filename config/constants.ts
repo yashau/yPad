@@ -283,6 +283,14 @@ export const EXPIRATION_OPTIONS = [
 export const CUSTOM_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
 /**
+ * Contact information
+ */
+export const CONTACT = {
+  /** Email address for abuse reports */
+  ABUSE_EMAIL: 'abuse@example.com',
+} as const;
+
+/**
  * Security headers configuration
  */
 export const SECURITY_HEADERS = {

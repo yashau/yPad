@@ -8,7 +8,7 @@ $maxRetries = 3
 $retryDelay = 2
 
 # Step 1: Check if .env file exists
-Write-Host "`n[1/8] Checking for .env file..." -ForegroundColor Yellow
+Write-Host "`n[1/9] Checking for .env file..." -ForegroundColor Yellow
 
 if (-not (Test-Path ".env")) {
     Write-Host "  ERROR: .env file not found!" -ForegroundColor Red
@@ -20,7 +20,7 @@ if (-not (Test-Path ".env")) {
 Write-Host "  .env file found" -ForegroundColor Green
 
 # Step 2: Load environment variables from .env
-Write-Host "`n[2/8] Loading environment variables..." -ForegroundColor Yellow
+Write-Host "`n[2/9] Loading environment variables..." -ForegroundColor Yellow
 
 $envVars = @{}
 Get-Content ".env" | ForEach-Object {
@@ -70,7 +70,7 @@ else {
 }
 
 # Step 3: Backup current wrangler.toml
-Write-Host "`n[3/8] Backing up wrangler.toml..." -ForegroundColor Yellow
+Write-Host "`n[3/9] Backing up wrangler.toml..." -ForegroundColor Yellow
 
 $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $backupFile = "wrangler.toml.backup.$timestamp"
@@ -117,7 +117,7 @@ function Restore-Backup {
 }
 
 # Step 4: Generate production wrangler.toml
-Write-Host "`n[4/8] Generating production wrangler.toml..." -ForegroundColor Yellow
+Write-Host "`n[4/9] Generating production wrangler.toml..." -ForegroundColor Yellow
 
 # Build the config with optional account_id
 $wranglerConfig = "name = `"$($envVars['WORKER_NAME'])`"`n"
@@ -175,7 +175,7 @@ catch {
 }
 
 # Step 5: Run production database migrations with retry
-Write-Host "`n[5/8] Running production database migrations..." -ForegroundColor Yellow
+Write-Host "`n[5/9] Running production database migrations..." -ForegroundColor Yellow
 
 $migrationSuccess = $false
 
@@ -217,14 +217,45 @@ if (-not $migrationSuccess) {
     Write-Host "  Continuing with build..." -ForegroundColor Cyan
 }
 
-# Step 6: Build the project
-Write-Host "`n[6/8] Building project..." -ForegroundColor Yellow
+# Step 6: Inject environment variables into constants.ts
+Write-Host "`n[6/9] Injecting environment variables into constants.ts..." -ForegroundColor Yellow
+
+$constantsFile = "config\constants.ts"
+$constantsBackup = "config\constants.ts.backup"
+
+try {
+    Copy-Item $constantsFile $constantsBackup -Force -ErrorAction Stop
+    Write-Host "  Backed up constants.ts" -ForegroundColor Green
+}
+catch {
+    Write-Host "  ERROR: Failed to backup constants.ts: $_" -ForegroundColor Red
+    Restore-Backup "Failed to backup constants.ts"
+    Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
+    exit 1
+}
+
+# Replace ABUSE_EMAIL with value from .env
+if ($envVars.ContainsKey("ABUSE_EMAIL") -and $envVars["ABUSE_EMAIL"]) {
+    $constantsContent = Get-Content $constantsFile -Raw
+    $constantsContent = $constantsContent -replace "ABUSE_EMAIL: '.*'", "ABUSE_EMAIL: '$($envVars['ABUSE_EMAIL'])'"
+    Set-Content $constantsFile $constantsContent -NoNewline
+    Write-Host "  Injected ABUSE_EMAIL: $($envVars['ABUSE_EMAIL'])" -ForegroundColor Green
+}
+else {
+    Write-Host "  WARNING: ABUSE_EMAIL not set in .env, using default" -ForegroundColor Yellow
+}
+
+# Step 7: Build the project
+Write-Host "`n[7/9] Building project..." -ForegroundColor Yellow
 
 try {
     $buildOutput = & npm run build 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
         Write-Host $buildOutput -ForegroundColor Red
+        # Restore constants.ts
+        Copy-Item $constantsBackup $constantsFile -Force
+        Remove-Item $constantsBackup -Force -ErrorAction SilentlyContinue
         Restore-Backup "Build failed"
         Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
         exit 1
@@ -233,13 +264,27 @@ try {
 }
 catch {
     Write-Host "  Build failed: $_" -ForegroundColor Red
+    # Restore constants.ts
+    Copy-Item $constantsBackup $constantsFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $constantsBackup -Force -ErrorAction SilentlyContinue
     Restore-Backup
     Write-Host "`n=== Deployment Failed ===" -ForegroundColor Red
     exit 1
 }
 
-# Step 7: Deploy to Cloudflare with retry
-Write-Host "`n[7/8] Deploying to Cloudflare..." -ForegroundColor Yellow
+# Restore original constants.ts after build
+Write-Host "`nRestoring original constants.ts..." -ForegroundColor Yellow
+try {
+    Copy-Item $constantsBackup $constantsFile -Force -ErrorAction Stop
+    Write-Host "  Original constants.ts restored" -ForegroundColor Green
+    Remove-Item $constantsBackup -Force -ErrorAction SilentlyContinue
+}
+catch {
+    Write-Host "  WARNING: Failed to restore constants.ts" -ForegroundColor Yellow
+}
+
+# Step 8: Deploy to Cloudflare with retry
+Write-Host "`n[8/9] Deploying to Cloudflare..." -ForegroundColor Yellow
 
 $deploymentSuccess = $false
 
@@ -250,7 +295,7 @@ for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
     }
 
     try {
-        $deployOutput = & npm run deploy 2>&1
+        $deployOutput = & npx wrangler deploy 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host "  Deployment completed successfully" -ForegroundColor Green
             Write-Host $deployOutput -ForegroundColor Cyan
@@ -278,8 +323,8 @@ if (-not $deploymentSuccess) {
     exit 1
 }
 
-# Step 8: Restore original wrangler.toml and cleanup
-Write-Host "`n[8/8] Restoring original wrangler.toml..." -ForegroundColor Yellow
+# Step 9: Restore original wrangler.toml and cleanup
+Write-Host "`n[9/9] Restoring original wrangler.toml..." -ForegroundColor Yellow
 
 try {
     Copy-Item $backupFile "wrangler.toml" -Force -ErrorAction Stop
