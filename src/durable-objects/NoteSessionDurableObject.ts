@@ -100,7 +100,12 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Handle reset request (when note is deleted)
     if (request.method === 'DELETE' && url.pathname === '/reset') {
-      this.resetState();
+      try {
+        const body = await request.json().catch(() => ({})) as { session_id?: string };
+        this.resetState(body.session_id);
+      } catch {
+        this.resetState();
+      }
       return new Response('State reset', { status: 200 });
     }
 
@@ -679,12 +684,13 @@ export class NoteSessionDurableObject implements DurableObject {
     }
   }
 
-  resetState(): void {
+  resetState(deletedBySessionId?: string): void {
     // Close all WebSocket connections
-    for (const [ws] of this.sessions) {
+    for (const [ws, session] of this.sessions) {
       try {
         ws.send(JSON.stringify({
           type: 'note_deleted',
+          sessionId: deletedBySessionId,
           message: 'Note has been deleted'
         }));
         ws.close(1000, 'Note deleted');

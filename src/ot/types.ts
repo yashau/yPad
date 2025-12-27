@@ -60,6 +60,7 @@ export type NoteExpiredMessage = {
 
 export type NoteDeletedMessage = {
   type: 'note_deleted';
+  sessionId?: string; // Session ID of the user who deleted the note
 };
 
 export type EncryptionChangedMessage = {

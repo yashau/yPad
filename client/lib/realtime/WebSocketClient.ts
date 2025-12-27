@@ -37,7 +37,7 @@ export interface WebSocketClientOptions {
   onError?: (error: Error) => void;
   onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
   onAck?: (version: number) => void;
-  onNoteDeleted?: () => void;
+  onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
   onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
   onVersionUpdate?: (version: number, message: string) => void;
   onCursorUpdate?: (clientId: string, position: number) => void;
@@ -244,7 +244,10 @@ export class WebSocketClient {
       case 'note_deleted':
         console.warn('[WebSocket] Note no longer available');
         if (this.options.onNoteDeleted) {
-          this.options.onNoteDeleted();
+          // Check if the current user deleted the note by comparing session IDs
+          const deletedByCurrentUser = message.type === 'note_deleted' &&
+                                        message.sessionId === this.options.sessionId;
+          this.options.onNoteDeleted(deletedByCurrentUser);
         }
         this.close();
         break;

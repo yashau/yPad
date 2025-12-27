@@ -41,6 +41,7 @@
   let showPasswordDisabledBanner = $state(false);
   let showPasswordDisabledByOtherBanner = $state(false);
   let showNoteDeletedBanner = $state(false);
+  let noteDeletedByCurrentUser = $state(false);
   let customUrl = $state('');
   let customUrlAvailable = $state(true);
 
@@ -52,8 +53,12 @@
     onLoadSuccess: () => wsConnection.connectWebSocket(),
     onConflict: () => showConflictDialog = true,
     onNoteDeleted: () => {
+      // When user deletes via the delete button (not via WebSocket)
+      // Show banner and set view mode, but don't clear content
       wsConnection.disconnectWebSocket();
-      noteOps.newNote();
+      showNoteDeletedBanner = true;
+      noteDeletedByCurrentUser = true;
+      noteState.viewMode = true;
     },
     onPasswordRequired: () => showPasswordDialog = true
   });
@@ -98,8 +103,10 @@
         showReloadBanner = true;
       }
     },
-    onNoteDeleted: () => {
+    onNoteDeleted: (deletedByCurrentUser) => {
+      // When note is deleted via WebSocket (either by current user or another user)
       showNoteDeletedBanner = true;
+      noteDeletedByCurrentUser = deletedByCurrentUser;
       noteState.viewMode = true;
     }
   });
@@ -379,7 +386,7 @@
     }}
   />
 
-  <NoteDeletedBanner show={showNoteDeletedBanner} />
+  <NoteDeletedBanner show={showNoteDeletedBanner} deletedByCurrentUser={noteDeletedByCurrentUser} />
 
   <EditorView
     bind:content={editor.content}

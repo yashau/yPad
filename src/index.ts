@@ -392,6 +392,7 @@ app.post('/api/notes/:id/refresh', async (c) => {
 app.delete('/api/notes/:id', async (c) => {
   const id = c.req.param('id');
   const password = c.req.query('password');
+  const sessionId = c.req.query('session_id');
 
   // Check if note exists and has password protection
   const note = await c.env.DB.prepare(
@@ -412,7 +413,11 @@ app.delete('/api/notes/:id', async (c) => {
     const stub = c.env.NOTE_SESSIONS.get(doId);
 
     // Send a DELETE request to the Durable Object to notify clients and clear state
-    await stub.fetch(new Request(`http://internal/reset`, { method: 'DELETE' }));
+    await stub.fetch(new Request(`http://internal/reset`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId })
+    }));
   } catch (error) {
     console.error('Failed to notify Durable Object:', error);
     // Continue even if DO notification fails

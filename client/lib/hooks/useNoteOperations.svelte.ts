@@ -222,9 +222,13 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     try {
       noteState.clearSaveTimeout();
 
-      const url = security.password
-        ? `/api/notes/${noteState.noteId}?password=${encodeURIComponent(security.password)}`
-        : `/api/notes/${noteState.noteId}`;
+      const params = new URLSearchParams();
+      if (security.password) {
+        params.set('password', security.password);
+      }
+      params.set('session_id', noteState.sessionId);
+
+      const url = `/api/notes/${noteState.noteId}?${params.toString()}`;
 
       const response = await fetch(url, {
         method: 'DELETE'

@@ -21,7 +21,7 @@ export interface WebSocketConfig {
   onEncryptionEnabled?: () => void;
   onEncryptionDisabled?: () => void;
   onVersionUpdate?: () => void;
-  onNoteDeleted?: () => void;
+  onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
 }
 
 export function useWebSocketConnection(config: WebSocketConfig) {
@@ -118,7 +118,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         onAck: (version) => {
           noteState.currentVersion = version;
         },
-        onNoteDeleted: () => {
+        onNoteDeleted: (deletedByCurrentUser) => {
           noteWasDeleted = true;
           if (collaboration.wsClient) {
             collaboration.wsClient.close();
@@ -127,7 +127,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           collaboration.isRealtimeEnabled = false;
           collaboration.connectionStatus = 'disconnected';
           noteState.saveStatus = '';
-          config.onNoteDeleted?.();
+          config.onNoteDeleted?.(deletedByCurrentUser);
         },
         onEncryptionChanged: (is_encrypted, has_password) => {
           if (is_encrypted && has_password) {
