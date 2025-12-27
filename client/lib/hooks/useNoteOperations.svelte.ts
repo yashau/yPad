@@ -207,7 +207,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         noteState.saveStatus = '';
       }, 2000);
     } catch (error) {
-      console.error('Failed to save note:', error);
+      // Silent - UI handles save status display
       noteState.saveStatus = 'Failed to save';
     }
   }

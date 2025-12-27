@@ -52,13 +52,19 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
 - **Line Numbers**: Synchronized line numbers with scroll
 - **Dark/Light Theme**: Theme toggle with persistence
-- **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
-- **Smart Loading Indicator**: Animated spinner with intelligent display timing designed for Cloudflare network variability
-  - Shows immediately when save/sync operations are pending
-  - Minimum 1-second display time prevents flickering on rapid keystrokes
-  - Yellow warning badge appears if operations take longer than 2 seconds (helpful when Cloudflare's network gets slow)
-  - Contextual tooltips for all status states (saving, syncing, saved, errors)
-  - Works for both WebSocket-enabled and non-realtime notes
+- **Real-Time Status**: Visual connection indicators (green pulsing dot for real-time sync, blue pulsing dot for encrypted)
+- **Smart Status Indicators**: Comprehensive status system with intelligent display timing
+  - **Connection Status**: Animated pulsing dots that remain visible without flickering
+    - Green dot: Real-time sync active with live user count display
+    - Blue dot: Connected (real-time disabled for encrypted notes)
+  - **Save/Sync Spinner**: Shows immediately when operations are pending
+    - Minimum 1-second display time prevents annoying flicker on rapid keystrokes
+    - Persistent timing across reconnection attempts for accurate connection loss detection
+  - **Connection Lost Detection**: Shows WifiOff icon after 5 seconds of pending operations
+    - Works for both WebSocket (real-time) and HTTP (encrypted) save failures
+    - Persists until connection is fully restored
+  - **Contextual Tooltips**: Clear status messages for all states (saving, syncing, saved, connection lost, errors)
+  - **Silent Operation**: No console spam from connection retries, only browser-native WebSocket errors
 - **Conflict Detection**: User-friendly conflict resolution dialogs
 - **User Notifications**: Banners for encryption changes, password updates, conflicts, and note deletion
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
@@ -503,10 +509,12 @@ Click **Options** to set:
 4. Conflicts are automatically resolved
 5. See other users' cursors with color-coded position indicators
 6. Visual status indicators in the header:
-   - **Green pulse**: Real-time sync active
+   - **Green pulsing dot**: Real-time sync active
    - **User count**: Shows your client ID and `+N` for N other connected users
-   - **Blue pulse**: Connected but collaboration disabled (encrypted note)
-   - **Red**: Disconnected
+   - **Blue pulsing dot**: Connected but collaboration disabled (encrypted note)
+   - **Spinner**: Saving or syncing changes
+   - **WifiOff icon**: Connection lost (appears after 5 seconds of failed operations)
+   - **Check icon**: All changes saved
 7. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
 
 ### Viewing a Protected Note

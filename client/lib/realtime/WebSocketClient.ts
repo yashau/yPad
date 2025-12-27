@@ -133,14 +133,14 @@ export class WebSocketClient {
         }
       };
 
-      this.ws.onerror = (event) => {
-        console.error('[WebSocket] Error:', event);
+      this.ws.onerror = () => {
+        // Silent - UI handles connection status display
         if (this.options.onError) {
           this.options.onError(new Error('WebSocket error'));
         }
       };
     } catch (error) {
-      console.error('[WebSocket] Connection error:', error);
+      // Silent - UI handles connection status display
       if (this.options.onError) {
         this.options.onError(error as Error);
       }
@@ -593,7 +593,6 @@ export class WebSocketClient {
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[WebSocket] Max reconnection attempts reached');
       if (this.options.onError) {
         this.options.onError(new Error('Failed to reconnect'));
       }

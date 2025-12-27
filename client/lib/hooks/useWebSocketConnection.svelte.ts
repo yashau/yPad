@@ -68,8 +68,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             }, 2000);
           }
         },
-        onError: (error) => {
-          console.error('[WebSocket] error:', error);
+        onError: () => {
+          // Error already logged in WebSocketClient, just update status
           collaboration.connectionStatus = 'disconnected';
         },
         onSync: (syncContent, version, operations, serverClientId, syntax) => {
