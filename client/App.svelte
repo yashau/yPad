@@ -300,6 +300,15 @@
       noteState.noteId = path.substring(1);
       noteOps.loadNote();
     }
+
+    // Auto-focus the editor after mount
+    setTimeout(() => {
+      if (editor.textareaScrollRef) {
+        editor.textareaScrollRef.focus();
+      } else if (editor.editorRef) {
+        editor.editorRef.focus();
+      }
+    }, 100);
   });
 
   onDestroy(() => {

@@ -1,13 +1,12 @@
 name = "ypad"
 main = "src/index.ts"
 compatibility_date = "2024-12-22"
-account_id = "37022627330201c8ec329ea50b02bb79"
 
 # D1 Database
 [[d1_databases]]
 binding = "DB"
 database_name = "ypad-db"
-database_id = "0480fb69-1da9-4b0d-b312-96a1bced58cf"
+database_id = "YOUR_DATABASE_ID"
 
 # Static assets
 [assets]

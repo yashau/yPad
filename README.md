@@ -1,5 +1,16 @@
 # yPad
 
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+[![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
+[![Hono](https://img.shields.io/badge/Hono-Framework-E36002?logo=hono&logoColor=white)](https://hono.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-CSS-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![D1 Database](https://img.shields.io/badge/Cloudflare-D1-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/d1/)
+[![Durable Objects](https://img.shields.io/badge/Cloudflare-Durable_Objects-F38020?logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/durable-objects/)
+
+**🌐 Live Demo:** [https://yp.pe](https://yp.pe)
+
 A production-ready, real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network. Features Google Docs-style real-time collaboration using Operational Transform, client-side encryption, syntax highlighting for 150+ languages, and automatic note lifecycle management.
 
 ## Features
@@ -19,6 +30,8 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Client-Side Encryption**: Zero-knowledge AES-GCM 256-bit encryption
 - **Password Protection**: PBKDF2 key derivation with 100,000 iterations
 - **Password Verification**: Required password confirmation before removing encryption
+- **Content Validation**: Prevents password protection on empty notes to satisfy database constraints
+- **Automatic Note Creation**: Password-protected notes are automatically created if they don't exist yet
 - **Encrypted at Rest**: Server never sees plaintext for protected notes
 - **SHA-256 Hashing**: Secure password verification without storing passwords
 - **Real-Time Collaboration Disabled for Encrypted Notes**: E2E encryption preserved by disabling OT sync
@@ -32,6 +45,8 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Inactivity-Based Cleanup**: Notes automatically deleted after 90 days of no access
 - **Access Tracking**: Last accessed timestamp updated on every view or WebSocket connection
 - **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes
+- **Note Deletion Tracking**: System tracks which user deleted a note and shows contextual messaging
+- **Delete Session Propagation**: Deletion session information broadcast to all connected collaborators
 
 ### Editor Features
 - **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
@@ -43,6 +58,7 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
 - **Modular Architecture**: Component-based design with separate hooks for editor, collaboration, and note operations
 - **Info Dialog**: Interactive about dialog accessible from the header with app information
+- **Auto-Focus**: Cursor automatically focuses in text editor on page load for immediate typing
 
 ### Smart Features
 - **Version Tracking**: Prevents edit conflicts across sessions
@@ -61,34 +77,34 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 ### Backend
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Hono | latest | Lightweight web framework for Workers |
-| TypeScript | latest | Type-safe development |
-| Wrangler | latest | Cloudflare development & deployment CLI |
+| Hono | 4.11.1 | Lightweight web framework for Workers |
+| TypeScript | 5.9.3 | Type-safe development |
+| Wrangler | 4.56.0 | Cloudflare development & deployment CLI |
 
 ### Frontend
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Svelte 5 | latest | Reactive UI framework with Runes |
-| Vite | latest | Build tool and dev server |
-| TypeScript | latest | Type safety |
+| Svelte 5 | 5.46.0 | Reactive UI framework with Runes |
+| Vite | 7.3.0 | Build tool and dev server |
+| TypeScript | 5.9.3 | Type safety |
 
 ### Styling & UI
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| Tailwind CSS | latest (v4) | Utility-first CSS framework |
+| Tailwind CSS | 4.1.18 | Utility-first CSS framework |
 | @tailwindcss/postcss | 4.1.18 | Tailwind v4 PostCSS plugin |
-| @tailwindcss/typography | latest | Beautiful prose styling |
-| shadcn-svelte | latest | High-quality component library |
+| @tailwindcss/typography | 0.5.19 | Beautiful prose styling |
+| shadcn-svelte | 1.1.0 | High-quality component library |
 | bits-ui | 2.14.4 | Headless UI primitives |
 | @lucide/svelte | 0.561.0 | Beautiful icon library |
-| clsx | latest | Conditional classnames utility |
-| tailwind-merge | latest | Smart Tailwind class merging |
+| clsx | 2.1.1 | Conditional classnames utility |
+| tailwind-merge | 3.4.0 | Smart Tailwind class merging |
 | tailwind-variants | 3.2.2 | Component variant system |
 
 ### Specialized Libraries
 | Technology | Version | Purpose |
 |------------|---------|---------|
-| highlight.js | latest | Syntax highlighting for 150+ languages |
+| highlight.js | 11.11.1 | Syntax highlighting for 150+ languages |
 | fast-diff | 1.3.0 | Efficient text diffing for OT operations |
 | @internationalized/date | 3.10.1 | Internationalized date handling |
 
@@ -389,17 +405,18 @@ yPad includes automated deployment scripts that handle environment configuration
 
 The deployment script automatically:
 1. ✅ Validates `.env` configuration
-2. ✅ Backs up your local `wrangler.toml`
+2. ✅ Backs up your local `wrangler.toml` and `constants.ts`
 3. ✅ Generates production `wrangler.toml` from `.env`
 4. ✅ Runs production database migrations
 5. ✅ Injects environment variables into constants.ts
 6. ✅ Builds the frontend
 7. ✅ Deploys to Cloudflare Workers
 8. ✅ Restores your local `wrangler.toml` and `constants.ts`
+9. ✅ Cleans up temporary backup files
 
 **Features**:
 - Automatic rollback on failure
-- Timestamped backups of `wrangler.toml`
+- Temporary backups during deployment (cleaned up after successful deployment)
 - Optional account ID support
 - Color-coded output with progress tracking
 - Environment validation before deployment
@@ -449,11 +466,13 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 
 ### Adding Password Protection
 
-1. Click **Options** button
-2. Toggle **Password Protection**
-3. Enter password (client-side encryption)
-4. Note content is encrypted before sending to server
-5. Real-time collaboration is automatically disabled to preserve E2E encryption
+1. Add content to your note first (empty notes cannot be password-protected)
+2. Click **Options** button
+3. Enter password in the password field
+4. Click the lock icon or press Enter to apply
+5. Note content is encrypted before sending to server
+6. If the note hasn't been saved yet, it will be automatically created with encryption
+7. Real-time collaboration is automatically disabled to preserve E2E encryption
 
 ### Removing Password Protection
 
@@ -546,6 +565,7 @@ Delete a note and cleanup Durable Object state.
 
 **Query Parameters**:
 - `password` (optional): Required for protected notes
+- `session_id` (required): Session ID of the user deleting the note for tracking purposes
 
 #### `GET /api/check/:id`
 Check if a custom ID is available.
@@ -645,7 +665,8 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
 ```json
 {
   "type": "note_deleted",
-  "message": "Note has been deleted"
+  "message": "Note has been deleted",
+  "deletedBySessionId": "session-id-of-deleter"
 }
 ```
 

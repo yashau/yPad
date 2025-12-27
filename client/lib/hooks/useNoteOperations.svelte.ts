@@ -256,6 +256,28 @@ export function useNoteOperations(config: NoteOperationsConfig) {
       return;
     }
 
+    // Check if there's content to protect
+    if (!editor.content.trim()) {
+      alert('Cannot password-protect an empty note. Please add some content first.');
+      return;
+    }
+
+    // If note doesn't exist yet, create it first with encryption
+    if (!noteState.noteId) {
+      noteState.clearSaveTimeout();
+
+      security.password = passwordToSet;
+      security.hasPassword = true;
+      security.isEncrypted = true;
+
+      await saveNote(); // This will create the note with encryption
+
+      if (noteState.noteId) {
+        onSuccess?.();
+      }
+      return;
+    }
+
     noteState.clearSaveTimeout();
 
     const wasEncrypted = security.isEncrypted;
