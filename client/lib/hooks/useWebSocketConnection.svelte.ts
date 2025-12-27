@@ -304,6 +304,13 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       return;
     }
 
+    // Don't send cursor updates when we're applying remote operations
+    // This prevents feedback loops where restoring cursor position during remote
+    // operation application triggers selectionchange events that broadcast back
+    if (editor.isUpdating) {
+      return;
+    }
+
     const cursorPos = getCurrentCursorPosition();
     collaboration.wsClient.sendCursorUpdate(cursorPos, collaboration.clientId);
     collaboration.lastSentCursorPos = cursorPos;
