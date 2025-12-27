@@ -21,6 +21,7 @@ export function useCollaboration() {
   let isSyncing = $state(false);
   let remoteCursors = $state<Map<string, RemoteCursorData>>(new Map());
   let connectedUsers = $state<Set<string>>(new Set());
+  let hasPendingOperations = $state(false);
 
   const CURSOR_COLORS = ['blue', 'green', 'red', 'amber', 'purple', 'pink', 'orange', 'cyan'];
   const clientColorMap = new Map<string, string>();
@@ -76,6 +77,9 @@ export function useCollaboration() {
 
     get connectedUsers() { return connectedUsers; },
     set connectedUsers(value: Set<string>) { connectedUsers = value; },
+
+    get hasPendingOperations() { return hasPendingOperations; },
+    set hasPendingOperations(value: boolean) { hasPendingOperations = value; },
 
     getClientColor,
     cleanupStaleCursors

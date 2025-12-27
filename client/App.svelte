@@ -333,6 +333,8 @@
     isEncrypted={security.isEncrypted}
     hasPassword={security.hasPassword}
     saveStatus={noteState.saveStatus}
+    isSyncing={collaboration.isSyncing}
+    hasPendingOperations={collaboration.hasPendingOperations}
     viewMode={noteState.viewMode}
     onNewNote={noteOps.newNote}
     onDeleteNote={noteOps.deleteNote}

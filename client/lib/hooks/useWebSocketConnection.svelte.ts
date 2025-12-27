@@ -117,6 +117,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         },
         onAck: (version) => {
           noteState.currentVersion = version;
+          // Wait for next tick to allow WebSocketClient to clear waitingForAck
+          setTimeout(() => {
+            if (collaboration.wsClient && !collaboration.wsClient.hasPendingOperations()) {
+              collaboration.hasPendingOperations = false;
+            }
+          }, 0);
         },
         onNoteDeleted: (deletedByCurrentUser) => {
           noteWasDeleted = true;
@@ -306,6 +312,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
   function sendOperation(operation: Operation) {
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
       collaboration.wsClient.sendOperation(operation, noteState.currentVersion);
+      // Mark that we have pending operations
+      collaboration.hasPendingOperations = true;
       // Don't increment version optimistically - wait for ACK
       // This prevents false conflicts if WebSocket fails before ACK
     }

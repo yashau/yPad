@@ -53,6 +53,12 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Line Numbers**: Synchronized line numbers with scroll
 - **Dark/Light Theme**: Theme toggle with persistence
 - **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
+- **Smart Loading Indicator**: Animated spinner with intelligent display timing designed for Cloudflare network variability
+  - Shows immediately when save/sync operations are pending
+  - Minimum 1-second display time prevents flickering on rapid keystrokes
+  - Yellow warning badge appears if operations take longer than 2 seconds (helpful when Cloudflare's network gets slow)
+  - Contextual tooltips for all status states (saving, syncing, saved, errors)
+  - Works for both WebSocket-enabled and non-realtime notes
 - **Conflict Detection**: User-friendly conflict resolution dialogs
 - **User Notifications**: Banners for encryption changes, password updates, conflicts, and note deletion
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues

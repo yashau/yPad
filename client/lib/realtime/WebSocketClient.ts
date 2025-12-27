@@ -631,4 +631,8 @@ export class WebSocketClient {
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
+
+  hasPendingOperations(): boolean {
+    return this.outboundQueue.length > 0 || this.waitingForAck;
+  }
 }
