@@ -7,6 +7,8 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 ### Real-Time Collaboration
 - **Multi-User Editing**: Live collaborative editing with multiple users simultaneously
 - **Operational Transform**: Character-level conflict-free concurrent editing using OT algorithm
+- **InputEvent-Based Operation Generation**: Accurate cursor-aware OT operations using browser InputEvent API
+- **Operation Pipelining**: Eliminated ACK-based latency bottleneck with fire-and-forget writes
 - **Global Message Sequencing**: Server-side message ordering ensures consistent operation application across all clients
 - **Automatic Conflict Resolution**: Smart merging of concurrent edits with no data loss
 - **Session Awareness**: Cursor position preservation during remote edits
@@ -14,6 +16,8 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Syntax Highlighting Sync**: Real-time synchronization of syntax highlighting changes across all collaborators
 - **User Presence**: Live count of connected collaborators in the header status indicator
 - **WebSocket-Based**: Real-time synchronization via Durable Objects with optimized reconnection
+- **Durable Object Read Caching**: In-memory content caching for improved real-time performance
+- **Checksum Verification**: Automatic content integrity verification during sync
 
 ### Security & Privacy
 - **Client-Side Encryption**: Zero-knowledge AES-GCM 256-bit encryption
@@ -38,15 +42,21 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Line Numbers**: Synchronized line numbers with scroll
 - **Dark/Light Theme**: Theme toggle with persistence
 - **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
+- **Clickable URL Display**: Copy note URL with one click from header (domain/noteId format)
+- **Note URL Visibility**: Persistent note ID display in header with copy-to-clipboard functionality
 - **Conflict Detection**: User-friendly conflict resolution dialogs
 - **User Notifications**: Banners for encryption changes, password updates, conflicts, and note deletion
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
 - **Modular Architecture**: Component-based design with separate hooks for editor, collaboration, and note operations
 - **Info Dialog**: Interactive about dialog accessible from the header with app information
+- **Password UI**: Redesigned password protection with dedicated button and focus management
+- **View Mode Support**: Read-only textarea mode for deleted notes with text selection enabled
+- **Mobile Optimizations**: Improved responsive design and touch interactions
 
 ### Smart Features
 - **Version Tracking**: Prevents edit conflicts across sessions
-- **Automatic Reconnection**: Exponential backoff for WebSocket reconnection
+- **Automatic Reconnection**: Exponential backoff for WebSocket reconnection with state reset
+- **WebSocket State Management**: Proper cleanup and reset when creating new notes after deletion
 - **View Counter**: Track how many times a note has been viewed
 - **Graceful Degradation**: Falls back to HTTP saves when disconnected
 
@@ -262,8 +272,9 @@ yPad/
 │   │   │   └── LineNumbers.svelte
 │   │   ├── Header/             # Header components
 │   │   │   ├── AppHeader.svelte
-│   │   │   ├── ConnectionStatus.svelte
-│   │   │   └── ProtectedBadge.svelte
+│   │   │   ├── ConnectionStatus.svelte  # WebSocket status & clickable URL display
+│   │   │   ├── ProtectedBadge.svelte
+│   │   │   └── StatusIndicator.svelte   # Save/sync status indicators
 │   │   └── Toolbar/            # Toolbar components
 │   │       ├── LanguageSelector.svelte
 │   │       ├── OptionsPanel.svelte
@@ -288,7 +299,9 @@ yPad/
 │   │   │   ├── useSecurity.svelte.ts       # Security & encryption
 │   │   │   └── useWebSocketConnection.svelte.ts # WebSocket management
 │   │   ├── realtime/            # WebSocket & OT client logic
-│   │   │   └── WebSocketClient.ts  # WebSocket client with OT
+│   │   │   ├── InputEventOperationGenerator.ts  # Cursor-aware OT from InputEvent
+│   │   │   ├── OperationGenerator.ts            # fast-diff based OT (for sync)
+│   │   │   └── WebSocketClient.ts               # WebSocket client with OT
 │   │   ├── stores/              # Svelte stores (theme, etc.)
 │   │   ├── utils/               # Utility functions
 │   │   └── crypto.ts            # Client-side encryption (AES-GCM)
@@ -310,7 +323,9 @@ yPad/
 │   ├── ot/                      # Operational Transform
 │   │   ├── types.ts             # OT type definitions & WebSocket messages
 │   │   ├── transform.ts         # OT algorithm implementation
-│   │   └── apply.ts             # Operation application
+│   │   ├── apply.ts             # Operation application
+│   │   └── checksum.ts          # Content integrity verification
+│   ├── types.d.ts               # TypeScript type definitions
 │   └── index.ts                 # Hono API server & routes
 ├── dist/                        # Build output (gitignored)
 │   ├── client/
@@ -693,13 +708,32 @@ yPad uses OT for real-time collaboration, not CRDTs. This provides:
 - **Deterministic conflict resolution**: Same result for all clients
 - **Cursor position transformation**: Cursors move correctly during concurrent edits
 - **Efficient bandwidth**: Only operations are transmitted, not full state
+- **InputEvent-Based Generation**: Operations generated directly from browser InputEvent for accurate cursor tracking
+- **Dual Operation Modes**:
+  - InputEvent-based for live typing (accurate cursor position)
+  - fast-diff based for state reconciliation (WebSocket reconnect sync)
 
 Operations are defined as:
 ```typescript
 type Operation =
-  | { type: 'insert', position: number, text: string }
-  | { type: 'delete', position: number, count: number }
+  | { type: 'insert', position: number, text: string, clientId: string, version: number }
+  | { type: 'delete', position: number, count: number, clientId: string, version: number }
 ```
+
+### Content Integrity & Self-Healing
+
+yPad includes automatic content verification and recovery:
+- **Checksum Verification**: Simple checksum algorithm verifies content integrity after each operation
+- **Automatic Detection**: Mismatches detected during sync and operation acknowledgments
+- **Graceful Handling**: Silent tracking of mismatches without disrupting user experience
+- **Server-Authoritative**: Server content is always considered the source of truth
+- **Real-Time Monitoring**: Checksum validation occurs on every operation ACK from server
+
+The checksum system helps detect:
+- Network transmission errors
+- OT transformation inconsistencies
+- State synchronization issues
+- Client-server content divergence
 
 ### Client-Side Encryption
 
@@ -750,10 +784,13 @@ async scheduled(event, env, ctx) {
 - **Sub-100ms Latency**: Requests served from nearest edge location
 - **Automatic Scaling**: Handles traffic spikes without configuration
 - **Durable Objects**: Stateful coordination with global uniqueness
-- **Debounced Saves**: Reduces database writes by batching operations
+- **Operation Pipelining**: Fire-and-forget D1 writes eliminate ACK-based latency bottleneck
+- **Read Caching**: Durable Objects cache content in memory to avoid redundant database reads
+- **Debounced Saves**: Reduces database writes by batching operations (5s or 50 operations)
 - **Optimized Cursor Updates**: Debounced cursor position updates to reduce WebSocket traffic
 - **Efficient Memory Management**: Reduced object allocations in hot paths for better performance
 - **Connection Management**: Optimized WebSocket version synchronization and reconnection logic
+- **InputEvent Optimization**: Direct operation generation from browser events eliminates diff overhead
 
 ## Security Considerations
 
