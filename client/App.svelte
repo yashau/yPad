@@ -231,13 +231,6 @@
       // CRITICAL: Use InputEvent-based generation for accurate cursor positions
       // oldContent→newContent represents the actual DOM change that just happened
       // This preserves edit locality regardless of pending operations
-      console.log('[Input] Before generation:', {
-        event: event ? { inputType: event.inputType, data: event.data } : null,
-        oldContentLength: oldContent.length,
-        newContentLength: newContent.length,
-        cursorPosition
-      });
-
       const operations = generateOperationsFromInputEvent(
         event,
         oldContent,
@@ -248,15 +241,6 @@
       );
 
       if (operations.length > 0) {
-        console.log('[Input] Generating operations:', {
-          oldContentLength: oldContent.length,
-          newContentLength: newContent.length,
-          oldContent: oldContent.substring(0, 50) + (oldContent.length > 50 ? '...' : ''),
-          newContent: newContent.substring(0, 50) + (newContent.length > 50 ? '...' : ''),
-          operations: operations.map(op => ({ type: op.type, position: op.position, ...('text' in op ? { text: op.text } : { length: op.length }), version: op.version })),
-          baseVersion,
-          hasPending: collaboration.pendingLocalContent !== null
-        });
         // If this is the first pending operation, capture the base version
         if (collaboration.pendingLocalContent === null) {
           collaboration.pendingBaseVersion = noteState.currentVersion;
