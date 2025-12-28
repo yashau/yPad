@@ -69,10 +69,11 @@ export class WebSocketClient {
   private inboundQueue: QueuedInboundMessage[] = [];
   private isProcessingInbound = false;
 
-  // Outbound operation queue for sequential sending
+  // Outbound operation queue for pipelined sending
   private outboundQueue: QueuedOutboundOperation[] = [];
   private isProcessingOutbound = false;
-  private waitingForAck = false;
+  private operationsInFlight = 0; // Number of operations waiting for ACK
+  private maxOperationsInFlight = 20; // Allow up to 20 operations to be sent before backpressure
 
   // Global sequence ordering for ALL broadcast messages (operations, cursors, presence)
   private nextExpectedSeq: number = 1;
@@ -107,6 +108,8 @@ export class WebSocketClient {
         this.reconnectAttempts = 0;
         // Clear pending messages - they're stale now, sync will provide current state
         this.pendingMessages.clear();
+        // Reset in-flight counter on new connection
+        this.operationsInFlight = 0;
         if (this.options.onOpen) {
           this.options.onOpen();
         }
@@ -447,10 +450,12 @@ export class WebSocketClient {
     // Update sequence tracking based on the broadcast we didn't receive
     this.updateSequenceFromAck(message.seqNum);
 
-    // ACK received, we can send the next operation
-    this.waitingForAck = false;
+    // Decrement in-flight counter - we got an ACK
+    if (this.operationsInFlight > 0) {
+      this.operationsInFlight--;
+    }
 
-    // Continue processing outbound queue
+    // Continue processing outbound queue if there are more operations to send
     if (this.outboundQueue.length > 0 && !this.isProcessingOutbound) {
       this.processOutboundQueue();
     }
@@ -491,17 +496,12 @@ export class WebSocketClient {
   }
 
   /**
-   * Process outbound operations sequentially
-   * Only sends next operation after receiving ACK for previous one
+   * Process outbound operations with pipelining
+   * Allows multiple operations in flight before applying backpressure
    */
   private processOutboundQueue(): void {
     // Prevent concurrent processing
-    if (this.isProcessingOutbound || this.waitingForAck) {
-      return;
-    }
-
-    // Check if we have operations to send
-    if (this.outboundQueue.length === 0) {
+    if (this.isProcessingOutbound) {
       return;
     }
 
@@ -514,30 +514,30 @@ export class WebSocketClient {
     this.isProcessingOutbound = true;
 
     try {
-      const queuedOp = this.outboundQueue.shift();
+      // Send as many operations as we can without exceeding max in-flight limit
+      while (
+        this.outboundQueue.length > 0 &&
+        this.operationsInFlight < this.maxOperationsInFlight
+      ) {
+        const queuedOp = this.outboundQueue.shift();
 
-      if (!queuedOp) {
-        console.error('[WebSocket] Outbound queue empty when operation was expected');
-        this.isProcessingOutbound = false;
-        return;
+        if (!queuedOp) {
+          break;
+        }
+
+        const message: OperationMessage = {
+          type: 'operation',
+          operation: queuedOp.operation,
+          baseVersion: queuedOp.baseVersion,
+          clientId: queuedOp.operation.clientId,
+          sessionId: this.options.sessionId,
+        };
+
+        this.ws.send(JSON.stringify(message));
+        this.operationsInFlight++;
       }
-
-      const message: OperationMessage = {
-        type: 'operation',
-        operation: queuedOp.operation,
-        baseVersion: queuedOp.baseVersion,
-        clientId: queuedOp.operation.clientId,
-        sessionId: this.options.sessionId,
-      };
-
-      this.ws.send(JSON.stringify(message));
-
-      // Mark that we're waiting for ACK before sending next operation
-      this.waitingForAck = true;
     } catch (error) {
       console.error('[WebSocket] Error processing outbound operation:', error);
-      // Reset state so we can try again
-      this.waitingForAck = false;
     } finally {
       this.isProcessingOutbound = false;
     }
@@ -550,14 +550,14 @@ export class WebSocketClient {
       return;
     }
 
-    // Enqueue operation for sequential sending
+    // Enqueue operation for pipelined sending
     this.outboundQueue.push({
       operation,
       baseVersion,
     });
 
     // Start processing if not already processing
-    if (!this.isProcessingOutbound && !this.waitingForAck) {
+    if (!this.isProcessingOutbound) {
       this.processOutboundQueue();
     }
   }
