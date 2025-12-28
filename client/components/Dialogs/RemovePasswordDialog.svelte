@@ -25,7 +25,7 @@
 <Dialog.Root bind:open>
   <Dialog.Portal>
     <Dialog.Overlay />
-    <Dialog.Content>
+    <Dialog.Content class="sm:top-[50%] sm:translate-y-[-50%] top-[20%] translate-y-0">
       <Dialog.Header>
         <Dialog.Title>Remove Password Protection</Dialog.Title>
         <Dialog.Description>Enter the current password to remove encryption and enable real-time collaboration.</Dialog.Description>

@@ -13,12 +13,18 @@
   }
 
   let { open = $bindable(), customUrl = $bindable(), customUrlAvailable, onSubmit, onCancel, onUrlChange }: Props = $props();
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && customUrlAvailable && customUrl) {
+      onSubmit();
+    }
+  }
 </script>
 
 <Dialog.Root bind:open>
   <Dialog.Portal>
     <Dialog.Overlay />
-    <Dialog.Content>
+    <Dialog.Content class="sm:top-[50%] sm:translate-y-[-50%] top-[20%] translate-y-0">
       <Dialog.Header>
         <Dialog.Title>Set Custom URL</Dialog.Title>
         <Dialog.Description>Choose a custom URL for your note.</Dialog.Description>
@@ -28,6 +34,7 @@
         placeholder="my-custom-url"
         class="mb-2"
         oninput={(e) => onUrlChange((e.target as HTMLInputElement).value)}
+        onkeydown={handleKeydown}
       />
       {#if customUrl && !customUrlAvailable}
         <p class="text-sm text-destructive mb-4">This URL is already taken</p>

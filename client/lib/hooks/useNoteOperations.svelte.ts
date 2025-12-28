@@ -18,6 +18,7 @@ export interface NoteOperationsConfig {
   onConflict?: () => void;
   onNoteDeleted?: () => void;
   onPasswordRequired?: () => void;
+  onNewNote?: () => void;
 }
 
 export function useNoteOperations(config: NoteOperationsConfig) {
@@ -207,7 +208,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         noteState.saveStatus = '';
       }, 2000);
     } catch (error) {
-      console.error('Failed to save note:', error);
+      // Silent - UI handles save status display
       noteState.saveStatus = 'Failed to save';
     }
   }
@@ -253,6 +254,28 @@ export function useNoteOperations(config: NoteOperationsConfig) {
   async function setPasswordProtection(passwordToSet: string, onSuccess?: () => void) {
     if (!passwordToSet.trim()) {
       alert('Please enter a password');
+      return;
+    }
+
+    // Check if there's content to protect
+    if (!editor.content.trim()) {
+      alert('Cannot password-protect an empty note. Please add some content first.');
+      return;
+    }
+
+    // If note doesn't exist yet, create it first with encryption
+    if (!noteState.noteId) {
+      noteState.clearSaveTimeout();
+
+      security.password = passwordToSet;
+      security.hasPassword = true;
+      security.isEncrypted = true;
+
+      await saveNote(); // This will create the note with encryption
+
+      if (noteState.noteId) {
+        onSuccess?.();
+      }
       return;
     }
 
@@ -409,6 +432,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     security.isEncrypted = false;
     editor.syntaxHighlight = 'plaintext';
     window.history.pushState({}, '', '/');
+    config.onNewNote?.();
   }
 
   return {

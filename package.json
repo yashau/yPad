@@ -7,6 +7,8 @@
     "deploy": "npm run build && wrangler deploy",
     "build": "vite build",
     "preview": "npm run build && wrangler dev --local",
+    "check:client": "npx svelte-check --workspace client",
+    "check:types": "npx tsc --noEmit",
     "db:create": "wrangler d1 create ypad-db",
     "db:migrate": "wrangler d1 migrations apply ypad-db --local",
     "db:migrate:prod": "wrangler d1 migrations apply ypad-db --remote"

@@ -25,7 +25,7 @@
 <Dialog.Root bind:open>
   <Dialog.Portal>
     <Dialog.Overlay />
-    <Dialog.Content>
+    <Dialog.Content class="sm:top-[50%] sm:translate-y-[-50%] top-[20%] translate-y-0">
       <Dialog.Header>
         <Dialog.Title>Password Required</Dialog.Title>
         <Dialog.Description>This note is password protected.</Dialog.Description>

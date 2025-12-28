@@ -60,7 +60,11 @@
       noteDeletedByCurrentUser = true;
       noteState.viewMode = true;
     },
-    onPasswordRequired: () => showPasswordDialog = true
+    onPasswordRequired: () => showPasswordDialog = true,
+    onNewNote: () => {
+      showOptions = false;
+      showNoteDeletedBanner = false;
+    }
   });
 
   const wsConnection = useWebSocketConnection({
@@ -365,7 +369,10 @@
     isEncrypted={security.isEncrypted}
     hasPassword={security.hasPassword}
     saveStatus={noteState.saveStatus}
+    isSyncing={collaboration.isSyncing}
     viewMode={noteState.viewMode}
+    isNoteDeleted={showNoteDeletedBanner}
+    showOptions={showOptions}
     onNewNote={noteOps.newNote}
     onDeleteNote={noteOps.deleteNote}
     onToggleOptions={() => showOptions = !showOptions}

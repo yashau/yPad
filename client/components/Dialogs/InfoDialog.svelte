@@ -2,12 +2,26 @@
   import { Button } from '../../lib/components/ui/button/index.js';
   import * as Dialog from '../../lib/components/ui/dialog/index.js';
   import { CONTACT, LIMITS } from '../../../config/constants.js';
+  import ExternalLink from '@lucide/svelte/icons/external-link';
 
   interface Props {
     open: boolean;
   }
 
   let { open = $bindable() }: Props = $props();
+
+  $effect(() => {
+    if (open) {
+      // Reset scroll position to top when dialog opens
+      // Use setTimeout to ensure DOM is fully rendered
+      setTimeout(() => {
+        const dialogContent = document.querySelector('[data-slot="dialog-content"]') as HTMLElement;
+        if (dialogContent) {
+          dialogContent.scrollTop = 0;
+        }
+      }, 0);
+    }
+  });
 </script>
 
 <Dialog.Root bind:open>
@@ -19,6 +33,27 @@
       </Dialog.Header>
 
       <div class="space-y-6 py-4">
+        <!-- Introduction Section -->
+        <section>
+          <p class="text-sm text-muted-foreground">
+            A real-time collaborative notepad with optional end-to-end encryption. Built out of frustration with the lack of good alternatives. Share notes instantly with custom URLs, password protection, and live editing.
+          </p>
+        </section>
+
+        <!-- Features Section -->
+        <section>
+          <h3 class="text-lg font-semibold mb-3">Features</h3>
+          <ul class="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
+            <li><strong>Real-Time Collaboration:</strong> Multiple users can edit simultaneously with live cursor tracking</li>
+            <li><strong>Password Protection:</strong> Optional client-side AES-256 end-to-end encryption</li>
+            <li><strong>Custom URLs:</strong> Create memorable links with custom note IDs</li>
+            <li><strong>Syntax Highlighting:</strong> Support for 150+ programming languages</li>
+            <li><strong>Self-Destructing Notes:</strong> Set view limits or time-based expiration</li>
+            <li><strong>Auto-Save:</strong> Your changes are saved automatically as you type</li>
+            <li><strong>Dark/Light Theme:</strong> Choose your preferred theme with persistence</li>
+          </ul>
+        </section>
+
         <!-- Terms of Service Section -->
         <section>
           <h3 class="text-lg font-semibold mb-3">Terms of Service</h3>
@@ -86,16 +121,26 @@
             <p>
               <a href="https://github.com/yashau/yPad" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline font-medium inline-flex items-center gap-1">
                 github.com/yashau/yPad
-                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                </svg>
+                <ExternalLink class="w-3 h-3" />
+              </a>
+            </p>
+          </div>
+        </section>
+
+        <!-- Creator Section -->
+        <section>
+          <div class="text-sm text-muted-foreground">
+            <p>
+              Originally created by <a href="https://yashau.com" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline font-medium inline-flex items-center gap-1">
+                Ibrahim Yashau
+                <ExternalLink class="w-3 h-3" />
               </a>
             </p>
           </div>
         </section>
 
         <!-- Disclaimer Section -->
-        <section class="pt-4 border-t">
+        <section>
           <div class="text-xs text-muted-foreground space-y-1">
             <p>
               <strong>Disclaimer:</strong> yPad is a personal project created and maintained in free time. There is no company, organization, or legal entity behind this service.
