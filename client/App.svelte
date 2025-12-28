@@ -224,8 +224,8 @@
     const cursorPosition = wsConnection.getCurrentCursorPosition();
 
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
-      // For realtime mode, editor.content tracks confirmed content only
-      // The DOM content (newContent) is the optimistic/local view
+      // For realtime mode, update editor.content optimistically
+      // This allows checksum verification to work correctly
       const baseVersion = noteState.currentVersion;
 
       // CRITICAL: Use InputEvent-based generation for accurate cursor positions
@@ -258,6 +258,9 @@
         // Track the optimistic state (what we expect after all pending ops apply)
         collaboration.pendingLocalContent = newContent;
       }
+
+      // Update editor.content optimistically so checksum verification works
+      editor.content = newContent;
 
       setTimeout(() => wsConnection.sendCursorUpdate(), 0);
     } else {

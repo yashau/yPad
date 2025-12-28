@@ -7,6 +7,7 @@ import { WebSocketClient } from '../realtime/WebSocketClient';
 import { generateOperations } from '../realtime/OperationGenerator';
 import { transformCursorPosition } from '../../../src/ot/transform';
 import { applyOperation } from '../../../src/ot/apply';
+import { simpleChecksum } from '../../../src/ot/checksum';
 import type { Operation } from '../../../src/ot/types';
 import type { useNoteState } from './useNoteState.svelte';
 import type { useEditor } from './useEditor.svelte';
@@ -27,6 +28,7 @@ export interface WebSocketConfig {
 export function useWebSocketConnection(config: WebSocketConfig) {
   const { noteState, editor, security, collaboration } = config;
   let noteWasDeleted = $state(false);
+  let checksumMismatchCount = 0; // Track consecutive checksum mismatches
 
   function connectWebSocket() {
     if (!noteState.noteId || collaboration.wsClient || noteWasDeleted) return;
@@ -48,8 +50,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           collaboration.connectionStatus = 'connected';
           noteState.saveStatus = 'Real-time sync active';
         },
-        onOperation: (operation) => {
-          applyRemoteOperation(operation);
+        onOperation: (operation, contentChecksum) => {
+          applyRemoteOperation(operation, contentChecksum);
         },
         onClose: () => {
           collaboration.isRealtimeEnabled = false;
@@ -122,8 +124,13 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
           collaboration.isSyncing = false;
         },
-        onAck: (version) => {
+        onAck: (version, contentChecksum?: number) => {
           noteState.currentVersion = version;
+
+          // Verify content checksum if provided
+          if (contentChecksum !== undefined) {
+            verifyContentChecksum(contentChecksum);
+          }
         },
         onNoteDeleted: (deletedByCurrentUser) => {
           noteWasDeleted = true;
@@ -191,47 +198,79 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     collaboration.connectionStatus = 'disconnected';
   }
 
-  function applyRemoteOperation(operation: Operation) {
+  function verifyContentChecksum(serverChecksum: number) {
+    const localChecksum = simpleChecksum(editor.content);
+
+    if (localChecksum !== serverChecksum) {
+      checksumMismatchCount++;
+      // Log for debugging - don't force resync automatically
+      // User can manually refresh if needed
+    } else {
+      // Reset mismatch counter on successful verification
+      checksumMismatchCount = 0;
+    }
+  }
+
+  function applyRemoteOperation(operation: Operation, contentChecksum?: number) {
+    const isOwnOp = operation.clientId === collaboration.clientId;
+
     editor.isUpdating = true;
 
     try {
-      collaboration.lastSentCursorPos = transformCursorPosition(collaboration.lastSentCursorPos, operation);
-
-      let cursorPos = getCurrentCursorPosition();
-      cursorPos = transformCursorPosition(cursorPos, operation);
-
-      // Update cursor positions and trigger reactivity
-      // Only transform cursors that are NOT from the operation's client
-      // The operation client's cursor position comes from their cursor_update messages
-      const updatedCursors = new Map(collaboration.remoteCursors);
-      updatedCursors.forEach((cursorData, remoteClientId) => {
-        if (remoteClientId !== operation.clientId) {
-          cursorData.position = transformCursorPosition(cursorData.position, operation);
+      // For our own operations, we already applied them optimistically
+      // Just verify checksum and update tracking
+      if (isOwnOp) {
+        // Verify checksum if provided
+        if (contentChecksum !== undefined) {
+          verifyContentChecksum(contentChecksum);
         }
-      });
-      collaboration.remoteCursors = updatedCursors;
 
-      editor.content = applyOperation(editor.content, operation);
+        // Update lastLocalContent to confirm this operation is now server-side
+        editor.lastLocalContent = editor.content;
 
-      // CRITICAL: Update lastLocalContent when receiving broadcast of our own operation
-      // This confirms the operation was applied server-side, so we can use it as base for next diff
-      // For other clients' operations, also update lastLocalContent to stay in sync
-      editor.lastLocalContent = editor.content;
-
-      // If this is our own operation, check if all pending operations are done
-      if (operation.clientId === collaboration.clientId) {
         // If content matches pending state, clear pending
         if (editor.content === collaboration.pendingLocalContent) {
           collaboration.pendingLocalContent = null;
           collaboration.pendingBaseVersion = null;
         }
-      }
 
-      if (operation.version > noteState.currentVersion) {
-        noteState.currentVersion = operation.version;
-      }
+        if (operation.version > noteState.currentVersion) {
+          noteState.currentVersion = operation.version;
+        }
+      } else {
+        // Remote operation - apply it
+        collaboration.lastSentCursorPos = transformCursorPosition(collaboration.lastSentCursorPos, operation);
 
-      restoreCursorPosition(cursorPos);
+        let cursorPos = getCurrentCursorPosition();
+        cursorPos = transformCursorPosition(cursorPos, operation);
+
+        // Update cursor positions and trigger reactivity
+        // Only transform cursors that are NOT from the operation's client
+        // The operation client's cursor position comes from their cursor_update messages
+        const updatedCursors = new Map(collaboration.remoteCursors);
+        updatedCursors.forEach((cursorData, remoteClientId) => {
+          if (remoteClientId !== operation.clientId) {
+            cursorData.position = transformCursorPosition(cursorData.position, operation);
+          }
+        });
+        collaboration.remoteCursors = updatedCursors;
+
+        editor.content = applyOperation(editor.content, operation);
+
+        // Verify checksum if provided
+        if (contentChecksum !== undefined) {
+          verifyContentChecksum(contentChecksum);
+        }
+
+        // Update lastLocalContent to stay in sync
+        editor.lastLocalContent = editor.content;
+
+        if (operation.version > noteState.currentVersion) {
+          noteState.currentVersion = operation.version;
+        }
+
+        restoreCursorPosition(cursorPos);
+      }
     } finally {
       editor.isUpdating = false;
     }

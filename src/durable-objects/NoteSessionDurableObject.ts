@@ -34,6 +34,7 @@
 
 import { transform } from '../ot/transform';
 import { applyOperation } from '../ot/apply';
+import { simpleChecksum } from '../ot/checksum';
 import type {
   Operation,
   WSMessage,
@@ -374,8 +375,11 @@ export class NoteSessionDurableObject implements DurableObject {
     this.operationsSincePersist++;
     this.lastOperationSessionId = session.sessionId;
 
+    // Calculate checksum of server content after applying operation
+    const contentChecksum = simpleChecksum(this.currentContent);
+
     // Broadcast to all other clients and get the sequence number
-    const broadcastSeqNum = this.broadcastOperation(operation, session.clientId);
+    const broadcastSeqNum = this.broadcastOperation(operation, session.clientId, contentChecksum);
 
     // Send acknowledgment to sender with the sequence number of the broadcast
     // This allows the sender to stay in sync with the global sequence
@@ -383,6 +387,7 @@ export class NoteSessionDurableObject implements DurableObject {
       type: 'ack',
       version: this.operationVersion,
       seqNum: broadcastSeqNum,
+      contentChecksum, // Include checksum so client can verify state
     };
     ws.send(JSON.stringify(ackMessage));
 
@@ -504,7 +509,7 @@ export class NoteSessionDurableObject implements DurableObject {
     }
   }
 
-  broadcastOperation(operation: Operation, senderClientId: string): number {
+  broadcastOperation(operation: Operation, senderClientId: string, contentChecksum: number): number {
     const seqNum = this.getNextSeqNum();
 
     const message: OperationMessage = {
@@ -514,6 +519,7 @@ export class NoteSessionDurableObject implements DurableObject {
       clientId: operation.clientId,
       sessionId: '', // Not needed for broadcast
       seqNum, // Global sequence number for ordering all events
+      contentChecksum, // Server content checksum for client verification
     };
 
     const messageStr = JSON.stringify(message);

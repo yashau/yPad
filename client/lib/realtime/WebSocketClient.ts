@@ -32,11 +32,11 @@ export interface WebSocketClientOptions {
   password?: string;
   sessionId: string;
   onOpen?: () => void;
-  onOperation?: (operation: Operation) => void;
+  onOperation?: (operation: Operation, contentChecksum?: number) => void;
   onClose?: () => void;
   onError?: (error: Error) => void;
   onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
-  onAck?: (version: number) => void;
+  onAck?: (version: number, contentChecksum?: number) => void;
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
   onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
   onVersionUpdate?: (version: number, message: string) => void;
@@ -417,7 +417,7 @@ export class WebSocketClient {
     // Apply operation immediately - sequencing is handled by global seqNum
     // Version tracking for OT transforms happens in App.svelte
     if (this.options.onOperation) {
-      this.options.onOperation(message.operation);
+      this.options.onOperation(message.operation, message.contentChecksum);
     }
   }
 
@@ -444,7 +444,7 @@ export class WebSocketClient {
 
   private async handleAck(message: AckMessage): Promise<void> {
     if (this.options.onAck) {
-      this.options.onAck(message.version);
+      this.options.onAck(message.version, message.contentChecksum);
     }
 
     // Update sequence tracking based on the broadcast we didn't receive

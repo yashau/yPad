@@ -26,6 +26,7 @@ export type OperationMessage = {
   clientId: string;
   sessionId: string;
   seqNum?: number; // Server-assigned global sequence number for ordering all events
+  contentChecksum?: number; // Simple checksum of server content after applying operation
 };
 
 export type SyncMessage = {
@@ -42,6 +43,7 @@ export type AckMessage = {
   type: 'ack';
   version: number;
   seqNum?: number; // Global sequence number for the broadcast triggered by this operation
+  contentChecksum?: number; // Simple checksum of server content after applying operation
 };
 
 export type ErrorMessage = {
