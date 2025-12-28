@@ -47,15 +47,6 @@
   }: Props = $props();
 
   let showInfoDialog = $state(false);
-  let copied = $state(false);
-
-  function copyUrlToClipboard() {
-    navigator.clipboard.writeText(window.location.href);
-    copied = true;
-    setTimeout(() => {
-      copied = false;
-    }, 2000);
-  }
 </script>
 
 <header class="border-b border-border bg-card p-4">
@@ -63,7 +54,7 @@
     <div class="flex items-center justify-between md:justify-start md:gap-4">
       <div class="flex items-center gap-2">
         <button
-          class="text-2xl font-bold cursor-pointer hover:text-primary transition-colors p-0 border-0 bg-transparent leading-none"
+          class="text-2xl font-bold cursor-pointer hover:text-primary transition-colors p-0 border-0 bg-transparent"
           onclick={() => showInfoDialog = true}
           type="button"
           aria-label="About yPad"
@@ -105,11 +96,6 @@
       {#if !viewMode && noteId}
         <Button variant="outline" onclick={onCustomUrl} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Set a custom URL for this note">
           Custom URL
-        </Button>
-      {/if}
-      {#if noteId && !viewMode}
-        <Button variant="outline" onclick={copyUrlToClipboard} class="md:hidden text-xs px-2 py-1" title="Copy current URL to clipboard">
-          {copied ? 'Copied!' : 'Copy URL'}
         </Button>
       {/if}
       <div class="hidden md:block">

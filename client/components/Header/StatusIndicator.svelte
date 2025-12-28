@@ -128,39 +128,39 @@
 </script>
 
 {#if isConnectionLost}
-  <span class="inline-flex items-center" title="Connection lost - check your internet connection">
+  <span class="inline-flex items-center leading-none" title="Connection lost - check your internet connection">
     <WifiOff class="w-4 h-4 text-muted-foreground" />
   </span>
 {:else if showSpinner}
-  <span class="relative inline-flex items-center" title={isSlowSync ? 'Taking longer than usual - please don\'t leave the page' : isSyncing ? 'Syncing changes...' : 'Saving...'}>
+  <span class="relative inline-flex items-center leading-none" title={isSlowSync ? 'Taking longer than usual - please don\'t leave the page' : isSyncing ? 'Syncing changes...' : 'Saving...'}>
     <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
   </span>
 {:else if saveStatus === 'Failed to save'}
-  <span class="inline-flex items-center" title="Failed to save">
+  <span class="inline-flex items-center leading-none" title="Failed to save">
     <AlertCircle class="w-4 h-4 text-muted-foreground" />
   </span>
 {:else if saveStatus === 'Save failed: password required'}
-  <span class="inline-flex items-center" title="Save failed: password required">
+  <span class="inline-flex items-center leading-none" title="Save failed: password required">
     <AlertCircle class="w-4 h-4 text-muted-foreground" />
   </span>
 {:else if saveStatus === 'Encryption failed'}
-  <span class="inline-flex items-center" title="Encryption failed">
+  <span class="inline-flex items-center leading-none" title="Encryption failed">
     <AlertCircle class="w-4 h-4 text-muted-foreground" />
   </span>
 {:else if saveStatus === 'Conflict!'}
-  <span class="inline-flex items-center" title="Conflict detected! Please resolve.">
+  <span class="inline-flex items-center leading-none" title="Conflict detected! Please resolve.">
     <AlertTriangle class="w-4 h-4 text-muted-foreground" />
   </span>
 {:else if saveStatus === 'Disconnected'}
-  <span class="inline-flex items-center" title="Disconnected from real-time sync">
+  <span class="inline-flex items-center leading-none" title="Disconnected from real-time sync">
     <AlertCircle class="w-4 h-4 text-muted-foreground" />
   </span>
 {:else if connectionStatus === 'connecting'}
-  <span class="inline-flex items-center" title="Connecting to real-time sync...">
+  <span class="inline-flex items-center leading-none" title="Connecting to real-time sync...">
     <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
   </span>
 {:else if noteId && (saveStatus === 'Saved' || saveStatus === 'Real-time sync active' || !saveStatus)}
-  <span class="inline-flex items-center" title="All changes saved">
+  <span class="inline-flex items-center leading-none" title="All changes saved">
     <Check class="w-4 h-4 text-muted-foreground" />
   </span>
 {/if}
