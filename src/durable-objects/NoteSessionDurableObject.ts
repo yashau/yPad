@@ -536,7 +536,7 @@ export class NoteSessionDurableObject implements DurableObject {
   schedulePersistence(immediate: boolean): void {
     const shouldPersist =
       immediate ||
-      this.operationsSincePersist >= 50 ||
+      this.operationsSincePersist >= 100 || // Batch up to 100 operations
       (this.persistenceTimer === null && this.operationsSincePersist > 0);
 
     if (!shouldPersist) {
@@ -548,7 +548,9 @@ export class NoteSessionDurableObject implements DurableObject {
       clearTimeout(this.persistenceTimer);
     }
 
-    const delay = immediate ? 0 : 5000; // 5 seconds for normal debounce
+    // immediate=true when last client disconnects (ensures data is saved when user leaves)
+    // Otherwise, debounce for 2 seconds to batch rapid operations
+    const delay = immediate ? 0 : 2000;
 
     this.persistenceTimer = setTimeout(() => {
       this.persistToDB().catch((error) => {
@@ -594,26 +596,33 @@ export class NoteSessionDurableObject implements DurableObject {
       return;
     }
 
-    try {
-      // Update the note in the database with the current content and session ID
-      await this.env.DB.prepare(
-        `UPDATE notes
-         SET content = ?, version = ?, updated_at = ?, last_session_id = ?
-         WHERE id = ?`
-      ).bind(
-        this.currentContent,
-        this.operationVersion,
-        Date.now(),
-        this.lastOperationSessionId,
-        this.noteId
-      ).run();
+    // Capture current state for persistence
+    const contentToSave = this.currentContent;
+    const versionToSave = this.operationVersion;
+    const sessionIdToSave = this.lastOperationSessionId;
+    const countToSave = this.operationsSincePersist;
 
-      this.operationsSincePersist = 0;
-      this.persistenceTimer = null;
-    } catch (error) {
-      console.error(`[DO ${this.noteId}] Persistence error:`, error);
-      // Retry on next scheduled persistence
-    }
+    // Reset counter immediately - we're committing to persist this state
+    this.operationsSincePersist = 0;
+    this.persistenceTimer = null;
+
+    // Persist asynchronously without blocking
+    // Fire and forget - DO memory is source of truth for real-time collaboration
+    this.env.DB.prepare(
+      `UPDATE notes
+       SET content = ?, version = ?, updated_at = ?, last_session_id = ?
+       WHERE id = ?`
+    ).bind(
+      contentToSave,
+      versionToSave,
+      Date.now(),
+      sessionIdToSave,
+      this.noteId
+    ).run().catch((error: any) => {
+      console.error(`[DO ${this.noteId}] persistToDB ERROR:`, error);
+      // On error, increment counter to retry on next persistence
+      this.operationsSincePersist += countToSave;
+    });
   }
 
   sendError(ws: WebSocket, message: string): void {
