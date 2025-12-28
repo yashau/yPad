@@ -198,6 +198,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     collaboration.connectionStatus = 'disconnected';
   }
 
+  function resetState() {
+    // Reset the noteWasDeleted flag to allow WebSocket reconnection for new notes
+    noteWasDeleted = false;
+    checksumMismatchCount = 0;
+  }
+
   function verifyContentChecksum(serverChecksum: number) {
     const localChecksum = simpleChecksum(editor.content);
 
@@ -380,6 +386,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
   return {
     connectWebSocket,
     disconnectWebSocket,
+    resetState,
     sendCursorUpdate,
     sendOperation,
     sendSyntaxChange,

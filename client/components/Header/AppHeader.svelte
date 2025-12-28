@@ -90,7 +90,7 @@
       </div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
-      <ProtectedBadge {hasPassword} />
+      <ProtectedBadge {hasPassword} {viewMode} />
       {#if noteId}
         <Button variant="outline" onclick={onNewNote} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Create a new note">New</Button>
         {#if !isNoteDeleted}

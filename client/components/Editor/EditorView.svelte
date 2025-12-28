@@ -79,7 +79,8 @@
         value={content}
         class="w-full h-full p-4 pl-3 pb-8 resize-none border-0 rounded-none font-mono text-sm leading-6 shadow-none focus-visible:ring-0"
         placeholder="Start typing..."
-        disabled={isLoading || viewMode}
+        disabled={isLoading}
+        readonly={viewMode}
         spellcheck={false}
         onscroll={onScroll}
         oninput={handleInput}

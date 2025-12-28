@@ -64,6 +64,7 @@
     onNewNote: () => {
       showOptions = false;
       showNoteDeletedBanner = false;
+      wsConnection.resetState();
     }
   });
 
@@ -395,6 +396,13 @@
             noteOps.setPasswordProtection(security.passwordToSet, () => {
               security.passwordToSet = '';
               showPasswordEnabledBanner = true;
+              showOptions = false;
+              // Focus the appropriate editor element
+              if (editor.syntaxHighlight === 'plaintext') {
+                editor.textareaScrollRef?.focus();
+              } else {
+                editor.editorRef?.focus();
+              }
             });
           }}
           onRemovePassword={() => {
@@ -490,6 +498,13 @@
         showRemovePasswordDialog = false;
         security.removePasswordInput = '';
         security.removePasswordError = '';
+        showOptions = false;
+        // Focus the appropriate editor element
+        if (editor.syntaxHighlight === 'plaintext') {
+          editor.textareaScrollRef?.focus();
+        } else {
+          editor.editorRef?.focus();
+        }
       },
       (error) => {
         security.removePasswordError = error;
