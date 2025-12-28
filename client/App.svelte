@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import hljs from 'highlight.js';
-  import { generateOperations } from './lib/realtime/OperationGenerator';
+  import { generateOperationsFromInputEvent } from './lib/realtime/InputEventOperationGenerator';
 
   // Hooks
   import { useNoteState } from './lib/hooks/useNoteState.svelte';
@@ -203,9 +203,13 @@
     }
   });
 
-  // Input handler
-  function handleEditorInput(getContent: () => string) {
-    if (editor.isUpdating) return;
+
+  // Input handler - sends operations immediately without debouncing
+  // The WebSocket client handles queuing and backpressure
+  function handleEditorInput(getContent: () => string, event?: InputEvent) {
+    if (editor.isUpdating) {
+      return;
+    }
 
     const newContent = getContent();
 
@@ -215,19 +219,68 @@
       return;
     }
 
-    if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
-      const oldContent = editor.lastLocalContent;
-      const operations = generateOperations(oldContent, newContent, collaboration.clientId, noteState.currentVersion);
+    // Capture the old content and cursor position before updating
+    const oldContent = editor.content;
+    const cursorPosition = wsConnection.getCurrentCursorPosition();
 
-      operations.forEach(op => {
-        wsConnection.sendOperation(op);
+    if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
+      // For realtime mode, editor.content tracks confirmed content only
+      // The DOM content (newContent) is the optimistic/local view
+      const baseVersion = noteState.currentVersion;
+
+      // CRITICAL: Use InputEvent-based generation for accurate cursor positions
+      // oldContent→newContent represents the actual DOM change that just happened
+      // This preserves edit locality regardless of pending operations
+      console.log('[Input] Before generation:', {
+        event: event ? { inputType: event.inputType, data: event.data } : null,
+        oldContentLength: oldContent.length,
+        newContentLength: newContent.length,
+        cursorPosition
       });
 
-      setTimeout(() => wsConnection.sendCursorUpdate(), 0);
-    }
+      const operations = generateOperationsFromInputEvent(
+        event,
+        oldContent,
+        newContent,
+        cursorPosition,
+        collaboration.clientId,
+        baseVersion
+      );
 
-    editor.content = newContent;
-    editor.lastLocalContent = newContent;
+      if (operations.length > 0) {
+        console.log('[Input] Generating operations:', {
+          oldContentLength: oldContent.length,
+          newContentLength: newContent.length,
+          oldContent: oldContent.substring(0, 50) + (oldContent.length > 50 ? '...' : ''),
+          newContent: newContent.substring(0, 50) + (newContent.length > 50 ? '...' : ''),
+          operations: operations.map(op => ({ type: op.type, position: op.position, ...('text' in op ? { text: op.text } : { length: op.length }), version: op.version })),
+          baseVersion,
+          hasPending: collaboration.pendingLocalContent !== null
+        });
+        // If this is the first pending operation, capture the base version
+        if (collaboration.pendingLocalContent === null) {
+          collaboration.pendingBaseVersion = noteState.currentVersion;
+        }
+
+        // Send each operation with correct incremental version
+        // The version in each operation must increment because each operation
+        // builds on the previous one in the same batch
+        operations.forEach((op, index) => {
+          // Update operation version to be baseVersion + index
+          op.version = baseVersion + index;
+          wsConnection.sendOperation(op);
+        });
+
+        // Track the optimistic state (what we expect after all pending ops apply)
+        collaboration.pendingLocalContent = newContent;
+      }
+
+      setTimeout(() => wsConnection.sendCursorUpdate(), 0);
+    } else {
+      // For non-realtime modes (encrypted notes, no WebSocket), update content immediately
+      editor.content = newContent;
+      editor.lastLocalContent = newContent;
+    }
   }
 
   // Custom URL functions
@@ -301,6 +354,7 @@
       noteOps.loadNote();
     }
   });
+
 
   onDestroy(() => {
     // Clean up WebSocket connection

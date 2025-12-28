@@ -16,7 +16,7 @@
     remoteCursors: Map<string, RemoteCursorData>;
     isRealtimeEnabled: boolean;
     isEncrypted: boolean;
-    onInput: (getContent: () => string) => void;
+    onInput: (getContent: () => string, event?: InputEvent) => void;
     onScroll: (event: Event) => void;
   }
 
@@ -41,15 +41,30 @@
     return lines.length;
   });
 
+  // Sync textarea value when content changes from parent (e.g., server updates)
+  $effect(() => {
+    if (textareaScrollRef && textareaScrollRef.value !== content) {
+      const cursorPos = textareaScrollRef.selectionStart;
+      const scrollTop = textareaScrollRef.scrollTop;
+      textareaScrollRef.value = content;
+      // Restore cursor position if reasonable
+      if (cursorPos <= content.length) {
+        textareaScrollRef.selectionStart = cursorPos;
+        textareaScrollRef.selectionEnd = cursorPos;
+      }
+      textareaScrollRef.scrollTop = scrollTop;
+    }
+  });
+
   function handleInput(event: Event) {
     if (syntaxHighlight === 'plaintext' && textareaScrollRef) {
-      onInput(() => textareaScrollRef!.value);
+      onInput(() => textareaScrollRef!.value, event as InputEvent);
     }
   }
 
   function handleContentEditableInput(event: Event) {
     if (editorRef) {
-      onInput(() => editorRef!.textContent || '');
+      onInput(() => editorRef!.textContent || '', event as InputEvent);
     }
   }
 </script>
@@ -61,7 +76,7 @@
     {#if syntaxHighlight === 'plaintext'}
       <Textarea
         bind:ref={textareaScrollRef}
-        bind:value={content}
+        value={content}
         class="w-full h-full p-4 pl-3 pb-8 resize-none border-0 rounded-none font-mono text-sm leading-6 shadow-none focus-visible:ring-0"
         placeholder="Start typing..."
         disabled={isLoading || viewMode}
