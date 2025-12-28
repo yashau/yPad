@@ -186,7 +186,7 @@ for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
     }
 
     try {
-        $migrateOutput = & npm run db:migrate:prod 2>&1
+        $migrateOutput = & powershell.exe -ExecutionPolicy Bypass -Command "npm run db:migrate:prod" 2>&1
         if ($LASTEXITCODE -eq 0) {
             # Check if there were no migrations or if migrations applied
             if ($migrateOutput -match "No migrations to apply") {
@@ -249,7 +249,7 @@ else {
 Write-Host "`n[7/9] Building project..." -ForegroundColor Yellow
 
 try {
-    $buildOutput = & npm run build 2>&1
+    $buildOutput = & powershell.exe -ExecutionPolicy Bypass -Command "npm run build" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
         Write-Host $buildOutput -ForegroundColor Red
@@ -295,7 +295,7 @@ for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
     }
 
     try {
-        $deployOutput = & npx wrangler deploy 2>&1
+        $deployOutput = & powershell.exe -ExecutionPolicy Bypass -Command "npx wrangler deploy" 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-Host "  Deployment completed successfully" -ForegroundColor Green
             Write-Host $deployOutput -ForegroundColor Cyan

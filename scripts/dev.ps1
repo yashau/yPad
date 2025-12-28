@@ -58,7 +58,7 @@ else {
 Write-Host "`n[2/4] Running database migrations..." -ForegroundColor Yellow
 
 try {
-    $migrateOutput = & npm run db:migrate 2>&1
+    $migrateOutput = & powershell.exe -ExecutionPolicy Bypass -Command "npm run db:migrate" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  WARNING: Migration command failed with exit code $LASTEXITCODE" -ForegroundColor Yellow
         Write-Host $migrateOutput -ForegroundColor Yellow
@@ -83,7 +83,7 @@ catch {
 Write-Host "`n[3/4] Building project..." -ForegroundColor Yellow
 
 try {
-    $buildOutput = & npm run build 2>&1
+    $buildOutput = & powershell.exe -ExecutionPolicy Bypass -Command "npm run build" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Build failed with exit code $LASTEXITCODE" -ForegroundColor Red
         Write-Host $buildOutput -ForegroundColor Red
@@ -102,9 +102,10 @@ catch {
 Write-Host "`n[4/4] Starting dev server in new window..." -ForegroundColor Yellow
 
 # Start dev server in a new PowerShell window that stays open
+# Use -ExecutionPolicy Bypass to allow npm scripts to run
 $startInfo = New-Object System.Diagnostics.ProcessStartInfo
 $startInfo.FileName = "powershell.exe"
-$startInfo.Arguments = "-NoExit -Command `"cd '$PWD'; npm run dev`""
+$startInfo.Arguments = "-ExecutionPolicy Bypass -NoExit -Command `"cd '$PWD'; npm run dev`""
 $startInfo.UseShellExecute = $true
 $startInfo.WindowStyle = "Normal"
 
