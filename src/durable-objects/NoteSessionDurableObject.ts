@@ -147,6 +147,38 @@ export class NoteSessionDurableObject implements DurableObject {
       }
     }
 
+    // Handle GET /fetch request - return cached note data
+    if (request.method === 'GET' && url.pathname === '/fetch') {
+      try {
+        // Get note ID from query parameter
+        const noteIdParam = url.searchParams.get('noteId');
+        if (!noteIdParam) {
+          return new Response('Note ID required', { status: 400 });
+        }
+
+        // Set note ID if not already set
+        if (!this.noteId) {
+          this.noteId = noteIdParam;
+        }
+
+        // Initialize from database if not already loaded
+        if (!this.isInitialized) {
+          await this.initializeFromDatabase();
+        }
+
+        // Return cached note data
+        return Response.json({
+          content: this.currentContent,
+          version: this.operationVersion,
+          syntax_highlight: this.currentSyntax,
+          is_encrypted: this.isEncrypted,
+        });
+      } catch (error) {
+        console.error('Error fetching note from DO cache:', error);
+        return new Response('Error fetching note', { status: 500 });
+      }
+    }
+
     this.noteId = pathSegments[pathSegments.length - 2]; // /api/notes/:id/ws
 
     // WebSocket upgrade

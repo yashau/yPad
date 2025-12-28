@@ -18,6 +18,7 @@ export function useCollaboration() {
   let connectionStatus = $state<'connected' | 'disconnected' | 'connecting'>('disconnected');
   let clientId = $state('');
   let pendingLocalContent = $state<string | null>(null);
+  let pendingBaseVersion = $state<number | null>(null); // Version at which pending operations started
   let isSyncing = $state(false);
   let remoteCursors = $state<Map<string, RemoteCursorData>>(new Map());
   let connectedUsers = $state<Set<string>>(new Set());
@@ -67,6 +68,9 @@ export function useCollaboration() {
 
     get pendingLocalContent() { return pendingLocalContent; },
     set pendingLocalContent(value: string | null) { pendingLocalContent = value; },
+
+    get pendingBaseVersion() { return pendingBaseVersion; },
+    set pendingBaseVersion(value: number | null) { pendingBaseVersion = value; },
 
     get isSyncing() { return isSyncing; },
     set isSyncing(value: boolean) { isSyncing = value; },

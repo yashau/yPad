@@ -591,6 +591,7 @@ export class WebSocketClient {
     this.ws.send(JSON.stringify(message));
   }
 
+
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WebSocket] Max reconnection attempts reached');

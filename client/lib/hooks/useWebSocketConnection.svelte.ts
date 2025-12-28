@@ -5,8 +5,8 @@
 
 import { WebSocketClient } from '../realtime/WebSocketClient';
 import { generateOperations } from '../realtime/OperationGenerator';
-import { applyOperation } from '../../../src/ot/apply';
 import { transformCursorPosition } from '../../../src/ot/transform';
+import { applyOperation } from '../../../src/ot/apply';
 import type { Operation } from '../../../src/ot/types';
 import type { useNoteState } from './useNoteState.svelte';
 import type { useEditor } from './useEditor.svelte';
@@ -59,6 +59,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
           collaboration.remoteCursors = new Map();
 
+          // Clear pending operations - they'll be recalculated on reconnect sync
+          // This prevents duplicate operations from being sent after reconnection
+          collaboration.pendingLocalContent = null;
+          collaboration.pendingBaseVersion = null;
+
           // Only attempt reconnection if note was not deleted
           if (!noteWasDeleted) {
             setTimeout(() => {
@@ -92,11 +97,13 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           if (collaboration.pendingLocalContent !== null && collaboration.pendingLocalContent !== syncContent) {
             const ops = generateOperations(syncContent, collaboration.pendingLocalContent, collaboration.clientId, noteState.currentVersion);
 
-            ops.forEach(op => {
+            // Send each operation with correct incremental version
+            ops.forEach((op, index) => {
               if (collaboration.wsClient) {
-                collaboration.wsClient.sendOperation(op, noteState.currentVersion);
-                // Don't increment version optimistically - wait for ACK
-                // This prevents false conflicts if WebSocket fails before ACK
+                // Update operation version to be currentVersion + index
+                op.version = noteState.currentVersion + index;
+                collaboration.wsClient.sendOperation(op, noteState.currentVersion + index);
+                noteState.currentVersion++;
               }
             });
 
@@ -205,7 +212,20 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       collaboration.remoteCursors = updatedCursors;
 
       editor.content = applyOperation(editor.content, operation);
+
+      // CRITICAL: Update lastLocalContent when receiving broadcast of our own operation
+      // This confirms the operation was applied server-side, so we can use it as base for next diff
+      // For other clients' operations, also update lastLocalContent to stay in sync
       editor.lastLocalContent = editor.content;
+
+      // If this is our own operation, check if all pending operations are done
+      if (operation.clientId === collaboration.clientId) {
+        // If content matches pending state, clear pending
+        if (editor.content === collaboration.pendingLocalContent) {
+          collaboration.pendingLocalContent = null;
+          collaboration.pendingBaseVersion = null;
+        }
+      }
 
       if (operation.version > noteState.currentVersion) {
         noteState.currentVersion = operation.version;
@@ -306,8 +326,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
   function sendOperation(operation: Operation) {
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
       collaboration.wsClient.sendOperation(operation, noteState.currentVersion);
-      // Don't increment version optimistically - wait for ACK
-      // This prevents false conflicts if WebSocket fails before ACK
+      noteState.currentVersion++;
     }
   }
 

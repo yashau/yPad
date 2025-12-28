@@ -78,7 +78,7 @@
     </div>
     <div>
       <label for="expires-in" class="block text-sm font-medium mb-2">Expires In</label>
-      <Select.Root bind:value={expiresIn} disabled={viewMode} type="single" onchange={() => onExpirationChange(expiresIn)}>
+      <Select.Root bind:value={expiresIn} disabled={viewMode} type="single" onOpenChange={() => onExpirationChange(expiresIn)}>
         <Select.Trigger class="w-full" title="Set when this note should automatically expire and be deleted">
           {expiresInLabel}
         </Select.Trigger>

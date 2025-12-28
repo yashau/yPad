@@ -90,8 +90,9 @@ app.get('/api/notes/:id', async (c) => {
   const id = c.req.param('id');
   const password = c.req.query('password');
 
+  // First, check note metadata from D1 (for password, expiry, view count)
   const note = await c.env.DB.prepare(
-    'SELECT * FROM notes WHERE id = ?'
+    'SELECT id, password_hash, expires_at, view_count, max_views, created_at, is_encrypted FROM notes WHERE id = ?'
   ).bind(id).first();
 
   if (!note) {
@@ -117,22 +118,42 @@ app.get('/api/notes/:id', async (c) => {
     return c.json({ error: 'Note has reached max views' }, 410);
   }
 
-  // Update view count and last accessed timestamp
-  await c.env.DB.prepare(
+  // Update view count and last accessed timestamp (non-blocking)
+  c.env.DB.prepare(
     'UPDATE notes SET view_count = ?, last_accessed_at = ? WHERE id = ?'
-  ).bind(newViewCount, Date.now(), id).run();
+  ).bind(newViewCount, Date.now(), id).run().catch((error: any) => {
+    console.error(`Failed to update view count for ${id}:`, error);
+  });
+
+  // Get Durable Object for this note
+  const doId = c.env.NOTE_SESSIONS.idFromName(id);
+  const stub = c.env.NOTE_SESSIONS.get(doId);
+
+  // Fetch note content from DO cache (DO will lazy-load from D1 if needed)
+  const doResponse = await stub.fetch(new Request(`http://do/fetch?noteId=${encodeURIComponent(id)}`, { method: 'GET' }));
+
+  if (!doResponse.ok) {
+    return c.json({ error: 'Failed to fetch note content' }, 500);
+  }
+
+  const doData = await doResponse.json() as {
+    content: string;
+    version: number;
+    syntax_highlight: string;
+    is_encrypted: boolean;
+  };
 
   return c.json({
     id: note.id,
-    content: note.content,
-    syntax_highlight: note.syntax_highlight,
+    content: doData.content,
+    syntax_highlight: doData.syntax_highlight,
     view_count: newViewCount,
     max_views: note.max_views,
     expires_at: note.expires_at,
     created_at: note.created_at,
-    version: note.version || 1,
+    version: doData.version,
     has_password: !!note.password_hash,
-    is_encrypted: !!note.is_encrypted
+    is_encrypted: doData.is_encrypted
   });
 });
 
