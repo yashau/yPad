@@ -535,7 +535,7 @@ async function verifyNotePassword(
 export { NoteSessionDurableObject } from './durable-objects/NoteSessionDurableObject';
 
 // Scheduled handler for cron trigger - runs every 15 minutes to clean up expired notes
-export const scheduled: ExportedHandlerScheduledHandler<Bindings> = async (_event, env, _ctx) => {
+const scheduled: ExportedHandlerScheduledHandler<Bindings> = async (_event, env, _ctx) => {
   const now = Date.now();
   const inactiveThreshold = now - (LIMITS.INACTIVE_NOTE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
@@ -558,4 +558,7 @@ export const scheduled: ExportedHandlerScheduledHandler<Bindings> = async (_even
   }
 };
 
-export default app;
+export default {
+  fetch: app.fetch,
+  scheduled,
+};
