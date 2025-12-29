@@ -197,8 +197,8 @@
       </div>
       <Button
         onclick={isEditing ? handleCustomUrlChange : startEditing}
-        variant="outline"
-        class="rounded-r-md rounded-l-none h-auto group size-8"
+        variant="ghost"
+        class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
         title={isEditing ? "Save custom URL" : "Edit custom URL"}
       >
         {#if isEditing}
@@ -239,8 +239,8 @@
       </div>
       <Button
         onclick={isEditing ? handleNavigate : startEditing}
-        variant="outline"
-        class="h-auto size-8"
+        variant="ghost"
+        class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
         title={isEditing ? "Navigate" : "Go to a note"}
       >
         {#if isEditing}

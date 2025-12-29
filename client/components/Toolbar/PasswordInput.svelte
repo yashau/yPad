@@ -31,7 +31,7 @@
   }
 </script>
 
-<div class="flex items-stretch bg-transparent dark:bg-input/30 rounded-md h-9 border border-input shadow-xs w-full">
+<div class="flex items-stretch bg-transparent rounded-md h-9 border border-input shadow-xs w-full dark:bg-input/30 dark:hover:bg-input/50 transition-[color,box-shadow]">
   <div class="inline-flex items-center text-sm flex-1">
     <Input
       id="password"
@@ -48,8 +48,8 @@
   <Button
     onclick={handleClick}
     disabled={disabled || (!hasPassword && !value.trim())}
-    variant="outline"
-    class="rounded-r-md rounded-l-none h-full group size-8"
+    variant="ghost"
+    class="!rounded-l-none h-full w-9 border-l border-input bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
     title={hasPassword ? "Remove password protection" : "Set password protection"}
   >
     {#if hasPassword}

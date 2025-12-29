@@ -60,7 +60,7 @@
         {onSetPassword}
         {onRemovePassword}
         onValueChange={onPasswordChange}
-        inputClass="bg-transparent border-0 shadow-none focus-visible:ring-0 px-3 w-full h-full"
+        inputClass="!bg-transparent border-0 shadow-none focus-visible:ring-0 px-3 w-full h-full"
       />
     </div>
     <div>
@@ -70,7 +70,7 @@
         disabled={viewMode}
         onSubmit={() => {}}
         onValueChange={onMaxViewsChange}
-        inputClass="bg-transparent border-0 shadow-none focus-visible:ring-0 px-3 w-full h-full"
+        inputClass="!bg-transparent border-0 shadow-none focus-visible:ring-0 px-3 w-full h-full"
       />
     </div>
     <div>
