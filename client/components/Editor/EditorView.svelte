@@ -36,9 +36,72 @@
     onScroll
   }: Props = $props();
 
-  const lineNumbers = $derived.by(() => {
-    const lines = content.split('\n');
-    return lines.length;
+  // Container width for calculating line wrapping
+  let containerWidth = $state(0);
+  let measureDiv: HTMLDivElement | null = $state(null);
+  let lineInfo = $state<Array<{lineNumber: number, visualLineCount: number}>>([{lineNumber: 1, visualLineCount: 1}]);
+
+  // Measure container width on resize
+  $effect(() => {
+    if (!textareaScrollRef) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        containerWidth = entry.contentRect.width;
+      }
+    });
+
+    resizeObserver.observe(textareaScrollRef);
+    return () => resizeObserver.disconnect();
+  });
+
+  // Calculate visual line count for each logical line
+  function calculateVisualLineCount(text: string): number {
+    if (!measureDiv || containerWidth <= 0) return 1;
+    if (text === '') return 1;
+
+    // Set the text in the measure div
+    measureDiv.textContent = text;
+
+    // Get the height of the rendered text
+    const height = measureDiv.offsetHeight;
+    const lineHeight = 24; // 1.5rem = 24px (leading-6)
+
+    return Math.max(1, Math.round(height / lineHeight));
+  }
+
+  // Recalculate line info when content, containerWidth, or measureDiv changes
+  $effect(() => {
+    // Access dependencies
+    const currentContent = content;
+    const currentWidth = containerWidth;
+    const currentMeasureDiv = measureDiv;
+    const currentSyntax = syntaxHighlight;
+
+    const lines = currentContent.split('\n');
+
+    // For syntax highlighted mode (no wrapping), each line is 1 visual line
+    if (currentSyntax !== 'plaintext') {
+      lineInfo = lines.map((_, i) => ({
+        lineNumber: i + 1,
+        visualLineCount: 1
+      }));
+      return;
+    }
+
+    // For plaintext with wrapping, calculate visual lines
+    if (!currentMeasureDiv || currentWidth <= 0) {
+      lineInfo = lines.map((_, i) => ({
+        lineNumber: i + 1,
+        visualLineCount: 1
+      }));
+      return;
+    }
+
+    lineInfo = lines.map((line, i) => ({
+      lineNumber: i + 1,
+      visualLineCount: calculateVisualLineCount(line)
+    }));
   });
 
   // Sync textarea value when content changes from parent (e.g., server updates)
@@ -70,9 +133,16 @@
 </script>
 
 <main class="flex-1 overflow-hidden flex">
-  <LineNumbers lineCount={lineNumbers} bind:lineNumbersRef />
+  <LineNumbers {lineInfo} bind:lineNumbersRef />
 
   <div class="flex-1 overflow-auto relative">
+    <!-- Hidden div for measuring text wrapping -->
+    <div
+      bind:this={measureDiv}
+      class="font-mono text-sm leading-6 whitespace-pre-wrap break-words overflow-hidden"
+      style="width: {containerWidth}px; position: absolute; visibility: hidden; top: 0; left: 0; padding: 0;"
+      aria-hidden="true"
+    ></div>
     {#if syntaxHighlight === 'plaintext'}
       <Textarea
         bind:ref={textareaScrollRef}
