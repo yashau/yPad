@@ -396,6 +396,11 @@
     viewMode={noteState.viewMode}
     isNoteDeleted={showNoteDeletedBanner}
     showOptions={showOptions}
+    content={editor.content}
+    syntaxHighlight={editor.syntaxHighlight}
+    password={security.password}
+    maxViews={noteState.maxViews}
+    expiresIn={noteState.expiresIn}
     onNewNote={noteOps.newNote}
     onDeleteNote={noteOps.deleteNote}
     onToggleOptions={() => showOptions = !showOptions}

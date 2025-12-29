@@ -20,6 +20,11 @@
     viewMode: boolean;
     isNoteDeleted: boolean;
     showOptions: boolean;
+    content: string;
+    syntaxHighlight: string;
+    password?: string;
+    maxViews?: number;
+    expiresIn?: string;
     onNewNote: () => void;
     onDeleteNote: () => void;
     onToggleOptions: () => void;
@@ -40,6 +45,11 @@
     viewMode,
     isNoteDeleted,
     showOptions,
+    content,
+    syntaxHighlight,
+    password,
+    maxViews,
+    expiresIn,
     onNewNote,
     onDeleteNote,
     onToggleOptions,
@@ -76,7 +86,7 @@
           {clientId}
           {connectedUsers}
         />
-        <UrlDisplay {noteId} />
+        <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {onCustomUrl} />
       </div>
       <div class="md:hidden">
         <ThemeToggle />
