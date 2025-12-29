@@ -31,7 +31,7 @@
   }
 </script>
 
-<div class="inline-flex items-stretch bg-muted/30 rounded-md h-9">
+<div class="inline-flex items-stretch bg-transparent dark:bg-input/30 rounded-md h-9 border border-input shadow-xs">
   <div class="inline-flex items-center text-sm flex-1">
     <Input
       id="password"

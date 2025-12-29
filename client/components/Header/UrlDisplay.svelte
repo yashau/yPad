@@ -182,8 +182,8 @@
             onkeydown={handleKeydown}
             onblur={handleBlur}
             placeholder="custom-url"
-            style="width: {Math.max(editValue.length, displayNoteId.length + 2)}ch; min-width: {domain.length + displayNoteId.length + 3}ch; max-width: 30ch;"
-            class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+            style="width: {Math.max(editValue.length || 10, displayNoteId.length + 2)}ch; max-width: 30ch;"
+            class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch]"
           />
         {:else}
           <span class="font-bold text-foreground">{displayNoteId}</span>
