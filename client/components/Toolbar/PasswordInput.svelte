@@ -11,9 +11,10 @@
     onSetPassword: () => void;
     onRemovePassword: () => void;
     onValueChange: (value: string) => void;
+    inputClass?: string;
   }
 
-  let { value = $bindable(), hasPassword, disabled, onSetPassword, onRemovePassword, onValueChange }: Props = $props();
+  let { value = $bindable(), hasPassword, disabled, onSetPassword, onRemovePassword, onValueChange, inputClass }: Props = $props();
 
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !hasPassword && value.trim()) {
@@ -30,8 +31,8 @@
   }
 </script>
 
-<div class="flex items-center gap-2">
-  <div class="flex-1">
+<div class="inline-flex items-stretch bg-muted/30 rounded-md h-9">
+  <div class="inline-flex items-center text-sm flex-1">
     <Input
       id="password"
       type="password"
@@ -41,21 +42,21 @@
       title={hasPassword ? "This note is already password protected" : "Enter a password to encrypt and protect this note"}
       onkeydown={handleKeyDown}
       oninput={(e) => onValueChange((e.target as HTMLInputElement).value)}
+      class={inputClass}
     />
   </div>
   <Button
     onclick={handleClick}
     disabled={disabled || (!hasPassword && !value.trim())}
     variant="outline"
-    class="min-w-[100px] {hasPassword ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 border-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-900/50' : ''}"
-    title={hasPassword ? "Click to remove password protection" : "Click to set password protection"}
+    size="icon-sm"
+    class="rounded-r-md rounded-l-none h-full group"
+    title={hasPassword ? "Remove password protection" : "Set password protection"}
   >
     {#if hasPassword}
-      <Lock />
-      <span>Unprotect</span>
+      <LockOpen class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
     {:else}
-      <LockOpen />
-      <span>Protect</span>
+      <Lock class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
     {/if}
   </Button>
 </div>

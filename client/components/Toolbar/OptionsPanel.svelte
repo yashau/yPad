@@ -3,6 +3,7 @@
   import * as Select from '../../lib/components/ui/select/index.js';
   import LanguageSelector from './LanguageSelector.svelte';
   import PasswordInput from './PasswordInput.svelte';
+  import MaxViewsInput from './MaxViewsInput.svelte';
   import { EXPIRATION_OPTIONS } from '../../../config/constants';
 
   interface Props {
@@ -59,21 +60,17 @@
         {onSetPassword}
         {onRemovePassword}
         onValueChange={onPasswordChange}
+        inputClass="bg-transparent border-0 shadow-none focus-visible:ring-0 px-3 w-full h-full"
       />
     </div>
     <div>
       <label for="max-views" class="block text-sm font-medium mb-2">Max Views</label>
-      <Input
-        id="max-views"
-        type="number"
+      <MaxViewsInput
         bind:value={maxViews}
-        placeholder="Unlimited"
         disabled={viewMode}
-        title="Set maximum number of times this note can be viewed before being deleted"
-        oninput={(e) => {
-          const val = (e.target as HTMLInputElement).value;
-          onMaxViewsChange(val ? parseInt(val) : null);
-        }}
+        onSubmit={() => {}}
+        onValueChange={onMaxViewsChange}
+        inputClass="bg-transparent border-0 shadow-none focus-visible:ring-0 px-3 w-full h-full"
       />
     </div>
     <div>

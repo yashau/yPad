@@ -30,7 +30,7 @@
 <Popover.Root bind:open={comboboxOpen}>
   <Popover.Trigger
     bind:ref={comboboxTriggerRef}
-    class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+    class="flex h-9 w-full items-center justify-between bg-transparent dark:bg-input/30 dark:hover:bg-input/50 rounded-md border border-input px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none disabled:cursor-not-allowed disabled:opacity-50"
     {disabled}
     title="Choose a programming language for syntax highlighting"
   >
