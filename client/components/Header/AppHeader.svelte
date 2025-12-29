@@ -4,6 +4,7 @@
   import ConnectionStatus from './ConnectionStatus.svelte';
   import StatusIndicator from './StatusIndicator.svelte';
   import ProtectedBadge from './ProtectedBadge.svelte';
+  import UrlDisplay from './UrlDisplay.svelte';
   import InfoDialog from '../Dialogs/InfoDialog.svelte';
 
   interface Props {
@@ -75,6 +76,7 @@
           {clientId}
           {connectedUsers}
         />
+        <UrlDisplay {noteId} />
       </div>
       <div class="md:hidden">
         <ThemeToggle />
