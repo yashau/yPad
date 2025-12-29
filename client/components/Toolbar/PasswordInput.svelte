@@ -16,8 +16,9 @@
 
   let { value = $bindable(), hasPassword, disabled, onSetPassword, onRemovePassword, onValueChange, inputClass }: Props = $props();
 
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !hasPassword && value.trim()) {
+  function handleSubmit(e: Event) {
+    e.preventDefault();
+    if (!hasPassword && value.trim()) {
       onSetPassword();
     }
   }
@@ -31,7 +32,7 @@
   }
 </script>
 
-<div class="flex items-stretch bg-transparent rounded-md h-9 border border-input shadow-xs w-full dark:bg-input/30 dark:hover:bg-input/50 transition-[color,box-shadow]">
+<form class="flex items-stretch bg-transparent rounded-md h-9 border border-input shadow-xs w-full dark:bg-input/30 dark:hover:bg-input/50 transition-[color,box-shadow]" onsubmit={handleSubmit}>
   <div class="inline-flex items-center text-sm flex-1">
     <Input
       id="password"
@@ -40,13 +41,14 @@
       placeholder={hasPassword ? "Protected" : "Enter password"}
       disabled={disabled || hasPassword}
       title={hasPassword ? "This note is already password protected" : "Enter a password to encrypt and protect this note"}
-      onkeydown={handleKeyDown}
+      enterkeyhint="done"
       oninput={(e) => onValueChange((e.target as HTMLInputElement).value)}
       class={inputClass}
     />
   </div>
   <Button
-    onclick={handleClick}
+    type={hasPassword ? "button" : "submit"}
+    onclick={hasPassword ? handleClick : undefined}
     disabled={disabled || (!hasPassword && !value.trim())}
     variant="ghost"
     class="!rounded-l-none h-full w-9 border-l border-input bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
@@ -58,4 +60,4 @@
       <Lock class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
     {/if}
   </Button>
-</div>
+</form>

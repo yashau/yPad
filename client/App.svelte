@@ -361,7 +361,6 @@
     connectedUsers={collaboration.connectedUsers}
     isRealtimeEnabled={collaboration.isRealtimeEnabled}
     isEncrypted={security.isEncrypted}
-    hasPassword={security.hasPassword}
     saveStatus={noteState.saveStatus}
     isSyncing={collaboration.isSyncing}
     viewMode={noteState.viewMode}

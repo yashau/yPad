@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Lock from '@lucide/svelte/icons/lock';
+
   interface Props {
     noteId: string;
     connectionStatus: 'connected' | 'disconnected' | 'connecting';
@@ -13,8 +15,8 @@
 
 {#if noteId && connectionStatus === 'connected'}
   {#if isEncrypted}
-    <div class="inline-flex items-center gap-2">
-      <div class="w-2 h-2 rounded-full bg-blue-500 animate-pulse" title="Connected - Real-time collaboration disabled for encrypted notes. Changes are saved automatically."></div>
+    <div class="inline-flex items-center gap-2" title="Connected - Real-time collaboration disabled for encrypted notes. Changes are saved automatically.">
+      <Lock class="w-3.5 h-3.5 text-blue-500" />
     </div>
   {:else}
     <div class="inline-flex items-center gap-2">

@@ -67,6 +67,12 @@
 
     const newCustomUrl = editValue.trim();
 
+    // If the URL hasn't changed, just cancel the operation
+    if (newCustomUrl === noteId) {
+      isEditing = false;
+      return;
+    }
+
     // Check if URL is available
     try {
       const checkResponse = await fetch(`/api/check/${encodeURIComponent(newCustomUrl)}`);
@@ -149,16 +155,9 @@
     isEditing = false;
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      if (noteId) {
-        handleCustomUrlChange();
-      } else {
-        handleNavigate();
-      }
-    } else if (e.key === 'Escape') {
-      isEditing = false;
-    }
+  function handleCustomUrlSubmit(e: Event) {
+    e.preventDefault();
+    handleCustomUrlChange();
   }
 
   function handleBlur() {
@@ -172,7 +171,7 @@
   <div class="relative inline-flex items-center leading-none">
     {#if noteId}
       {@const { domain, noteId: displayNoteId } = getDisplayUrl()}
-      <div class="inline-flex items-stretch bg-muted/30 rounded-md">
+      <form class="inline-flex items-stretch bg-muted/30 rounded-md" onsubmit={handleCustomUrlSubmit}>
       <div
         class="inline-flex items-center text-sm hover:bg-accent px-3 py-2 rounded-l-md transition-colors {isEditing ? '' : 'cursor-pointer'} group"
         onclick={isEditing ? undefined : copyFullUrl}
@@ -184,9 +183,9 @@
           <input
             bind:this={inputElement}
             bind:value={editValue}
-            onkeydown={handleKeydown}
             onblur={handleBlur}
             placeholder="custom-url"
+            enterkeyhint="done"
             style="width: {Math.max(editValue.length || 10, displayNoteId.length + 2)}ch; max-width: 30ch;"
             class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch]"
           />
@@ -195,19 +194,27 @@
           <Copy class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors ml-1" />
         {/if}
       </div>
-      <Button
-        onclick={isEditing ? handleCustomUrlChange : startEditing}
-        variant="ghost"
-        class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
-        title={isEditing ? "Save custom URL" : "Edit custom URL"}
-      >
-        {#if isEditing}
+      {#if isEditing}
+        <Button
+          type="submit"
+          variant="ghost"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          title="Save custom URL"
+        >
           <Check class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-        {:else}
+        </Button>
+      {:else}
+        <Button
+          type="button"
+          onclick={startEditing}
+          variant="ghost"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          title="Edit custom URL"
+        >
           <Pencil class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-        {/if}
-      </Button>
-    </div>
+        </Button>
+      {/if}
+    </form>
     {#if showCopiedTooltip}
       <div class="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-foreground text-background text-xs px-2 py-1 rounded whitespace-nowrap z-50">
         Copied!
@@ -219,7 +226,7 @@
       </div>
     {/if}
   {:else}
-    <div class="inline-flex items-center bg-muted/30 rounded-md transition-colors {isEditing ? 'bg-accent' : 'hover:bg-accent group/container'}">
+    <form class="inline-flex items-center bg-muted/30 rounded-md transition-colors {isEditing ? 'bg-accent' : 'hover:bg-accent group/container'}" onsubmit={handleNavigate}>
       <div class="inline-flex items-center text-sm px-3 py-2 w-[7.5rem] {isEditing ? '' : 'cursor-pointer'}"
            onclick={isEditing ? undefined : startEditing}
            role={isEditing ? undefined : 'button'}
@@ -228,28 +235,36 @@
           <input
             bind:this={inputElement}
             bind:value={editValue}
-            onkeydown={handleKeydown}
             onblur={handleBlur}
             placeholder="note-id"
+            enterkeyhint="go"
             class="w-full text-sm bg-transparent outline-none placeholder:text-muted-foreground"
           />
         {:else}
           <span class="text-foreground/50">Go to a note</span>
         {/if}
       </div>
-      <Button
-        onclick={isEditing ? handleNavigate : startEditing}
-        variant="ghost"
-        class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
-        title={isEditing ? "Navigate" : "Go to a note"}
-      >
-        {#if isEditing}
+      {#if isEditing}
+        <Button
+          type="submit"
+          variant="ghost"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          title="Navigate"
+        >
           <ArrowRight class="w-4 h-4" />
-        {:else}
+        </Button>
+      {:else}
+        <Button
+          type="button"
+          onclick={startEditing}
+          variant="ghost"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          title="Go to a note"
+        >
           <Navigation class="w-4 h-4" />
-        {/if}
-      </Button>
-    </div>
+        </Button>
+      {/if}
+    </form>
     {/if}
   </div>
 {/if}

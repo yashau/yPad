@@ -3,8 +3,7 @@
   import ThemeToggle from '../../lib/components/ui/ThemeToggle.svelte';
   import ConnectionStatus from './ConnectionStatus.svelte';
   import StatusIndicator from './StatusIndicator.svelte';
-  import ProtectedBadge from './ProtectedBadge.svelte';
-  import UrlDisplay from './UrlDisplay.svelte';
+    import UrlDisplay from './UrlDisplay.svelte';
   import InfoDialog from '../Dialogs/InfoDialog.svelte';
 
   interface Props {
@@ -12,7 +11,6 @@
     connectionStatus: 'connected' | 'disconnected' | 'connecting';
     isRealtimeEnabled: boolean;
     isEncrypted: boolean;
-    hasPassword: boolean;
     clientId: string;
     connectedUsers: Set<string>;
     saveStatus: string;
@@ -37,7 +35,6 @@
     connectionStatus,
     isRealtimeEnabled,
     isEncrypted,
-    hasPassword,
     clientId,
     connectedUsers,
     saveStatus,
@@ -94,7 +91,6 @@
       </div>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
-      <ProtectedBadge {hasPassword} {viewMode} />
       {#if noteId}
         <Button variant="outline" onclick={onNewNote} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Create a new note">New</Button>
         {#if !isNoteDeleted}
