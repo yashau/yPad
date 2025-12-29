@@ -14,9 +14,10 @@
     maxViews?: number;
     expiresIn?: string;
     viewMode: boolean;
+    onCustomUrlSet?: (newNoteId: string) => void;
   }
 
-  let { noteId, content, syntaxHighlight, password, maxViews, expiresIn, viewMode }: Props = $props();
+  let { noteId, content, syntaxHighlight, password, maxViews, expiresIn, viewMode, onCustomUrlSet }: Props = $props();
 
   let showCopiedTooltip = $state(false);
   let showErrorTooltip = $state(false);
@@ -122,7 +123,12 @@
       }
 
       const data = await response.json() as { id: string };
-      window.location.href = `/${data.id}`;
+
+      // Instead of full page reload, update URL and notify parent
+      window.history.pushState({}, '', `/${data.id}`);
+      onCustomUrlSet?.(data.id);
+
+      isEditing = false;
     } catch (err) {
       console.error('Failed to set custom URL:', err);
       errorMessage = 'Failed to set custom URL';
@@ -130,9 +136,8 @@
       setTimeout(() => {
         showErrorTooltip = false;
       }, 2000);
+      isEditing = false;
     }
-
-    isEditing = false;
   }
 
   function handleNavigate(e?: Event) {

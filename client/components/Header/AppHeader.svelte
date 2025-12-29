@@ -28,6 +28,7 @@
     onNewNote: () => void;
     onDeleteNote: () => void;
     onToggleOptions: () => void;
+    onCustomUrlSet?: (newNoteId: string) => void;
     children?: any;
   }
 
@@ -52,6 +53,7 @@
     onNewNote,
     onDeleteNote,
     onToggleOptions,
+    onCustomUrlSet,
     children
   }: Props = $props();
 
@@ -85,7 +87,7 @@
           {clientId}
           {connectedUsers}
         />
-        <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} />
+        <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} {onCustomUrlSet} />
       </div>
       <div class="md:hidden">
         <ThemeToggle />

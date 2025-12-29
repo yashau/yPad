@@ -329,6 +329,18 @@
   });
 
 
+  // Handle custom URL setting - update noteId and reconnect WebSocket
+  function handleCustomUrlSet(newNoteId: string) {
+    // Disconnect existing WebSocket
+    wsConnection.disconnectWebSocket();
+
+    // Update the noteId
+    noteState.noteId = newNoteId;
+
+    // Reconnect WebSocket with new noteId
+    wsConnection.connectWebSocket();
+  }
+
   onDestroy(() => {
     // Clean up WebSocket connection
     if (collaboration.wsClient) {
@@ -363,6 +375,7 @@
     onNewNote={noteOps.newNote}
     onDeleteNote={noteOps.deleteNote}
     onToggleOptions={() => showOptions = !showOptions}
+    onCustomUrlSet={handleCustomUrlSet}
   >
     {#snippet children()}
       {#if showOptions}
