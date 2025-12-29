@@ -37,7 +37,7 @@
     {syntaxHighlightLabel}
     <ChevronsUpDown class="ml-2 h-4 w-4 shrink-0 opacity-50" />
   </Popover.Trigger>
-  <Popover.Content class="w-[--bits-popover-trigger-width] p-0">
+  <Popover.Content class="!w-(--bits-popover-anchor-width) p-0" align="start">
     <Command.Root shouldFilter={true}>
       <Command.Input placeholder="Search language..." />
       <Command.List>
