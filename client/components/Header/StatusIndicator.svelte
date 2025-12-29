@@ -4,19 +4,22 @@
   import AlertCircle from '@lucide/svelte/icons/alert-circle';
   import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
   import WifiOff from '@lucide/svelte/icons/wifi-off';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
 
   interface Props {
     noteId: string;
     connectionStatus: 'connected' | 'disconnected' | 'connecting';
     saveStatus: string;
     isSyncing: boolean;
+    isNoteDeleted: boolean;
   }
 
   let {
     noteId,
     connectionStatus,
     saveStatus,
-    isSyncing
+    isSyncing,
+    isNoteDeleted
   }: Props = $props();
 
   let isSlowSync = $state(false);
@@ -127,7 +130,12 @@
   });
 </script>
 
-{#if isConnectionLost}
+{#if isNoteDeleted}
+  <span class="inline-flex items-center gap-1.5 leading-none" title="This note has been deleted">
+    <Trash2 class="w-4 h-4 text-muted-foreground" />
+    <span class="text-xs text-muted-foreground">Deleted</span>
+  </span>
+{:else if isConnectionLost}
   <span class="inline-flex items-center leading-none" title="Connection lost - check your internet connection">
     <WifiOff class="w-4 h-4 text-muted-foreground" />
   </span>

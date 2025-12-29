@@ -13,10 +13,10 @@
     password?: string;
     maxViews?: number;
     expiresIn?: string;
-    onCustomUrl?: () => void;
+    viewMode: boolean;
   }
 
-  let { noteId, content, syntaxHighlight, password, maxViews, expiresIn, onCustomUrl }: Props = $props();
+  let { noteId, content, syntaxHighlight, password, maxViews, expiresIn, viewMode }: Props = $props();
 
   let showCopiedTooltip = $state(false);
   let showErrorTooltip = $state(false);
@@ -163,10 +163,11 @@
   }
 </script>
 
-<div class="relative inline-flex items-center leading-none">
-  {#if noteId}
-    {@const { domain, noteId: displayNoteId } = getDisplayUrl()}
-    <div class="inline-flex items-stretch bg-muted/30 rounded-md">
+{#if !viewMode}
+  <div class="relative inline-flex items-center leading-none">
+    {#if noteId}
+      {@const { domain, noteId: displayNoteId } = getDisplayUrl()}
+      <div class="inline-flex items-stretch bg-muted/30 rounded-md">
       <div
         class="inline-flex items-center text-sm hover:bg-accent px-3 py-2 rounded-l-md transition-colors {isEditing ? '' : 'cursor-pointer'} group"
         onclick={isEditing ? undefined : copyFullUrl}
@@ -246,5 +247,6 @@
         {/if}
       </Button>
     </div>
-  {/if}
-</div>
+    {/if}
+  </div>
+{/if}

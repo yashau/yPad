@@ -91,7 +91,7 @@
         contenteditable={!isLoading && !viewMode}
         oninput={handleContentEditableInput}
         onscroll={onScroll}
-        class="w-full h-full p-4 pl-3 pb-8 font-mono text-sm leading-6 outline-none whitespace-pre overflow-auto"
+        class="w-full h-full p-4 pl-3 pb-8 font-mono text-sm leading-6 outline-none whitespace-pre overflow-auto bg-transparent dark:bg-input/30"
         spellcheck={false}
       >{@html highlightedHtml}</div>
     {/if}
@@ -109,9 +109,3 @@
     {/if}
   </div>
 </main>
-
-<style>
-  :global(.hljs) {
-    background: transparent !important;
-  }
-</style>

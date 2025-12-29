@@ -17,7 +17,6 @@
   import EditorView from './components/Editor/EditorView.svelte';
   import PasswordDialog from './components/Dialogs/PasswordDialog.svelte';
   import RemovePasswordDialog from './components/Dialogs/RemovePasswordDialog.svelte';
-  import CustomUrlDialog from './components/Dialogs/CustomUrlDialog.svelte';
   import ConflictDialog from './components/Dialogs/ConflictDialog.svelte';
   import ReloadBanner from './components/Banners/ReloadBanner.svelte';
   import EncryptionEnabledBanner from './components/Banners/EncryptionEnabledBanner.svelte';
@@ -34,7 +33,6 @@
   let showOptions = $state(false);
   let showPasswordDialog = $state(false);
   let showRemovePasswordDialog = $state(false);
-  let showCustomUrlDialog = $state(false);
   let showConflictDialog = $state(false);
   let showReloadBanner = $state(false);
   let showPasswordEnabledBanner = $state(false);
@@ -42,8 +40,6 @@
   let showPasswordDisabledByOtherBanner = $state(false);
   let showNoteDeletedBanner = $state(false);
   let noteDeletedByCurrentUser = $state(false);
-  let customUrl = $state('');
-  let customUrlAvailable = $state(true);
 
   // Initialize operations with callbacks
   const noteOps = useNoteOperations({
@@ -297,68 +293,6 @@
     }
   }
 
-  // Custom URL functions
-  async function checkCustomUrl() {
-    if (!customUrl.trim()) {
-      customUrlAvailable = false;
-      return;
-    }
-
-    try {
-      const response = await fetch(`/api/check/${encodeURIComponent(customUrl)}`);
-      const data = await response.json() as { available: boolean };
-      customUrlAvailable = data.available;
-    } catch (error) {
-      console.error('Failed to check URL:', error);
-      customUrlAvailable = false;
-    }
-  }
-
-  async function setCustomUrl() {
-    if (!customUrlAvailable || !customUrl.trim()) return;
-
-    try {
-      const payload: any = {
-        id: customUrl,
-        content: editor.content,
-        syntax_highlight: editor.syntaxHighlight || 'plaintext'
-      };
-
-      if (security.password) {
-        payload.password = security.password;
-      }
-
-      if (noteState.maxViews) {
-        payload.max_views = noteState.maxViews;
-      }
-
-      if (noteState.expiresIn && noteState.expiresIn !== 'null') {
-        payload.expires_in = parseInt(noteState.expiresIn);
-      }
-
-      const response = await fetch('/api/notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to set custom URL');
-      }
-
-      const data = await response.json() as { id: string };
-      noteState.noteId = data.id;
-      window.history.pushState({}, '', `/${noteState.noteId}`);
-      showCustomUrlDialog = false;
-      customUrl = '';
-
-      wsConnection.connectWebSocket();
-    } catch (error) {
-      console.error('Failed to set custom URL:', error);
-      alert('Failed to set custom URL');
-    }
-  }
-
   onMount(() => {
     noteState.initializeSession();
 
@@ -404,7 +338,6 @@
     onNewNote={noteOps.newNote}
     onDeleteNote={noteOps.deleteNote}
     onToggleOptions={() => showOptions = !showOptions}
-    onCustomUrl={() => showCustomUrlDialog = true}
   >
     {#snippet children()}
       {#if showOptions}
@@ -544,18 +477,6 @@
     security.removePasswordError = '';
   }}
   onPasswordChange={(value) => security.removePasswordInput = value}
-/>
-
-<CustomUrlDialog
-  bind:open={showCustomUrlDialog}
-  bind:customUrl
-  customUrlAvailable={customUrlAvailable}
-  onSubmit={setCustomUrl}
-  onCancel={() => {
-    showCustomUrlDialog = false;
-    customUrl = '';
-  }}
-  onUrlChange={checkCustomUrl}
 />
 
 <ConflictDialog

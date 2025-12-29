@@ -28,7 +28,6 @@
     onNewNote: () => void;
     onDeleteNote: () => void;
     onToggleOptions: () => void;
-    onCustomUrl: () => void;
     children?: any;
   }
 
@@ -53,7 +52,6 @@
     onNewNote,
     onDeleteNote,
     onToggleOptions,
-    onCustomUrl,
     children
   }: Props = $props();
 
@@ -77,6 +75,7 @@
           {connectionStatus}
           {saveStatus}
           {isSyncing}
+          {isNoteDeleted}
         />
         <ConnectionStatus
           {noteId}
@@ -86,7 +85,7 @@
           {clientId}
           {connectedUsers}
         />
-        <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {onCustomUrl} />
+        <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} />
       </div>
       <div class="md:hidden">
         <ThemeToggle />
@@ -103,11 +102,6 @@
       {#if !viewMode}
         <Button variant={showOptions ? "secondary" : "outline"} onclick={onToggleOptions} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2 {showOptions ? 'border border-transparent' : ''}" title="Configure note options (syntax highlighting, expiration, password protection)">
           Options
-        </Button>
-      {/if}
-      {#if !viewMode && noteId}
-        <Button variant="outline" onclick={onCustomUrl} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Set a custom URL for this note">
-          Custom URL
         </Button>
       {/if}
       <div class="hidden md:block">
