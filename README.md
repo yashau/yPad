@@ -13,6 +13,8 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Automatic Conflict Resolution**: Smart merging of concurrent edits with no data loss
 - **Session Awareness**: Cursor position preservation during remote edits
 - **Remote Cursor Tracking**: See other users' cursor positions in real-time with color-coded labels
+- **Optimized Cursor Updates**: Event-driven cursor broadcasting only on deliberate user actions (input, clicks, navigation)
+- **No Cursor Feedback Loops**: Programmatic changes don't trigger cursor broadcasts, preventing infinite loops
 - **Syntax Highlighting Sync**: Real-time synchronization of syntax highlighting changes across all collaborators
 - **User Presence**: Live count of connected collaborators in the header status indicator
 - **WebSocket-Based**: Real-time synchronization via Durable Objects with optimized reconnection
@@ -29,29 +31,33 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 
 ### Note Management
 - **Auto-Save**: 500ms debounced automatic saving as you type
-- **Custom URLs**: Set custom note IDs with real-time availability checking
+- **Inline Custom URLs**: Edit note URLs directly in the header with real-time availability checking
+- **URL Copying**: Create new notes with custom URLs, copying all settings (content, syntax, password, expiration)
 - **Adaptive ID Generation**: 4-character default IDs with automatic collision detection and length scaling
 - **Self-Destructing Notes**: Max view count limits (one-time viewing)
 - **Time-Based Expiration**: Set expiration (1 hour, 1 day, 1 week, 1 month)
 - **Inactivity-Based Cleanup**: Notes automatically deleted after 90 days of no access
 - **Access Tracking**: Last accessed timestamp updated on every view or WebSocket connection
-- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes
+- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes (fixed export issue)
 
 ### Editor Features
 - **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
 - **Line Numbers**: Synchronized line numbers with scroll
 - **Dark/Light Theme**: Theme toggle with persistence
 - **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
-- **Clickable URL Display**: Copy note URL with one click from header (domain/noteId format)
-- **Note URL Visibility**: Persistent note ID display in header with copy-to-clipboard functionality
+- **Inline URL Editor**: Edit note URLs directly in the header with pencil icon and real-time availability checking
+- **URL Navigation**: "Go to a note" feature for PWA users to navigate without address bar
+- **URL Copy**: One-click copy note URL from header (domain/noteId format)
+- **Seamless URL Editing**: Dynamic input width with icon-only buttons and borderless styling
 - **Conflict Detection**: User-friendly conflict resolution dialogs
 - **User Notifications**: Banners for encryption changes, password updates, conflicts, and note deletion
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
 - **Modular Architecture**: Component-based design with separate hooks for editor, collaboration, and note operations
 - **Info Dialog**: Interactive about dialog accessible from the header with app information
-- **Password UI**: Redesigned password protection with dedicated button and focus management
+- **Clean UI Design**: Borderless input styling with icon-only buttons across all option panels
 - **View Mode Support**: Read-only textarea mode for deleted notes with text selection enabled
-- **Mobile Optimizations**: Improved responsive design and touch interactions
+- **Mobile Optimizations**: Responsive design with fixed input widths and proper overflow handling
+- **Consistent Backgrounds**: Unified editor background styling across plain text and syntax highlighting modes
 
 ### Smart Features
 - **Version Tracking**: Prevents edit conflicts across sessions
@@ -263,7 +269,6 @@ yPad/
 │   │   │   └── ReloadBanner.svelte
 │   │   ├── Dialogs/            # Modal dialogs
 │   │   │   ├── ConflictDialog.svelte
-│   │   │   ├── CustomUrlDialog.svelte
 │   │   │   ├── InfoDialog.svelte
 │   │   │   ├── PasswordDialog.svelte
 │   │   │   └── RemovePasswordDialog.svelte
@@ -272,9 +277,10 @@ yPad/
 │   │   │   └── LineNumbers.svelte
 │   │   ├── Header/             # Header components
 │   │   │   ├── AppHeader.svelte
-│   │   │   ├── ConnectionStatus.svelte  # WebSocket status & clickable URL display
+│   │   │   ├── ConnectionStatus.svelte  # WebSocket status indicator
 │   │   │   ├── ProtectedBadge.svelte
-│   │   │   └── StatusIndicator.svelte   # Save/sync status indicators
+│   │   │   ├── StatusIndicator.svelte   # Save/sync status indicators
+│   │   │   └── UrlDisplay.svelte        # Inline URL editor with copy and navigation
 │   │   └── Toolbar/            # Toolbar components
 │   │       ├── LanguageSelector.svelte
 │   │       ├── OptionsPanel.svelte
@@ -458,9 +464,11 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 
 ### Setting a Custom URL
 
-1. Click **Custom URL** button
+1. Click the **pencil icon** next to the note URL in the header
 2. Enter desired URL (availability checked in real-time)
-3. Click **Set URL** to save
+3. Press **Enter** or click the **checkmark** to create a new note with the custom URL
+4. All settings (content, syntax, password, expiration) are copied to the new note
+5. Use the **navigation icon** to go to any existing note by entering its ID
 
 ### Adding Password Protection
 
@@ -811,7 +819,12 @@ async scheduled(event, env, ctx) {
 - **Centralized Configuration**: All constants, validation patterns, and security headers in [config/constants.ts](config/constants.ts)
 - **Component Library**: Organized components into logical groups (Banners, Dialogs, Editor, Header, Toolbar)
 - **Enhanced Documentation**: Comprehensive inline documentation for complex algorithms and workflows
-- **Bug Fixes**: Improved encryption handling, deletion notifications, cursor synchronization, and version tracking
+- **Recent Bug Fixes**:
+  - Fixed cursor feedback loop in realtime collaboration with event-driven updates
+  - Fixed scheduled cron handler export to enable automatic cleanup
+  - Fixed editor background consistency between plain text and syntax highlighting modes
+  - Improved mobile responsiveness with proper input sizing and overflow handling
+  - Enhanced URL editor with borders, shadows, and icon-only buttons for clean UI
 
 ## Contributing
 
