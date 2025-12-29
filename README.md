@@ -9,6 +9,8 @@
 
 A production-ready, real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network. Features Google Docs-style real-time collaboration using Operational Transform, client-side encryption, syntax highlighting for 150+ languages, and automatic note lifecycle management.
 
+**🚀 Live Demo: [https://yp.pe](https://yp.pe)**
+
 ## Features
 
 ### Real-Time Collaboration
