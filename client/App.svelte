@@ -180,18 +180,42 @@
     }
   });
 
-  // Track cursor position changes (for clicks, arrow keys, etc.)
+  // Track cursor position changes only on deliberate user actions
+  // Uses beforeinput event which fires for all intentional user edits
   $effect(() => {
     if (!editor.editorRef && !editor.textareaScrollRef) return;
 
-    const handleSelectionChange = () => {
-      wsConnection.sendCursorUpdate();
+    const editorElement = editor.editorRef || editor.textareaScrollRef;
+    if (!editorElement) return;
+
+    const handleBeforeInput = () => {
+      // Cursor update will be sent after the input is processed
+      // This captures typing, backspace, delete, enter, paste, etc.
+      setTimeout(() => wsConnection.sendCursorUpdate(), 0);
     };
 
-    document.addEventListener('selectionchange', handleSelectionChange);
+    const handleClick = () => {
+      // Send cursor update on mouse click for cursor repositioning
+      setTimeout(() => wsConnection.sendCursorUpdate(), 0);
+    };
+
+    const handleKeyDown = (e: Event) => {
+      // Handle navigation keys that don't trigger beforeinput
+      const keyEvent = e as KeyboardEvent;
+      const navigationKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
+      if (navigationKeys.includes(keyEvent.key)) {
+        setTimeout(() => wsConnection.sendCursorUpdate(), 0);
+      }
+    };
+
+    editorElement.addEventListener('beforeinput', handleBeforeInput);
+    editorElement.addEventListener('click', handleClick);
+    editorElement.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
+      editorElement.removeEventListener('beforeinput', handleBeforeInput);
+      editorElement.removeEventListener('click', handleClick);
+      editorElement.removeEventListener('keydown', handleKeyDown);
     };
   });
 
@@ -266,8 +290,6 @@
 
       // Update editor.content optimistically so checksum verification works
       editor.content = newContent;
-
-      setTimeout(() => wsConnection.sendCursorUpdate(), 0);
     } else {
       // For non-realtime modes (encrypted notes, no WebSocket), update content immediately
       editor.content = newContent;
