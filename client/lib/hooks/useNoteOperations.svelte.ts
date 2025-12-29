@@ -195,7 +195,9 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         const data = await response.json() as { id: string; version: number };
         noteState.noteId = data.id;
         noteState.currentVersion = data.version || 1;
-        window.history.pushState({}, '', `/${noteState.noteId}`);
+
+        // Replace current URL with note ID (don't push, as we're still in the same "session")
+        window.history.replaceState({}, '', `/${noteState.noteId}`);
 
         // Callback to connect WebSocket after note creation
         setTimeout(() => {

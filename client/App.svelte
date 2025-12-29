@@ -60,6 +60,7 @@
     onNewNote: () => {
       showOptions = false;
       showNoteDeletedBanner = false;
+      wsConnection.disconnectWebSocket();
       wsConnection.resetState();
     }
   });
@@ -296,11 +297,35 @@
   onMount(() => {
     noteState.initializeSession();
 
+    // Ensure current URL is in history
+    window.history.replaceState({}, '', window.location.pathname);
+
     const path = window.location.pathname;
     if (path !== '/' && path.length > 1) {
       noteState.noteId = path.substring(1);
       noteOps.loadNote();
     }
+
+    // Handle browser back/forward navigation
+    const handlePopState = () => {
+      const newPath = window.location.pathname;
+
+      if (newPath === '/' || newPath.length === 1) {
+        // Navigated to home - create new note
+        noteOps.newNote();
+      } else {
+        // Navigated to a note - load it
+        const newNoteId = newPath.substring(1);
+        noteState.noteId = newNoteId;
+        noteOps.loadNote();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   });
 
 
@@ -333,7 +358,7 @@
     content={editor.content}
     syntaxHighlight={editor.syntaxHighlight}
     password={security.password}
-    maxViews={noteState.maxViews}
+    maxViews={noteState.maxViews === null ? undefined : noteState.maxViews}
     expiresIn={noteState.expiresIn}
     onNewNote={noteOps.newNote}
     onDeleteNote={noteOps.deleteNote}

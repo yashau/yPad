@@ -45,8 +45,7 @@
     onclick={handleClick}
     disabled={disabled}
     variant="outline"
-    size="icon-sm"
-    class="rounded-r-md rounded-l-none h-full group"
+    class="rounded-r-md rounded-l-none h-full group size-8"
     title="Submit max views"
   >
     <Check class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />

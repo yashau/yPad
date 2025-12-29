@@ -193,8 +193,7 @@
       <Button
         onclick={isEditing ? handleCustomUrlChange : startEditing}
         variant="outline"
-        size="icon-sm"
-        class="rounded-r-md rounded-l-none h-auto group"
+        class="rounded-r-md rounded-l-none h-auto group size-8"
         title={isEditing ? "Save custom URL" : "Edit custom URL"}
       >
         {#if isEditing}
@@ -236,8 +235,7 @@
       <Button
         onclick={isEditing ? handleNavigate : startEditing}
         variant="outline"
-        size="icon-sm"
-        class="h-auto"
+        class="h-auto size-8"
         title={isEditing ? "Navigate" : "Go to a note"}
       >
         {#if isEditing}

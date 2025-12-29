@@ -1,5 +1,12 @@
 # yPad
 
+[![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)](https://hono.dev/)
+[![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+
 A production-ready, real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network. Features Google Docs-style real-time collaboration using Operational Transform, client-side encryption, syntax highlighting for 150+ languages, and automatic note lifecycle management.
 
 ## Features
@@ -75,38 +82,38 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Cloudflare Assets** - Global CDN for static files
 
 ### Backend
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Hono | latest | Lightweight web framework for Workers |
-| TypeScript | latest | Type-safe development |
-| Wrangler | latest | Cloudflare development & deployment CLI |
+| Technology | Purpose |
+|------------|---------|
+| Hono | Lightweight web framework for Workers |
+| TypeScript | Type-safe development |
+| Wrangler | Cloudflare development & deployment CLI |
 
 ### Frontend
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Svelte 5 | latest | Reactive UI framework with Runes |
-| Vite | latest | Build tool and dev server |
-| TypeScript | latest | Type safety |
+| Technology | Purpose |
+|------------|---------|
+| Svelte 5 | Reactive UI framework with Runes |
+| Vite | Build tool and dev server |
+| TypeScript | Type safety |
 
 ### Styling & UI
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| Tailwind CSS | latest (v4) | Utility-first CSS framework |
-| @tailwindcss/postcss | 4.1.18 | Tailwind v4 PostCSS plugin |
-| @tailwindcss/typography | latest | Beautiful prose styling |
-| shadcn-svelte | latest | High-quality component library |
-| bits-ui | 2.14.4 | Headless UI primitives |
-| @lucide/svelte | 0.561.0 | Beautiful icon library |
-| clsx | latest | Conditional classnames utility |
-| tailwind-merge | latest | Smart Tailwind class merging |
-| tailwind-variants | 3.2.2 | Component variant system |
+| Technology | Purpose |
+|------------|---------|
+| Tailwind CSS | Utility-first CSS framework |
+| @tailwindcss/postcss | Tailwind v4 PostCSS plugin |
+| @tailwindcss/typography | Beautiful prose styling |
+| shadcn-svelte | High-quality component library |
+| bits-ui | Headless UI primitives |
+| @lucide/svelte | Beautiful icon library |
+| clsx | Conditional classnames utility |
+| tailwind-merge | Smart Tailwind class merging |
+| tailwind-variants | Component variant system |
 
 ### Specialized Libraries
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| highlight.js | latest | Syntax highlighting for 150+ languages |
-| fast-diff | 1.3.0 | Efficient text diffing for OT operations |
-| @internationalized/date | 3.10.1 | Internationalized date handling |
+| Technology | Purpose |
+|------------|---------|
+| highlight.js | Syntax highlighting for 150+ languages |
+| fast-diff | Efficient text diffing for OT operations |
+| @internationalized/date | Internationalized date handling |
 
 ### Security & Cryptography
 - **Web Crypto API** - Browser-native cryptography

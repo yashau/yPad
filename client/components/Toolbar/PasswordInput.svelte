@@ -49,8 +49,7 @@
     onclick={handleClick}
     disabled={disabled || (!hasPassword && !value.trim())}
     variant="outline"
-    size="icon-sm"
-    class="rounded-r-md rounded-l-none h-full group"
+    class="rounded-r-md rounded-l-none h-full group size-8"
     title={hasPassword ? "Remove password protection" : "Set password protection"}
   >
     {#if hasPassword}
