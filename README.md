@@ -29,6 +29,7 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **WebSocket-Based**: Real-time synchronization via Durable Objects with optimized reconnection
 - **Durable Object Read Caching**: In-memory content caching for improved real-time performance
 - **Checksum Verification**: Automatic content integrity verification during sync
+- **Real-Time Status Updates**: Periodic broadcasts of view count and expiration status via WebSocket
 
 ### Security & Privacy
 - **Client-Side Encryption**: Zero-knowledge AES-GCM 256-bit encryption
@@ -43,15 +44,17 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Inline Custom URLs**: Edit note URLs directly in the header with real-time availability checking
 - **URL Copying**: Create new notes with custom URLs, copying all settings (content, syntax, password, expiration)
 - **Adaptive ID Generation**: 4-character default IDs with automatic collision detection and length scaling
-- **Self-Destructing Notes**: Max view count limits (one-time viewing)
-- **Time-Based Expiration**: Set expiration (1 hour, 1 day, 1 week, 1 month)
+- **Self-Destructing Notes**: Max view count limits with live remaining views display
+- **Time-Based Expiration**: Set expiration (1 hour, 1 day, 1 week, 1 month) with live countdown timer
+- **Reset Options**: Remove max views or expiration settings after they've been applied
+- **Final View Handling**: Notes deleted on last view with warning banner for content recovery
 - **Inactivity-Based Cleanup**: Notes automatically deleted after 90 days of no access
 - **Access Tracking**: Last accessed timestamp updated on every view or WebSocket connection
-- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes (fixed export issue)
+- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes
 
 ### Editor Features
 - **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
-- **Line Numbers**: Synchronized line numbers with scroll
+- **Line Numbers**: Synchronized line numbers with scroll, accounting for wrapped lines
 - **Dark/Light Theme**: Theme toggle with persistence
 - **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
 - **Inline URL Editor**: Edit note URLs directly in the header with pencil icon and real-time availability checking
@@ -59,7 +62,7 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **URL Copy**: One-click copy note URL from header (domain/noteId format)
 - **Seamless URL Editing**: Dynamic input width with icon-only buttons and borderless styling
 - **Conflict Detection**: User-friendly conflict resolution dialogs
-- **User Notifications**: Banners for encryption changes, password updates, conflicts, and note deletion
+- **User Notifications**: Banners for encryption changes, password updates, conflicts, note deletion, and final views
 - **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
 - **Modular Architecture**: Component-based design with separate hooks for editor, collaboration, and note operations
 - **Info Dialog**: Interactive about dialog accessible from the header with app information
@@ -72,7 +75,7 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 - **Version Tracking**: Prevents edit conflicts across sessions
 - **Automatic Reconnection**: Exponential backoff for WebSocket reconnection with state reset
 - **WebSocket State Management**: Proper cleanup and reset when creating new notes after deletion
-- **View Counter**: Track how many times a note has been viewed
+- **View Counter**: Track how many times a note has been viewed with remaining views display
 - **Graceful Degradation**: Falls back to HTTP saves when disconnected
 
 ## Tech Stack
@@ -158,6 +161,7 @@ A production-ready, real-time collaborative notepad with end-to-end encryption, 
 4. **Operations** are transformed using OT algorithm and applied in-memory
 5. **Persistence** occurs periodically (debounced 5s or every 50 operations)
 6. **Broadcasts** to all connected clients with transformed operations
+7. **Status Updates** broadcast every 10 seconds with view count and expiration info
 
 ### Database Schema
 
@@ -274,6 +278,7 @@ yPad/
 │   │   ├── Banners/            # Notification banners
 │   │   │   ├── EncryptionDisabledBanner.svelte
 │   │   │   ├── EncryptionEnabledBanner.svelte
+│   │   │   ├── FinalViewBanner.svelte      # Max views reached warning
 │   │   │   ├── NoteDeletedBanner.svelte
 │   │   │   └── ReloadBanner.svelte
 │   │   ├── Dialogs/            # Modal dialogs
@@ -287,25 +292,27 @@ yPad/
 │   │   ├── Header/             # Header components
 │   │   │   ├── AppHeader.svelte
 │   │   │   ├── ConnectionStatus.svelte  # WebSocket status indicator
-│   │   │   ├── ProtectedBadge.svelte
 │   │   │   ├── StatusIndicator.svelte   # Save/sync status indicators
 │   │   │   └── UrlDisplay.svelte        # Inline URL editor with copy and navigation
 │   │   └── Toolbar/            # Toolbar components
 │   │       ├── LanguageSelector.svelte
-│   │       ├── OptionsPanel.svelte
+│   │       ├── MaxViewsInput.svelte     # Max views input with submit
+│   │       ├── OptionsPanel.svelte      # Options with live status display
 │   │       └── PasswordInput.svelte
 │   ├── lib/
 │   │   ├── components/
+│   │   │   ├── RemoteCursor.svelte      # Remote user cursor display
 │   │   │   └── ui/              # shadcn-svelte components
 │   │   │       ├── alert/       # Alert component (banners)
 │   │   │       ├── button/      # Button component
-│   │   │       ├── combobox/    # Combobox for syntax selection
+│   │   │       ├── command/     # Command palette for syntax selection
 │   │   │       ├── dialog/      # Dialog/modal component
 │   │   │       ├── input/       # Input component
-│   │   │       ├── label/       # Label component
 │   │   │       ├── popover/     # Popover component
 │   │   │       ├── select/      # Select dropdown
-│   │   │       └── ...          # Other UI components
+│   │   │       ├── separator/   # Separator component
+│   │   │       ├── textarea/    # Textarea component
+│   │   │       └── ThemeToggle.svelte   # Dark/light theme toggle
 │   │   ├── hooks/              # Svelte 5 hooks with state management
 │   │   │   ├── useCollaboration.svelte.ts  # Real-time collab logic
 │   │   │   ├── useEditor.svelte.ts         # Editor state & operations
@@ -317,10 +324,14 @@ yPad/
 │   │   │   ├── InputEventOperationGenerator.ts  # Cursor-aware OT from InputEvent
 │   │   │   ├── OperationGenerator.ts            # fast-diff based OT (for sync)
 │   │   │   └── WebSocketClient.ts               # WebSocket client with OT
-│   │   ├── stores/              # Svelte stores (theme, etc.)
+│   │   ├── stores/              # Svelte stores
+│   │   │   └── theme.svelte.ts  # Theme state management
 │   │   ├── utils/               # Utility functions
-│   │   └── crypto.ts            # Client-side encryption (AES-GCM)
+│   │   │   └── cn.ts            # Class name utility
+│   │   ├── crypto.ts            # Client-side encryption (AES-GCM)
+│   │   └── utils.ts             # General utilities
 │   ├── App.svelte               # Main app component (refactored, modular)
+│   ├── app.css                  # Global styles and CSS variables
 │   ├── index.html               # HTML entry point with favicons
 │   └── main.ts                  # JS entry point
 ├── public/                      # Static assets (copied to dist)
@@ -334,7 +345,7 @@ yPad/
 │   └── site.webmanifest         # PWA manifest
 ├── src/                         # Backend Cloudflare Workers
 │   ├── durable-objects/
-│   │   └── NoteSessionDurableObject.ts  # WebSocket coordinator with OT
+│   │   └── NoteSessionDurableObject.ts  # WebSocket coordinator with OT & status broadcasts
 │   ├── ot/                      # Operational Transform
 │   │   ├── types.ts             # OT type definitions & WebSocket messages
 │   │   ├── transform.ts         # OT algorithm implementation
@@ -343,12 +354,6 @@ yPad/
 │   ├── types.d.ts               # TypeScript type definitions
 │   └── index.ts                 # Hono API server & routes
 ├── dist/                        # Build output (gitignored)
-│   ├── client/
-│   │   └── index.html           # Built HTML with hashed assets
-│   ├── assets/                  # Hashed JS/CSS bundles
-│   ├── icons/                   # Copied favicon icons
-│   ├── favicon.ico              # Copied favicon
-│   └── site.webmanifest         # Copied manifest
 ├── scripts/                     # Automation scripts
 │   ├── dev.ps1                  # Windows dev server script
 │   ├── dev.sh                   # Mac/Linux dev server script
@@ -356,14 +361,14 @@ yPad/
 │   └── prod.sh                  # Mac/Linux production deployment
 ├── migrations/                  # D1 database migrations
 │   ├── 0001_initial_schema.sql
-│   └── 0002_add_last_accessed_at.sql
+│   ├── 0002_add_last_accessed_at.sql
+│   └── 0003_performance_indexes.sql
 ├── config/                      # Configuration files
 │   └── constants.ts            # Application constants & validation
 ├── .env.example                 # Example environment config
 ├── .env                         # Local environment config (gitignored)
 ├── wrangler.toml                # Cloudflare Workers config
 ├── vite.config.ts               # Vite build config with publicDir
-├── tailwind.config.js           # Tailwind CSS config
 └── package.json                 # Dependencies & scripts
 ```
 
@@ -489,7 +494,7 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 
 ### Removing Password Protection
 
-1. Click the password icon in the header
+1. Click the lock icon in the header
 2. Enter the current password to verify
 3. Password is verified before decryption
 4. Real-time collaboration is automatically re-enabled
@@ -499,8 +504,8 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 Click **Options** to set:
 - **Syntax Highlighting**: Choose from 150+ languages
 - **Password Protection**: Enable/disable with password
-- **Max Views**: Limit view count (1-1000 views)
-- **Expiration**: Set expiry (1 hour, 1 day, 1 week, 1 month, never)
+- **Max Views**: Set view limit - displays remaining views with reset option
+- **Expiration**: Set expiry with live countdown timer and reset option
 
 ### Real-Time Collaboration
 
@@ -514,6 +519,7 @@ Click **Options** to set:
    - **User count**: Shows your client ID and `+N` for N other connected users
    - **Blue pulse**: Connected but collaboration disabled (encrypted note)
    - **Red**: Disconnected
+   - **Trash icon**: Note has been deleted
 7. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
 
 ### Viewing a Protected Note
@@ -522,6 +528,14 @@ Click **Options** to set:
 2. Enter password in dialog
 3. Content is decrypted client-side
 4. View count increments automatically
+
+### Final View Handling
+
+When a note reaches its maximum view count:
+1. The note content is displayed one final time
+2. A warning banner appears indicating the note has been deleted
+3. The note is permanently removed from the server
+4. Copy the content before leaving the page - it cannot be recovered
 
 ## API Reference
 
@@ -542,13 +556,15 @@ Retrieve a note by ID. Updates `last_accessed_at` timestamp.
   "view_count": 5,
   "max_views": null,
   "expires_at": null,
-  "is_encrypted": 0
+  "is_encrypted": false,
+  "is_last_view": false
 }
 ```
 
 **Side Effects**:
 - Increments `view_count`
 - Updates `last_accessed_at` timestamp
+- If `is_last_view` is true, note is deleted after response
 
 #### `POST /api/notes`
 Create a new note. Initializes `last_accessed_at` to current timestamp.
@@ -571,7 +587,29 @@ Create a new note. Initializes `last_accessed_at` to current timestamp.
 #### `PUT /api/notes/:id`
 Update an existing note.
 
-**Body**: Same as POST
+**Body**:
+```json
+{
+  "content": "Updated content",
+  "syntax_highlight": "javascript",
+  "max_views": 10,
+  "expires_in": 86400000,
+  "clear_expiration": false
+}
+```
+
+**Response**:
+```json
+{
+  "version": 2,
+  "expires_at": 1704067200000
+}
+```
+
+**Notes**:
+- Setting `max_views` resets `view_count` to 0
+- `expires_at` is computed server-side from `expires_in`
+- Use `clear_expiration: true` to remove expiration
 
 #### `DELETE /api/notes/:id`
 Delete a note and cleanup Durable Object state.
@@ -607,35 +645,25 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
   "type": "sync",
   "content": "Current note content",
   "version": 42,
-  "sessionId": "unique-session-id"
+  "seqNum": 0,
+  "clientId": "unique-client-id",
+  "syntax": "javascript"
 }
 ```
 
-**Operation** (client → server):
+**Operation** (client ↔ server):
 ```json
 {
   "type": "operation",
   "operation": {
     "type": "insert",
     "position": 10,
-    "text": "hello"
+    "text": "hello",
+    "clientId": "client-id",
+    "version": 42
   },
   "version": 42,
-  "sessionId": "session-id"
-}
-```
-
-**Operation Broadcast** (server → client):
-```json
-{
-  "type": "operation",
-  "operation": {
-    "type": "delete",
-    "position": 5,
-    "count": 3
-  },
-  "version": 43,
-  "sessionId": "other-session-id"
+  "seqNum": 1
 }
 ```
 
@@ -643,15 +671,58 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
 ```json
 {
   "type": "ack",
-  "version": 43
+  "version": 43,
+  "contentChecksum": 12345
 }
 ```
 
-**Error** (server → client):
+**Note Status** (server → client, every 10 seconds):
 ```json
 {
-  "type": "error",
-  "message": "Error description"
+  "type": "note_status",
+  "view_count": 5,
+  "max_views": 10,
+  "expires_at": 1704067200000
+}
+```
+
+**Cursor Update** (client ↔ server):
+```json
+{
+  "type": "cursor_update",
+  "clientId": "abc123",
+  "position": 42,
+  "seqNum": 5
+}
+```
+
+**User Joined** (server → client):
+```json
+{
+  "type": "user_joined",
+  "clientId": "abc123",
+  "connectedUsers": ["abc123", "def456", "ghi789"],
+  "seqNum": 6
+}
+```
+
+**User Left** (server → client):
+```json
+{
+  "type": "user_left",
+  "clientId": "abc123",
+  "connectedUsers": ["def456", "ghi789"],
+  "seqNum": 7
+}
+```
+
+**Syntax Change** (client ↔ server):
+```json
+{
+  "type": "syntax_change",
+  "syntax": "javascript",
+  "clientId": "abc123",
+  "seqNum": 8
 }
 ```
 
@@ -664,55 +735,19 @@ ws://localhost:8787/api/notes/:id/ws?password=optional
 }
 ```
 
-**Version Update** (server → client):
-```json
-{
-  "type": "version_update",
-  "version": 44,
-  "message": "Note was updated by another user"
-}
-```
-
 **Note Deleted** (server → client):
 ```json
 {
   "type": "note_deleted",
-  "message": "Note has been deleted"
+  "deletedByCurrentUser": false
 }
 ```
 
-**Cursor Update** (client ↔ server):
+**Error** (server → client):
 ```json
 {
-  "type": "cursor_update",
-  "clientId": "abc123",
-  "position": 42
-}
-```
-
-**User Joined** (server → client):
-```json
-{
-  "type": "user_joined",
-  "clientId": "abc123",
-  "connectedUsers": ["abc123", "def456", "ghi789"]
-}
-```
-
-**User Left** (server → client):
-```json
-{
-  "type": "user_left",
-  "clientId": "abc123",
-  "connectedUsers": ["def456", "ghi789"]
-}
-```
-
-**Syntax Update** (client ↔ server):
-```json
-{
-  "type": "syntax_update",
-  "syntax": "javascript"
+  "type": "error",
+  "message": "Error description"
 }
 ```
 
@@ -766,6 +801,25 @@ For password-protected notes:
 9. Password verification required before removing encryption
 10. All connected clients notified when encryption status changes
 
+### Max Views & Expiration
+
+yPad supports two types of note lifecycle limits:
+
+**Max Views**:
+- Set a maximum number of views (1-1000)
+- View count resets when max views is set (counts from time of setting)
+- Remaining views displayed in options panel
+- Note automatically deleted when limit reached
+- Final view shows content with warning banner
+
+**Expiration**:
+- Set time-based expiration (1 hour to 1 month)
+- Live countdown timer in options panel
+- Expiration time computed server-side for accuracy
+- Note automatically deleted by cron job when expired
+
+Both limits can be reset (removed) after being set.
+
 ### Automatic Cleanup
 
 A cron trigger runs every 15 minutes to clean up notes:
@@ -808,6 +862,7 @@ async scheduled(event, env, ctx) {
 - **Efficient Memory Management**: Reduced object allocations in hot paths for better performance
 - **Connection Management**: Optimized WebSocket version synchronization and reconnection logic
 - **InputEvent Optimization**: Direct operation generation from browser events eliminates diff overhead
+- **Status Broadcasting**: Periodic status updates (10s interval) instead of per-operation updates
 
 ## Security Considerations
 
@@ -828,12 +883,6 @@ async scheduled(event, env, ctx) {
 - **Centralized Configuration**: All constants, validation patterns, and security headers in [config/constants.ts](config/constants.ts)
 - **Component Library**: Organized components into logical groups (Banners, Dialogs, Editor, Header, Toolbar)
 - **Enhanced Documentation**: Comprehensive inline documentation for complex algorithms and workflows
-- **Recent Bug Fixes**:
-  - Fixed cursor feedback loop in realtime collaboration with event-driven updates
-  - Fixed scheduled cron handler export to enable automatic cleanup
-  - Fixed editor background consistency between plain text and syntax highlighting modes
-  - Improved mobile responsiveness with proper input sizing and overflow handling
-  - Enhanced URL editor with borders, shadows, and icon-only buttons for clean UI
 
 ## Contributing
 
