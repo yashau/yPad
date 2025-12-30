@@ -69,7 +69,9 @@
           type="button"
           aria-label="About yPad"
         >
-          yPad
+          <svg viewBox="0 0 46 24" class="h-7" aria-hidden="true">
+            <text x="0" y="19" class="fill-current font-bold" style="font-size: 20px;">yPad</text>
+          </svg>
         </button>
         <StatusIndicator
           {noteId}
