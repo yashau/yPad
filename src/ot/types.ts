@@ -116,6 +116,13 @@ export type SyntaxAckMessage = {
   seqNum: number; // The sequence number used for the syntax change broadcast
 };
 
+export type NoteStatusMessage = {
+  type: 'note_status';
+  view_count: number;
+  max_views: number | null;
+  expires_at: number | null;
+};
+
 export type WSMessage =
   | OperationMessage
   | SyncMessage
@@ -131,7 +138,8 @@ export type WSMessage =
   | UserJoinedMessage
   | UserLeftMessage
   | SyntaxChangeMessage
-  | SyntaxAckMessage;
+  | SyntaxAckMessage
+  | NoteStatusMessage;
 
 // Client session information
 export interface ClientSession {

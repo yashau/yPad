@@ -15,6 +15,14 @@ export function useNoteState() {
   let expiresIn = $state<string>('null');
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // Server state - the actual current values from the backend
+  let serverMaxViews = $state<number | null>(null);
+  let serverViewCount = $state<number>(0);
+  let serverExpiresAt = $state<number | null>(null);
+
+  // Final view state - note has been deleted after this view
+  let isFinalView = $state(false);
+
   function initializeSession() {
     const existingSessionId = sessionStorage.getItem('paste-session-id');
     if (existingSessionId) {
@@ -42,6 +50,10 @@ export function useNoteState() {
     maxViews = null;
     expiresIn = 'null';
     viewMode = false;
+    serverMaxViews = null;
+    serverViewCount = 0;
+    serverExpiresAt = null;
+    isFinalView = false;
   }
 
   return {
@@ -71,6 +83,18 @@ export function useNoteState() {
 
     get expiresIn() { return expiresIn; },
     set expiresIn(value: string) { expiresIn = value; },
+
+    get serverMaxViews() { return serverMaxViews; },
+    set serverMaxViews(value: number | null) { serverMaxViews = value; },
+
+    get serverViewCount() { return serverViewCount; },
+    set serverViewCount(value: number) { serverViewCount = value; },
+
+    get serverExpiresAt() { return serverExpiresAt; },
+    set serverExpiresAt(value: number | null) { serverExpiresAt = value; },
+
+    get isFinalView() { return isFinalView; },
+    set isFinalView(value: boolean) { isFinalView = value; },
 
     initializeSession,
     clearSaveTimeout,

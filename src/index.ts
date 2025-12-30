@@ -30,6 +30,7 @@ interface UpdateNotePayload {
   password?: string;
   max_views?: number | null;
   expires_in?: number;
+  clear_expiration?: boolean;
   is_encrypted?: boolean;
   session_id?: string;
   expected_version?: number | null;
@@ -112,11 +113,14 @@ app.get('/api/notes/:id', async (c) => {
   // Increment view count first
   const newViewCount = Number(note.view_count) + 1;
 
-  // Check max views - delete if this view reaches the limit
+  // Check if this view exceeds the limit (note was already fully consumed)
   if (note.max_views && newViewCount > Number(note.max_views)) {
     await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
     return c.json({ error: 'Note has reached max views' }, 410);
   }
+
+  // Check if this is the final allowed view
+  const isLastView = note.max_views && newViewCount >= Number(note.max_views);
 
   // Update view count and last accessed timestamp (non-blocking)
   c.env.DB.prepare(
@@ -143,6 +147,14 @@ app.get('/api/notes/:id', async (c) => {
     is_encrypted: boolean;
   };
 
+  // If this was the last allowed view, delete the note (non-blocking)
+  // This happens after we've fetched all the content but before returning
+  if (isLastView) {
+    c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run().catch((error: any) => {
+      console.error(`Failed to delete note ${id} after last view:`, error);
+    });
+  }
+
   return c.json({
     id: note.id,
     content: doData.content,
@@ -153,7 +165,8 @@ app.get('/api/notes/:id', async (c) => {
     created_at: note.created_at,
     version: doData.version,
     has_password: !!note.password_hash,
-    is_encrypted: doData.is_encrypted
+    is_encrypted: doData.is_encrypted,
+    is_last_view: isLastView
   });
 });
 
@@ -264,7 +277,7 @@ app.post('/api/notes', async (c) => {
 app.put('/api/notes/:id', async (c) => {
   const id = c.req.param('id');
   const body: UpdateNotePayload = await c.req.json();
-  const { content, syntax_highlight, password, max_views, expires_in, session_id, expected_version, is_encrypted } = body;
+  const { content, syntax_highlight, password, max_views, expires_in, clear_expiration, session_id, expected_version, is_encrypted } = body;
 
   const existing = await c.env.DB.prepare(
     'SELECT * FROM notes WHERE id = ?'
@@ -284,7 +297,12 @@ app.put('/api/notes/:id', async (c) => {
   // - Otherwise, keep existing password hash
   const password_hash = is_encrypted === false ? null :
                        (password && password !== '' ? await hashPassword(password) : existing.password_hash);
-  const expires_at = expires_in ? Date.now() + expires_in : existing.expires_at;
+  // Handle expiration: clear_expiration sets to null, expires_in sets new value, otherwise keep existing
+  const expires_at = clear_expiration ? null : (expires_in ? Date.now() + expires_in : existing.expires_at);
+
+  // Determine if max_views is being changed (set to a new value)
+  // When max_views is set, reset view_count to 0 so it represents "X more views from now"
+  const isSettingMaxViews = max_views !== undefined && max_views !== null && max_views !== existing.max_views;
 
   // Atomic SQL update with version checking and conditional increment
   const result = await c.env.DB.prepare(
@@ -294,6 +312,7 @@ app.put('/api/notes/:id', async (c) => {
        syntax_highlight = ?,
        password_hash = ?,
        max_views = ?,
+       view_count = CASE WHEN ? THEN 0 ELSE view_count END,
        expires_at = ?,
        updated_at = ?,
        is_encrypted = ?,
@@ -309,6 +328,7 @@ app.put('/api/notes/:id', async (c) => {
     syntax_highlight || existing.syntax_highlight,
     password_hash,
     max_views !== undefined ? max_views : existing.max_views,
+    isSettingMaxViews ? 1 : 0,  // Reset view_count if setting new max_views
     expires_at,
     Date.now(),
     is_encrypted !== undefined ? (is_encrypted ? 1 : 0) : existing.is_encrypted,
@@ -381,7 +401,7 @@ app.put('/api/notes/:id', async (c) => {
     }
   }
 
-  return c.json({ success: true, version: result.version });
+  return c.json({ success: true, version: result.version, expires_at });
 });
 
 app.get('/api/check/:id', async (c) => {

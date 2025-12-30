@@ -23,6 +23,7 @@ export interface WebSocketConfig {
   onEncryptionDisabled?: () => void;
   onVersionUpdate?: () => void;
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
+  onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
 }
 
 export function useWebSocketConnection(config: WebSocketConfig) {
@@ -179,6 +180,9 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           if (syntax !== editor.syntaxHighlight) {
             editor.syntaxHighlight = syntax;
           }
+        },
+        onNoteStatus: (viewCount, maxViews, expiresAt) => {
+          config.onNoteStatus?.(viewCount, maxViews, expiresAt);
         }
       });
     } catch (error) {

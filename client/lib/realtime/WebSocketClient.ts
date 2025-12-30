@@ -26,7 +26,7 @@
  * - Unencrypted notes use both (version for persistence, sequence for real-time ordering)
  */
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage } from '../../../src/ot/types';
+import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage } from '../../../src/ot/types';
 
 export interface WebSocketClientOptions {
   password?: string;
@@ -44,6 +44,7 @@ export interface WebSocketClientOptions {
   onUserJoined?: (clientId: string, connectedUsers: string[]) => void;
   onUserLeft?: (clientId: string, connectedUsers: string[]) => void;
   onSyntaxChange?: (syntax: string) => void;
+  onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
   autoReconnect?: boolean;
 }
 
@@ -266,6 +267,13 @@ export class WebSocketClient {
         console.log('[WebSocket] Version update:', message);
         if (this.options.onVersionUpdate) {
           this.options.onVersionUpdate(message.version, message.message);
+        }
+        break;
+
+      case 'note_status':
+        if (this.options.onNoteStatus) {
+          const statusMsg = message as NoteStatusMessage;
+          this.options.onNoteStatus(statusMsg.view_count, statusMsg.max_views, statusMsg.expires_at);
         }
         break;
 

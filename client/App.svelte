@@ -22,6 +22,7 @@
   import EncryptionEnabledBanner from './components/Banners/EncryptionEnabledBanner.svelte';
   import EncryptionDisabledBanner from './components/Banners/EncryptionDisabledBanner.svelte';
   import NoteDeletedBanner from './components/Banners/NoteDeletedBanner.svelte';
+  import FinalViewBanner from './components/Banners/FinalViewBanner.svelte';
 
   // Initialize hooks
   const noteState = useNoteState();
@@ -110,6 +111,12 @@
       showNoteDeletedBanner = true;
       noteDeletedByCurrentUser = deletedByCurrentUser;
       noteState.viewMode = true;
+    },
+    onNoteStatus: (viewCount, maxViews, expiresAt) => {
+      // Update note status from periodic WebSocket broadcasts
+      noteState.serverViewCount = viewCount;
+      noteState.serverMaxViews = maxViews;
+      noteState.serverExpiresAt = expiresAt;
     }
   });
 
@@ -365,6 +372,7 @@
     isSyncing={collaboration.isSyncing}
     viewMode={noteState.viewMode}
     isNoteDeleted={showNoteDeletedBanner}
+    isFinalView={noteState.isFinalView}
     showOptions={showOptions}
     content={editor.content}
     syntaxHighlight={editor.syntaxHighlight}
@@ -377,7 +385,7 @@
     onCustomUrlSet={handleCustomUrlSet}
   >
     {#snippet children()}
-      {#if showOptions}
+      {#if showOptions && !noteState.isFinalView}
         <OptionsPanel
           syntaxHighlight={editor.syntaxHighlight}
           bind:passwordToSet={security.passwordToSet}
@@ -385,6 +393,9 @@
           bind:maxViews={noteState.maxViews}
           bind:expiresIn={noteState.expiresIn}
           viewMode={noteState.viewMode}
+          serverMaxViews={noteState.serverMaxViews}
+          serverViewCount={noteState.serverViewCount}
+          serverExpiresAt={noteState.serverExpiresAt}
           onSyntaxChange={(lang) => {
             editor.syntaxHighlight = lang;
             wsConnection.sendSyntaxChange(lang);
@@ -409,7 +420,13 @@
           }}
           onPasswordChange={(value) => security.passwordToSet = value}
           onMaxViewsChange={(value) => noteState.maxViews = value}
-          onExpirationChange={(value) => noteState.expiresIn = value}
+          onMaxViewsSubmit={() => noteOps.saveNote()}
+          onExpirationChange={(value) => {
+            noteState.expiresIn = value;
+            noteOps.saveNote();
+          }}
+          onResetMaxViews={() => noteOps.resetMaxViews()}
+          onResetExpiration={() => noteOps.resetExpiration()}
         />
       {/if}
     {/snippet}
@@ -440,6 +457,8 @@
   />
 
   <NoteDeletedBanner show={showNoteDeletedBanner} deletedByCurrentUser={noteDeletedByCurrentUser} />
+
+  <FinalViewBanner show={noteState.isFinalView} />
 
   <EditorView
     bind:content={editor.content}

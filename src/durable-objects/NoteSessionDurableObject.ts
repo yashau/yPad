@@ -48,6 +48,7 @@ import type {
   UserLeftMessage,
   SyntaxChangeMessage,
   SyntaxAckMessage,
+  NoteStatusMessage,
 } from '../ot/types';
 
 // Message queue item for sequential processing
@@ -78,6 +79,10 @@ export class NoteSessionDurableObject implements DurableObject {
 
   // Global sequence number for ensuring client-side ordering of ALL events
   private globalSeqNum: number = 0;
+
+  // Status broadcast timer (for view count and expiration updates)
+  private statusBroadcastTimer: number | null = null;
+  private readonly STATUS_BROADCAST_INTERVAL = 10000; // 10 seconds
 
   constructor(state: DurableObjectState, env: any) {
     this.state = state;
@@ -240,6 +245,11 @@ export class NoteSessionDurableObject implements DurableObject {
     // NOW add the session to the map
     this.sessions.set(ws, session);
 
+    // Start status broadcast timer when first client connects
+    if (this.sessions.size === 1) {
+      this.startStatusBroadcast();
+    }
+
     // Broadcast user joined to all clients (this increments globalSeqNum to seqNum + 1)
     // The new client will receive this as their first sequenced message (seqNum + 1)
     this.broadcastUserJoined(clientId);
@@ -266,6 +276,7 @@ export class NoteSessionDurableObject implements DurableObject {
       // Schedule hibernation if no clients connected
       if (this.sessions.size === 0) {
         this.schedulePersistence(true);
+        this.stopStatusBroadcast();
       }
     });
 
@@ -759,6 +770,71 @@ export class NoteSessionDurableObject implements DurableObject {
     if (this.persistenceTimer !== null) {
       clearTimeout(this.persistenceTimer);
       this.persistenceTimer = null;
+    }
+
+    // Clear status broadcast timer
+    this.stopStatusBroadcast();
+  }
+
+  /**
+   * Start periodic status broadcasts when clients are connected
+   */
+  private startStatusBroadcast(): void {
+    if (this.statusBroadcastTimer !== null) {
+      return; // Already running
+    }
+
+    this.statusBroadcastTimer = setInterval(() => {
+      this.broadcastNoteStatus();
+    }, this.STATUS_BROADCAST_INTERVAL) as unknown as number;
+  }
+
+  /**
+   * Stop periodic status broadcasts
+   */
+  private stopStatusBroadcast(): void {
+    if (this.statusBroadcastTimer !== null) {
+      clearInterval(this.statusBroadcastTimer);
+      this.statusBroadcastTimer = null;
+    }
+  }
+
+  /**
+   * Fetch current note status from database and broadcast to all clients
+   */
+  private async broadcastNoteStatus(): Promise<void> {
+    if (this.sessions.size === 0) {
+      this.stopStatusBroadcast();
+      return;
+    }
+
+    try {
+      const note = await this.env.DB.prepare(
+        'SELECT view_count, max_views, expires_at FROM notes WHERE id = ?'
+      ).bind(this.noteId).first();
+
+      if (!note) {
+        return;
+      }
+
+      const message: NoteStatusMessage = {
+        type: 'note_status',
+        view_count: Number(note.view_count) || 0,
+        max_views: note.max_views !== null ? Number(note.max_views) : null,
+        expires_at: note.expires_at !== null ? Number(note.expires_at) : null,
+      };
+
+      const messageStr = JSON.stringify(message);
+
+      for (const [ws] of this.sessions) {
+        try {
+          ws.send(messageStr);
+        } catch (error) {
+          console.error(`[DO ${this.noteId}] Error broadcasting note status:`, error);
+        }
+      }
+    } catch (error) {
+      console.error(`[DO ${this.noteId}] Error fetching note status:`, error);
     }
   }
 }

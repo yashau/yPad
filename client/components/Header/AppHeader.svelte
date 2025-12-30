@@ -17,6 +17,7 @@
     isSyncing: boolean;
     viewMode: boolean;
     isNoteDeleted: boolean;
+    isFinalView: boolean;
     showOptions: boolean;
     content: string;
     syntaxHighlight: string;
@@ -41,6 +42,7 @@
     isSyncing,
     viewMode,
     isNoteDeleted,
+    isFinalView,
     showOptions,
     content,
     syntaxHighlight,
@@ -75,6 +77,7 @@
           {saveStatus}
           {isSyncing}
           {isNoteDeleted}
+          {isFinalView}
         />
         <ConnectionStatus
           {noteId}
@@ -84,7 +87,9 @@
           {clientId}
           {connectedUsers}
         />
-        <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} {onCustomUrlSet} />
+        {#if !isFinalView}
+          <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} {onCustomUrlSet} />
+        {/if}
       </div>
       <div class="md:hidden">
         <ThemeToggle />
@@ -93,7 +98,7 @@
     <div class="flex items-center gap-2 flex-wrap">
       {#if noteId}
         <Button variant="outline" onclick={onNewNote} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Create a new note">New</Button>
-        {#if !isNoteDeleted}
+        {#if !isNoteDeleted && !isFinalView}
           <Button variant="destructive" onclick={onDeleteNote} class="text-xs md:text-sm px-2 md:px-4 py-1 md:py-2" title="Delete this note permanently">Delete</Button>
         {/if}
       {/if}

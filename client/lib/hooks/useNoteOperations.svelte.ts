@@ -60,6 +60,10 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         version: number;
         has_password: boolean;
         is_encrypted: boolean;
+        view_count: number;
+        max_views: number | null;
+        expires_at: number | null;
+        is_last_view: boolean;
       };
 
       // Decrypt content if encrypted
@@ -93,6 +97,21 @@ export function useNoteOperations(config: NoteOperationsConfig) {
       noteState.viewMode = false;
       security.passwordRequired = false;
       security.passwordError = '';
+
+      // Update server state for options display
+      noteState.serverMaxViews = data.max_views;
+      noteState.serverViewCount = data.view_count;
+      noteState.serverExpiresAt = data.expires_at;
+
+      // Check if this is the final view (note has been deleted on server)
+      if (data.is_last_view) {
+        noteState.isFinalView = true;
+        noteState.viewMode = true;
+        // Don't connect WebSocket for final view - note is already deleted
+        noteState.isInitialLoad = false;
+        noteState.isLoading = false;
+        return;
+      }
 
       config.onLoadSuccess?.();
 
@@ -178,8 +197,20 @@ export function useNoteOperations(config: NoteOperationsConfig) {
           throw new Error('Failed to update note');
         }
 
-        const data = await response.json() as { version: number };
+        const data = await response.json() as { version: number; expires_at: number | null };
         noteState.currentVersion = data.version;
+
+        // Update server state after successful save
+        if (noteState.maxViews !== null) {
+          noteState.serverMaxViews = noteState.maxViews;
+          noteState.serverViewCount = 0; // Backend resets view_count when max_views is set
+        }
+        if (noteState.expiresIn && noteState.expiresIn !== 'null') {
+          noteState.serverExpiresAt = data.expires_at; // Use server-computed value
+        }
+        // Reset the input values after they've been applied
+        noteState.maxViews = null;
+        noteState.expiresIn = 'null';
       } else {
         // Create new note
         const response = await fetch('/api/notes', {
@@ -195,6 +226,18 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         const data = await response.json() as { id: string; version: number };
         noteState.noteId = data.id;
         noteState.currentVersion = data.version || 1;
+
+        // Update server state after successful create
+        if (noteState.maxViews !== null) {
+          noteState.serverMaxViews = noteState.maxViews;
+          noteState.serverViewCount = 0;
+        }
+        if (noteState.expiresIn && noteState.expiresIn !== 'null') {
+          noteState.serverExpiresAt = Date.now() + parseInt(noteState.expiresIn);
+        }
+        // Reset the input values after they've been applied
+        noteState.maxViews = null;
+        noteState.expiresIn = 'null';
 
         // Replace current URL with note ID (don't push, as we're still in the same "session")
         window.history.replaceState({}, '', `/${noteState.noteId}`);
@@ -437,12 +480,102 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     config.onNewNote?.();
   }
 
+  async function resetMaxViews() {
+    if (!noteState.noteId) return;
+
+    noteState.saveStatus = 'Saving...';
+
+    try {
+      const payload: any = {
+        content: editor.content,
+        syntax_highlight: editor.syntaxHighlight || 'plaintext',
+        max_views: null,
+        session_id: noteState.sessionId,
+        expected_version: security.isEncrypted ? null : noteState.currentVersion
+      };
+
+      if (security.password) {
+        payload.password = security.password;
+      }
+
+      const response = await fetch(`/api/notes/${noteState.noteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reset max views');
+      }
+
+      const data = await response.json() as { version: number };
+      noteState.currentVersion = data.version;
+      noteState.serverMaxViews = null;
+      noteState.serverViewCount = 0;
+
+      noteState.saveStatus = 'Saved';
+      setTimeout(() => {
+        noteState.saveStatus = '';
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to reset max views:', error);
+      noteState.saveStatus = 'Failed to save';
+    }
+  }
+
+  async function resetExpiration() {
+    if (!noteState.noteId) return;
+
+    noteState.saveStatus = 'Saving...';
+
+    try {
+      // We need to send a special value to clear expires_at
+      // The backend currently only sets expires_at if expires_in is provided
+      // We need to update the backend to support clearing it
+      const payload: any = {
+        content: editor.content,
+        syntax_highlight: editor.syntaxHighlight || 'plaintext',
+        clear_expiration: true,
+        session_id: noteState.sessionId,
+        expected_version: security.isEncrypted ? null : noteState.currentVersion
+      };
+
+      if (security.password) {
+        payload.password = security.password;
+      }
+
+      const response = await fetch(`/api/notes/${noteState.noteId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reset expiration');
+      }
+
+      const data = await response.json() as { version: number };
+      noteState.currentVersion = data.version;
+      noteState.serverExpiresAt = null;
+
+      noteState.saveStatus = 'Saved';
+      setTimeout(() => {
+        noteState.saveStatus = '';
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to reset expiration:', error);
+      noteState.saveStatus = 'Failed to save';
+    }
+  }
+
   return {
     loadNote,
     saveNote,
     deleteNote,
     setPasswordProtection,
     removePasswordProtection,
-    newNote
+    newNote,
+    resetMaxViews,
+    resetExpiration
   };
 }

@@ -12,6 +12,7 @@
     saveStatus: string;
     isSyncing: boolean;
     isNoteDeleted: boolean;
+    isFinalView: boolean;
   }
 
   let {
@@ -19,7 +20,8 @@
     connectionStatus,
     saveStatus,
     isSyncing,
-    isNoteDeleted
+    isNoteDeleted,
+    isFinalView
   }: Props = $props();
 
   let isSlowSync = $state(false);
@@ -130,10 +132,9 @@
   });
 </script>
 
-{#if isNoteDeleted}
-  <span class="inline-flex items-center gap-1.5 leading-none" title="This note has been deleted">
+{#if isNoteDeleted || isFinalView}
+  <span class="inline-flex items-center leading-none" title="This note has been deleted">
     <Trash2 class="w-4 h-4 text-muted-foreground" />
-    <span class="text-xs text-muted-foreground">Deleted</span>
   </span>
 {:else if isConnectionLost}
   <span class="inline-flex items-center leading-none" title="Connection lost - check your internet connection">
