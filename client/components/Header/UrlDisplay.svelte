@@ -146,11 +146,89 @@
     }
   }
 
-  function handleNavigate(e?: Event) {
+  function extractNoteIdFromInput(input: string): string | null {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+
+    const currentHost = window.location.host;
+
+    // Check if it looks like a URL (has protocol or starts with hostname)
+    if (trimmed.includes('/')) {
+      let urlToCheck: string;
+
+      // Add protocol if missing to parse as URL
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        urlToCheck = trimmed;
+      } else if (trimmed.includes('.')) {
+        // Looks like a domain (e.g., "yp.pe/xxxx")
+        urlToCheck = `https://${trimmed}`;
+      } else {
+        // Just a path or note ID with slash, treat as note ID
+        return trimmed.replace(/^\/+|\/+$/g, '');
+      }
+
+      try {
+        const url = new URL(urlToCheck);
+        // Check if hostname matches current site
+        if (url.host !== currentHost) {
+          return null; // Different host, reject
+        }
+        // Extract path and remove leading/trailing slashes
+        const noteId = url.pathname.replace(/^\/+|\/+$/g, '');
+        return noteId || null;
+      } catch {
+        // Invalid URL, treat as note ID
+        return trimmed;
+      }
+    }
+
+    // No slash, treat as plain note ID
+    return trimmed;
+  }
+
+  async function handleNavigate(e?: Event) {
     e?.preventDefault();
     e?.stopPropagation();
-    if (editValue && editValue.trim()) {
-      window.location.href = `/${editValue}`;
+
+    const noteIdToNavigate = extractNoteIdFromInput(editValue);
+
+    if (!noteIdToNavigate) {
+      if (editValue.trim()) {
+        errorMessage = 'Invalid note ID';
+        showErrorTooltip = true;
+        setTimeout(() => {
+          showErrorTooltip = false;
+        }, 2000);
+      }
+      isEditing = false;
+      return;
+    }
+
+    // Check if note exists on server
+    try {
+      const checkResponse = await fetch(`/api/check/${encodeURIComponent(noteIdToNavigate)}`);
+      const checkData = await checkResponse.json() as { available: boolean };
+
+      if (checkData.available) {
+        // available = true means note doesn't exist
+        errorMessage = 'Invalid note ID';
+        showErrorTooltip = true;
+        setTimeout(() => {
+          showErrorTooltip = false;
+        }, 2000);
+        isEditing = false;
+        return;
+      }
+
+      // Note exists, navigate to it
+      window.location.href = `/${noteIdToNavigate}`;
+    } catch (err) {
+      console.error('Failed to check note:', err);
+      errorMessage = 'Invalid note ID';
+      showErrorTooltip = true;
+      setTimeout(() => {
+        showErrorTooltip = false;
+      }, 2000);
     }
     isEditing = false;
   }
@@ -265,6 +343,11 @@
         </Button>
       {/if}
     </form>
+    {#if showErrorTooltip}
+      <div class="absolute top-full mt-1 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground text-xs px-2 py-1 rounded whitespace-nowrap z-50">
+        {errorMessage}
+      </div>
+    {/if}
     {/if}
   </div>
 {/if}
