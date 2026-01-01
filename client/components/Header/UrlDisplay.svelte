@@ -72,6 +72,7 @@
     }
 
     const newCustomUrl = editValue.trim();
+    const oldNoteId = noteId;
 
     // If the URL hasn't changed, just cancel the operation
     if (newCustomUrl === noteId) {
@@ -136,11 +137,22 @@
 
       const data = await response.json() as { id: string };
 
-      // Instead of full page reload, update URL and notify parent
+      // Update URL and notify parent first
       window.history.pushState({}, '', `/${data.id}`);
       onCustomUrlSet?.(data.id);
 
       isEditing = false;
+
+      // Delete the old note after navigating to the new one
+      try {
+        await fetch(`/api/notes/${encodeURIComponent(oldNoteId)}`, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: password ? JSON.stringify({ password }) : undefined
+        });
+      } catch (deleteErr) {
+        console.error('Failed to delete old note:', deleteErr);
+      }
     } catch (err) {
       console.error('Failed to set custom URL:', err);
       errorMessage = 'Failed to set custom URL';

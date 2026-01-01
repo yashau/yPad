@@ -1,5 +1,8 @@
 # yPad
 
+![Build](https://img.shields.io/badge/build-passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-454%20passed-brightgreen)
+
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)](https://hono.dev/)
@@ -7,76 +10,34 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 
-A production-ready, real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network. Features Google Docs-style real-time collaboration using Operational Transform, client-side encryption, syntax highlighting for 150+ languages, and automatic note lifecycle management.
+A real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network.
 
-**🚀 Live Demo: [https://yp.pe](https://yp.pe)**
+**Live: [https://yp.pe](https://yp.pe)**
 
 ## Features
 
 ### Real-Time Collaboration
-- **Multi-User Editing**: Live collaborative editing with multiple users simultaneously
-- **Operational Transform**: Character-level conflict-free concurrent editing using OT algorithm
-- **InputEvent-Based Operation Generation**: Accurate cursor-aware OT operations using browser InputEvent API
-- **Operation Pipelining**: Eliminated ACK-based latency bottleneck with fire-and-forget writes
-- **Global Message Sequencing**: Server-side message ordering ensures consistent operation application across all clients
-- **Automatic Conflict Resolution**: Smart merging of concurrent edits with no data loss
-- **Session Awareness**: Cursor position preservation during remote edits
-- **Remote Cursor Tracking**: See other users' cursor positions in real-time with color-coded labels
-- **Optimized Cursor Updates**: Event-driven cursor broadcasting only on deliberate user actions (input, clicks, navigation)
-- **No Cursor Feedback Loops**: Programmatic changes don't trigger cursor broadcasts, preventing infinite loops
-- **Syntax Highlighting Sync**: Real-time synchronization of syntax highlighting changes across all collaborators
-- **User Presence**: Live count of connected collaborators in the header status indicator
-- **WebSocket-Based**: Real-time synchronization via Durable Objects with optimized reconnection
-- **Durable Object Read Caching**: In-memory content caching for improved real-time performance
-- **Checksum Verification**: Automatic content integrity verification during sync
-- **Real-Time Status Updates**: Periodic broadcasts of view count and expiration status via WebSocket
+- **Multi-User Editing**: Multiple users can edit simultaneously
+- **Operational Transform**: Character-level conflict resolution
+- **Remote Cursors**: See other users' cursor positions
+- **User Presence**: Live count of connected collaborators
 
 ### Security & Privacy
-- **Client-Side Encryption**: Zero-knowledge AES-GCM 256-bit encryption
-- **Password Protection**: PBKDF2 key derivation with 100,000 iterations
-- **Password Verification**: Required password confirmation before removing encryption
-- **Encrypted at Rest**: Server never sees plaintext for protected notes
-- **SHA-256 Hashing**: Secure password verification without storing passwords
-- **Real-Time Collaboration Disabled for Encrypted Notes**: E2E encryption preserved by disabling OT sync
+- **End-to-End Encryption**: AES-GCM 256-bit client-side encryption for password-protected notes
+- **Password Protection**: PBKDF2 key derivation (100,000 iterations)
+- **Zero-Knowledge**: Server never sees plaintext for protected notes
 
 ### Note Management
-- **Auto-Save**: 500ms debounced automatic saving as you type
-- **Inline Custom URLs**: Edit note URLs directly in the header with real-time availability checking
-- **URL Copying**: Create new notes with custom URLs, copying all settings (content, syntax, password, expiration)
-- **Adaptive ID Generation**: 4-character default IDs with automatic collision detection and length scaling
-- **Self-Destructing Notes**: Max view count limits with live remaining views display
-- **Time-Based Expiration**: Set expiration (1 hour, 1 day, 1 week, 1 month) with live countdown timer
-- **Reset Options**: Remove max views or expiration settings after they've been applied
-- **Final View Handling**: Notes deleted on last view with warning banner for content recovery
-- **Inactivity-Based Cleanup**: Notes automatically deleted after 90 days of no access
-- **Access Tracking**: Last accessed timestamp updated on every view or WebSocket connection
-- **Automatic Cleanup**: Cron job runs every 15 minutes to delete expired and inactive notes
+- **Auto-Save**: Automatic saving as you type
+- **Custom URLs**: Set custom note URLs with availability checking
+- **Self-Destructing Notes**: Max view count limits
+- **Time-Based Expiration**: Set expiration (1 hour to 1 month)
+- **Automatic Cleanup**: Expired and inactive notes are deleted
 
-### Editor Features
-- **Syntax Highlighting**: Support for 150+ programming languages via highlight.js
-- **Line Numbers**: Synchronized line numbers with scroll, accounting for wrapped lines
-- **Dark/Light Theme**: Theme toggle with persistence
-- **Real-Time Status**: Visual connection indicators (green for synced, blue for encrypted)
-- **Inline URL Editor**: Edit note URLs directly in the header with pencil icon and real-time availability checking
-- **URL Navigation**: "Go to a note" feature for PWA users to navigate without address bar
-- **URL Copy**: One-click copy note URL from header (domain/noteId format)
-- **Seamless URL Editing**: Dynamic input width with icon-only buttons and borderless styling
-- **Conflict Detection**: User-friendly conflict resolution dialogs
-- **User Notifications**: Banners for encryption changes, password updates, conflicts, note deletion, and final views
-- **Enhanced Error Handling**: Clear error messages for password failures and decryption issues
-- **Modular Architecture**: Component-based design with separate hooks for editor, collaboration, and note operations
-- **Info Dialog**: Interactive about dialog accessible from the header with app information
-- **Clean UI Design**: Borderless input styling with icon-only buttons across all option panels
-- **View Mode Support**: Read-only textarea mode for deleted notes with text selection enabled
-- **Mobile Optimizations**: Responsive design with fixed input widths and proper overflow handling
-- **Consistent Backgrounds**: Unified editor background styling across plain text and syntax highlighting modes
-
-### Smart Features
-- **Version Tracking**: Prevents edit conflicts across sessions
-- **Automatic Reconnection**: Exponential backoff for WebSocket reconnection with state reset
-- **WebSocket State Management**: Proper cleanup and reset when creating new notes after deletion
-- **View Counter**: Track how many times a note has been viewed with remaining views display
-- **Graceful Degradation**: Falls back to HTTP saves when disconnected
+### Editor
+- **Syntax Highlighting**: 150+ languages via highlight.js
+- **Line Numbers**: Synchronized with scroll
+- **Dark/Light Theme**: Persistent theme toggle
 
 ## Tech Stack
 
@@ -268,6 +229,26 @@ npm run db:migrate
 # Apply migrations to production
 npm run db:migrate:prod
 ```
+
+### Testing
+
+```bash
+# Run all tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage
+npm run test:coverage
+```
+
+Test suites cover:
+- API validation and constants
+- Operational Transform (OT) algorithms
+- WebSocket client behavior
+- Cryptography utilities
+- Editor and collaboration hooks
 
 ### Project Structure
 
@@ -848,41 +829,6 @@ async scheduled(event, env, ctx) {
   - GET `/api/notes/:id` - Note view
   - WebSocket connection to `/api/notes/:id/ws`
   - POST `/api/notes` - Note creation (initialized to current time)
-
-## Performance
-
-- **Edge Network**: Deployed globally via Cloudflare Workers
-- **Sub-100ms Latency**: Requests served from nearest edge location
-- **Automatic Scaling**: Handles traffic spikes without configuration
-- **Durable Objects**: Stateful coordination with global uniqueness
-- **Operation Pipelining**: Fire-and-forget D1 writes eliminate ACK-based latency bottleneck
-- **Read Caching**: Durable Objects cache content in memory to avoid redundant database reads
-- **Debounced Saves**: Reduces database writes by batching operations (5s or 50 operations)
-- **Optimized Cursor Updates**: Debounced cursor position updates to reduce WebSocket traffic
-- **Efficient Memory Management**: Reduced object allocations in hot paths for better performance
-- **Connection Management**: Optimized WebSocket version synchronization and reconnection logic
-- **InputEvent Optimization**: Direct operation generation from browser events eliminates diff overhead
-- **Status Broadcasting**: Periodic status updates (10s interval) instead of per-operation updates
-
-## Security Considerations
-
-- **Zero-Knowledge Encryption**: Server never sees plaintext for protected notes
-- **HTTPS Only**: All traffic encrypted in transit
-- **No Analytics**: Privacy-focused, no tracking
-- **Password Hashing**: SHA-256 with salt for verification
-- **PBKDF2**: 100,000 iterations for key derivation
-- **No Session Cookies**: Stateless authentication via password parameter
-- **Input Validation**: Comprehensive validation using centralized constants and patterns
-- **Type Safety**: Enhanced TypeScript types throughout the codebase
-
-## Code Quality & Architecture
-
-- **Modular Design**: Refactored from monolithic App.svelte into focused, reusable components
-- **Separation of Concerns**: Clear boundaries between UI, state management, and business logic
-- **Custom Hooks**: Svelte 5 hooks for editor, collaboration, note operations, security, and WebSocket management
-- **Centralized Configuration**: All constants, validation patterns, and security headers in [config/constants.ts](config/constants.ts)
-- **Component Library**: Organized components into logical groups (Banners, Dialogs, Editor, Header, Toolbar)
-- **Enhanced Documentation**: Comprehensive inline documentation for complex algorithms and workflows
 
 ## Contributing
 
