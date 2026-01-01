@@ -132,8 +132,11 @@ export function useNoteOperations(config: NoteOperationsConfig) {
 
     noteState.saveStatus = 'Saving...';
 
+    // Capture content at the start to avoid race conditions with user typing
+    const originalContent = editor.content;
+
     try {
-      let contentToSave = editor.content;
+      let contentToSave = originalContent;
       let shouldEncrypt = security.isEncrypted;
 
       if ((security.password && security.password.trim()) || security.isEncrypted) {
@@ -144,7 +147,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         }
 
         try {
-          contentToSave = await encryptContent(editor.content, security.password);
+          contentToSave = await encryptContent(originalContent, security.password);
           shouldEncrypt = true;
         } catch (error) {
           console.error('Failed to encrypt content:', error);
@@ -246,6 +249,12 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         setTimeout(() => {
           config.onLoadSuccess?.();
         }, 100);
+      }
+
+      // Update lastLocalContent after successful save for encrypted notes
+      // Use originalContent (the content that was actually saved) to avoid race conditions
+      if (security.isEncrypted) {
+        editor.lastLocalContent = originalContent;
       }
 
       noteState.saveStatus = 'Saved';

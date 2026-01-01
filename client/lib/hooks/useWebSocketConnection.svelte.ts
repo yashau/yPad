@@ -57,6 +57,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         onClose: () => {
           collaboration.isRealtimeEnabled = false;
           collaboration.connectionStatus = 'disconnected';
+          collaboration.isSyncing = false;
           noteState.saveStatus = 'Disconnected';
           collaboration.wsClient = null;
 
@@ -67,10 +68,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           collaboration.pendingLocalContent = null;
           collaboration.pendingBaseVersion = null;
 
-          // Only attempt reconnection if note was not deleted
-          if (!noteWasDeleted) {
+          // Only attempt reconnection if note was not deleted and not encrypted
+          // Encrypted notes don't use WebSocket for realtime sync
+          if (!noteWasDeleted && !security.isEncrypted) {
             setTimeout(() => {
-              if (noteState.noteId && !collaboration.wsClient && !noteWasDeleted) {
+              if (noteState.noteId && !collaboration.wsClient && !noteWasDeleted && !security.isEncrypted) {
                 connectWebSocket();
               }
             }, 2000);

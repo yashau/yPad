@@ -144,7 +144,17 @@ export class NoteSessionDurableObject implements DurableObject {
     // Handle version update notification (for encrypted notes)
     if (request.method === 'POST' && url.pathname === '/notify-version-update') {
       try {
-        const body = await request.json() as { version: number; exclude_session_id?: string };
+        const body = await request.json() as { version: number; content?: string; syntax_highlight?: string; exclude_session_id?: string };
+
+        // Update cached content if provided (for encrypted notes updated via HTTP PUT)
+        if (body.content !== undefined) {
+          this.currentContent = body.content;
+        }
+        if (body.syntax_highlight !== undefined) {
+          this.currentSyntax = body.syntax_highlight;
+        }
+        this.operationVersion = body.version;
+
         this.broadcastVersionUpdate(body.version, body.exclude_session_id);
         return new Response('OK', { status: 200 });
       } catch (error) {

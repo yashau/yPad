@@ -50,9 +50,15 @@
     if (!isEditing) {
       editValue = noteId || '';
       isEditing = true;
-      setTimeout(() => {
-        inputElement?.focus();
-      }, 0);
+      // Focus synchronously - input is already in DOM
+      inputElement?.focus();
+    }
+  }
+
+  function handleInputFocus() {
+    if (!isEditing) {
+      editValue = noteId || '';
+      isEditing = true;
     }
   }
 
@@ -257,17 +263,17 @@
         title={isEditing ? '' : 'Click to copy full URL'}
       >
         <span class="text-foreground/50">{domain}/</span>
-        {#if isEditing}
-          <input
-            bind:this={inputElement}
-            bind:value={editValue}
-            onblur={handleBlur}
-            placeholder="custom-url"
-            enterkeyhint="done"
-            style="width: {Math.max(editValue.length || 10, displayNoteId.length + 2)}ch; max-width: 30ch;"
-            class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch]"
-          />
-        {:else}
+        <input
+          bind:this={inputElement}
+          bind:value={editValue}
+          onfocus={handleInputFocus}
+          onblur={handleBlur}
+          placeholder="custom-url"
+          enterkeyhint="done"
+          style="width: {Math.max(editValue.length || 10, displayNoteId.length + 2)}ch; max-width: 30ch;"
+          class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch] {isEditing ? '' : 'absolute opacity-0'}"
+        />
+        {#if !isEditing}
           <span class="font-bold text-foreground">{displayNoteId}</span>
           <Copy class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors ml-1" />
         {/if}
@@ -309,16 +315,16 @@
            onclick={isEditing ? undefined : startEditing}
            role={isEditing ? undefined : 'button'}
            title={isEditing ? '' : 'Go to a note'}>
-        {#if isEditing}
-          <input
-            bind:this={inputElement}
-            bind:value={editValue}
-            onblur={handleBlur}
-            placeholder="note-id"
-            enterkeyhint="go"
-            class="w-full text-sm bg-transparent outline-none placeholder:text-muted-foreground"
-          />
-        {:else}
+        <input
+          bind:this={inputElement}
+          bind:value={editValue}
+          onfocus={handleInputFocus}
+          onblur={handleBlur}
+          placeholder="note-id"
+          enterkeyhint="go"
+          class="w-full text-sm bg-transparent outline-none placeholder:text-muted-foreground {isEditing ? '' : 'absolute opacity-0'}"
+        />
+        {#if !isEditing}
           <span class="text-foreground/50">Go to a note</span>
         {/if}
       </div>

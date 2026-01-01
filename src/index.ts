@@ -380,7 +380,7 @@ app.put('/api/notes/:id', async (c) => {
   }
 
   // For encrypted notes, notify other clients about the version update
-  // (since they don't get operation-based updates via WebSocket)
+  // and update the DO cache (since they don't get operation-based updates via WebSocket)
   const finalIsEncrypted = is_encrypted !== undefined ? !!is_encrypted : !!existing.is_encrypted;
   if (finalIsEncrypted && content !== undefined) {
     try {
@@ -392,6 +392,8 @@ app.put('/api/notes/:id', async (c) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           version: result.version,
+          content: content, // Update DO cache with new content
+          syntax_highlight: syntax_highlight || existing.syntax_highlight,
           exclude_session_id: session_id // Don't notify the user who made the change
         })
       }));
