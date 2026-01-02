@@ -8,3 +8,6 @@ dist
 .claude
 wrangler.toml.backup.*
 coverage/
+e2e/screenshots/
+test-results/
+playwright-report/

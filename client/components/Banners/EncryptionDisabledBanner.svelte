@@ -14,8 +14,8 @@
 {#if show}
   <div class="px-4 py-3 border-b">
     <div class="max-w-7xl mx-auto">
-      <Alert.Root variant="default" class="border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20">
-        <Alert.Description class="text-green-800 dark:text-green-200 flex items-center justify-between gap-4">
+      <Alert.Root variant="default" class="border-green-500 bg-green-500/10">
+        <Alert.Description class="flex items-center justify-between gap-4 text-green-700 dark:text-green-300">
           <span>
             {#if byOtherUser}
               Password protection was removed by another user. Real-time collaboration is now enabled.
@@ -27,7 +27,7 @@
             size="sm"
             variant="ghost"
             onclick={onDismiss}
-            class="text-green-800 dark:text-green-200 hover:bg-green-200 dark:hover:bg-green-800 flex-shrink-0"
+            class="flex-shrink-0 text-green-700 dark:text-green-300 hover:bg-green-600 hover:text-white dark:hover:bg-green-600 dark:hover:text-white"
           >
             Dismiss
           </Button>

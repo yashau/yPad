@@ -31,8 +31,8 @@
         <Dialog.Description>This note is password protected.</Dialog.Description>
       </Dialog.Header>
       {#if passwordError}
-        <Alert.Root variant="destructive" class="mb-4 border-destructive/50 bg-destructive/10 dark:border-destructive">
-          <Alert.Description>{passwordError}</Alert.Description>
+        <Alert.Root variant="default" class="mb-4 border-red-500 bg-red-500/10">
+          <Alert.Description class="text-red-700 dark:text-red-200">{passwordError}</Alert.Description>
         </Alert.Root>
       {/if}
       <Input

@@ -12,8 +12,8 @@
 {#if show}
   <div class="px-4 py-3 border-b">
     <div class="max-w-7xl mx-auto">
-      <Alert.Root variant="destructive" class="bg-destructive dark:bg-destructive/60 [&_[data-slot=alert-description]]:!text-destructive-foreground">
-        <Alert.Description>
+      <Alert.Root variant="default" class="border-red-500 bg-red-500/10">
+        <Alert.Description class="text-red-700 dark:text-red-200">
           {#if deletedByCurrentUser}
             This note has been deleted. You can continue viewing the content but cannot save changes.
           {:else}

@@ -31,7 +31,7 @@
         <Dialog.Description>Enter the current password to remove encryption and enable real-time collaboration.</Dialog.Description>
       </Dialog.Header>
       {#if removePasswordError}
-        <Alert.Root variant="destructive" class="mb-4 border-destructive/50 bg-destructive/10 dark:border-destructive">
+        <Alert.Root variant="destructive" class="mb-4 border-destructive/50 bg-destructive/10">
           <Alert.Description>{removePasswordError}</Alert.Description>
         </Alert.Root>
       {/if}

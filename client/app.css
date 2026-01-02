@@ -45,6 +45,14 @@
   --color-ring: oklch(84% 0.01 285);
 }
 
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
 * {
   border-color: var(--color-border);
 }

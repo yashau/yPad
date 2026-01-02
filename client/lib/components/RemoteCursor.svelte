@@ -20,25 +20,25 @@
 
   // Generate cursor color variants - pastel theme
   const cursorBgClasses = {
-    blue: 'bg-blue-400 dark:bg-blue-400',
-    green: 'bg-emerald-400 dark:bg-emerald-400',
-    red: 'bg-rose-400 dark:bg-rose-400',
-    amber: 'bg-amber-400 dark:bg-amber-400',
-    purple: 'bg-purple-400 dark:bg-purple-400',
-    pink: 'bg-pink-400 dark:bg-pink-400',
-    orange: 'bg-orange-400 dark:bg-orange-400',
-    cyan: 'bg-cyan-400 dark:bg-cyan-400',
+    blue: 'bg-blue-400',
+    green: 'bg-emerald-400',
+    red: 'bg-rose-400',
+    amber: 'bg-amber-400',
+    purple: 'bg-purple-400',
+    pink: 'bg-pink-400',
+    orange: 'bg-orange-400',
+    cyan: 'bg-cyan-400',
   };
 
   const cursorTextClasses = {
-    blue: 'text-blue-400 dark:text-blue-400',
-    green: 'text-emerald-400 dark:text-emerald-400',
-    red: 'text-rose-400 dark:text-rose-400',
-    amber: 'text-amber-400 dark:text-amber-400',
-    purple: 'text-purple-400 dark:text-purple-400',
-    pink: 'text-pink-400 dark:text-pink-400',
-    orange: 'text-orange-400 dark:text-orange-400',
-    cyan: 'text-cyan-400 dark:text-cyan-400',
+    blue: 'text-blue-400',
+    green: 'text-emerald-400',
+    red: 'text-rose-400',
+    amber: 'text-amber-400',
+    purple: 'text-purple-400',
+    pink: 'text-pink-400',
+    orange: 'text-orange-400',
+    cyan: 'text-cyan-400',
   };
 
   const cursorBgClass = $derived(cursorBgClasses[color as keyof typeof cursorBgClasses] || cursorBgClasses.blue);

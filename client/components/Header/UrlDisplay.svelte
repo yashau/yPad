@@ -294,7 +294,7 @@
         <Button
           type="submit"
           variant="ghost"
-          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted"
           title="Save custom URL"
         >
           <Check class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -304,7 +304,7 @@
           type="button"
           onclick={startEditing}
           variant="ghost"
-          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted"
           title="Edit custom URL"
         >
           <Pencil class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
@@ -344,7 +344,7 @@
         <Button
           type="submit"
           variant="ghost"
-          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted"
           title="Navigate"
         >
           <ArrowRight class="w-4 h-4" />
@@ -354,7 +354,7 @@
           type="button"
           onclick={startEditing}
           variant="ghost"
-          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted dark:bg-input/50 dark:hover:bg-input"
+          class="!rounded-l-none h-auto min-h-full w-9 border-l border-border bg-muted/50 hover:bg-muted"
           title="Go to a note"
         >
           <Navigation class="w-4 h-4" />
