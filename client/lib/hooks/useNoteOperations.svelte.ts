@@ -487,6 +487,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     editor.syntaxHighlight = 'plaintext';
     window.history.pushState({}, '', '/');
     config.onNewNote?.();
+    editor.focusEditor();
   }
 
   async function resetMaxViews() {

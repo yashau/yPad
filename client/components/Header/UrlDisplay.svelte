@@ -50,19 +50,13 @@
     if (!isEditing) {
       editValue = noteId || '';
       isEditing = true;
-      // Focus and move cursor to end, scroll to end
-      if (inputElement) {
-        inputElement.focus();
-        inputElement.setSelectionRange(editValue.length, editValue.length);
-        inputElement.scrollLeft = inputElement.scrollWidth;
-      }
-    }
-  }
-
-  function handleInputFocus() {
-    if (!isEditing) {
-      editValue = noteId || '';
-      isEditing = true;
+      setTimeout(() => {
+        if (inputElement) {
+          inputElement.focus();
+          inputElement.setSelectionRange(editValue.length, editValue.length);
+          inputElement.scrollLeft = inputElement.scrollWidth;
+        }
+      }, 0);
     }
   }
 
@@ -279,17 +273,17 @@
         title={isEditing ? '' : 'Click to copy full URL'}
       >
         <span class="text-foreground/50">{domain}/</span>
-        <input
-          bind:this={inputElement}
-          bind:value={editValue}
-          onfocus={handleInputFocus}
-          onblur={handleBlur}
-          placeholder="custom-url"
-          enterkeyhint="done"
-          style="width: {Math.max(editValue.length || 10, displayNoteId.length + 2)}ch; max-width: 30ch;"
-          class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch] {isEditing ? '' : 'absolute opacity-0'}"
-        />
-        {#if !isEditing}
+        {#if isEditing}
+          <input
+            bind:this={inputElement}
+            bind:value={editValue}
+            onblur={handleBlur}
+            placeholder="custom-url"
+            enterkeyhint="done"
+            style="width: {Math.max(editValue.length || 10, displayNoteId.length + 2)}ch; max-width: 30ch;"
+            class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch]"
+          />
+        {:else}
           <span class="font-bold text-foreground max-w-[30ch] overflow-hidden text-ellipsis max-sm:!max-w-[6ch] max-sm:inline-block">{displayNoteId}</span>
           <Copy class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors ml-1" />
         {/if}
@@ -331,16 +325,16 @@
            onclick={isEditing ? undefined : startEditing}
            role={isEditing ? undefined : 'button'}
            title={isEditing ? '' : 'Go to a note'}>
-        <input
-          bind:this={inputElement}
-          bind:value={editValue}
-          onfocus={handleInputFocus}
-          onblur={handleBlur}
-          placeholder="note-id"
-          enterkeyhint="go"
-          class="w-full text-sm bg-transparent outline-none placeholder:text-muted-foreground {isEditing ? '' : 'absolute opacity-0'}"
-        />
-        {#if !isEditing}
+        {#if isEditing}
+          <input
+            bind:this={inputElement}
+            bind:value={editValue}
+            onblur={handleBlur}
+            placeholder="note-id"
+            enterkeyhint="go"
+            class="w-full text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+          />
+        {:else}
           <span class="text-foreground/50">Go to a note</span>
         {/if}
       </div>

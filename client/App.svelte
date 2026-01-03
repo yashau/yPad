@@ -315,6 +315,9 @@
     if (path !== '/' && path.length > 1) {
       noteState.noteId = path.substring(1);
       noteOps.loadNote();
+    } else {
+      // Focus editor on initial page load when no note is being loaded
+      editor.focusEditor();
     }
 
     // Handle browser back/forward navigation

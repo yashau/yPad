@@ -36,6 +36,16 @@ export function useEditor() {
     set isUpdating(value: boolean) { isUpdating = value; },
 
     get lastLocalContent() { return lastLocalContent; },
-    set lastLocalContent(value: string) { lastLocalContent = value; }
+    set lastLocalContent(value: string) { lastLocalContent = value; },
+
+    focusEditor() {
+      setTimeout(() => {
+        if (syntaxHighlight === 'plaintext') {
+          textareaScrollRef?.focus();
+        } else {
+          editorRef?.focus();
+        }
+      }, 0);
+    }
   };
 }
