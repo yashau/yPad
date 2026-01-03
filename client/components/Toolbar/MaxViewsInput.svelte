@@ -19,7 +19,7 @@
   }
 </script>
 
-<form class="flex items-stretch bg-transparent rounded-md h-9 border border-input shadow-xs w-full transition-[color,box-shadow]" onsubmit={handleSubmit}>
+<form class="flex items-stretch bg-transparent hover:bg-accent rounded-md h-9 border border-input shadow-xs w-full transition-colors" onsubmit={handleSubmit}>
   <div class="inline-flex items-center text-sm flex-1">
     <Input
       id="max-views"
