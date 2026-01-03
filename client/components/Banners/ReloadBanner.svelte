@@ -6,10 +6,9 @@
     show: boolean;
     isEncrypted: boolean;
     onReload: () => void;
-    onDismiss: () => void;
   }
 
-  let { show, isEncrypted, onReload, onDismiss }: Props = $props();
+  let { show, isEncrypted, onReload }: Props = $props();
 </script>
 
 {#if show && isEncrypted}
@@ -18,22 +17,13 @@
       <Alert.Root variant="default" class="border-yellow-500 bg-yellow-500/10">
         <Alert.Description class="flex items-center justify-between gap-4 text-yellow-700 dark:text-yellow-300">
           <span>This note was updated by another user. Reload to see the latest changes.</span>
-          <div class="flex gap-2 flex-shrink-0">
-            <Button
-              size="sm"
-              onclick={onReload}
-            >
-              Reload
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onclick={onDismiss}
-              class="text-yellow-700 dark:text-yellow-300 hover:bg-yellow-600 hover:text-white dark:hover:bg-yellow-600 dark:hover:text-white"
-            >
-              Dismiss
-            </Button>
-          </div>
+          <Button
+            size="sm"
+            onclick={onReload}
+            class="flex-shrink-0"
+          >
+            Reload
+          </Button>
         </Alert.Description>
       </Alert.Root>
     </div>

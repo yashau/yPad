@@ -443,7 +443,6 @@
       showReloadBanner = false;
       noteOps.loadNote();
     }}
-    onDismiss={() => showReloadBanner = false}
   />
 
   <EncryptionEnabledBanner
