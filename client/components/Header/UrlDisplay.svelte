@@ -50,8 +50,12 @@
     if (!isEditing) {
       editValue = noteId || '';
       isEditing = true;
-      // Focus synchronously - input is already in DOM
-      inputElement?.focus();
+      // Focus and move cursor to end, scroll to end
+      if (inputElement) {
+        inputElement.focus();
+        inputElement.setSelectionRange(editValue.length, editValue.length);
+        inputElement.scrollLeft = inputElement.scrollWidth;
+      }
     }
   }
 
@@ -286,7 +290,7 @@
           class="font-bold text-foreground text-sm bg-transparent outline-none placeholder:text-muted-foreground max-sm:!w-[6ch] {isEditing ? '' : 'absolute opacity-0'}"
         />
         {#if !isEditing}
-          <span class="font-bold text-foreground">{displayNoteId}</span>
+          <span class="font-bold text-foreground max-w-[30ch] overflow-hidden text-ellipsis max-sm:!max-w-[6ch] max-sm:inline-block">{displayNoteId}</span>
           <Copy class="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors ml-1" />
         {/if}
       </div>
