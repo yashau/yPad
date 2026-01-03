@@ -141,6 +141,13 @@ export type WSMessage =
   | SyntaxAckMessage
   | NoteStatusMessage;
 
+// Rate limit state for WebSocket connections
+export interface RateLimitState {
+  tokens: number;
+  lastRefill: number;
+  violations: number;
+}
+
 // Client session information
 export interface ClientSession {
   clientId: string;
@@ -148,4 +155,5 @@ export interface ClientSession {
   lastAckOperation: number;
   isAuthenticated: boolean;
   ws: WebSocket;
+  rateLimit: RateLimitState;
 }

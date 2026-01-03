@@ -1,11 +1,12 @@
-import { Hono } from 'hono';
+import { Hono, Context, Next } from 'hono';
 import { cors } from 'hono/cors';
-import { LIMITS, ALLOWED_SYNTAX_MODES, CUSTOM_ID_PATTERN, SECURITY_HEADERS } from '../config/constants';
+import { LIMITS, ALLOWED_SYNTAX_MODES, CUSTOM_ID_PATTERN, SECURITY_HEADERS, RATE_LIMITS } from '../config/constants';
 
 type Bindings = {
   DB: D1Database;
   ASSETS: Fetcher;
   NOTE_SESSIONS: DurableObjectNamespace;
+  RATE_LIMITER: DurableObjectNamespace;
 };
 
 /**
@@ -49,9 +50,45 @@ app.use('*', async (c, next) => {
   c.header('Referrer-Policy', SECURITY_HEADERS.REFERRER_POLICY);
 });
 
+/**
+ * Rate limiting middleware factory
+ * Uses Durable Objects for per-session rate limiting
+ */
+function rateLimit(limit: number, windowMs: number = 60000) {
+  return async (c: Context<{ Bindings: Bindings }>, next: Next) => {
+    // Get session ID from query param or header
+    const sessionId = c.req.query('session_id') ||
+                      c.req.header('X-Session-ID') ||
+                      'anonymous';
+
+    const endpoint = c.req.method + ':' + c.req.routePath;
+
+    // Get rate limiter DO for this session
+    const doId = c.env.RATE_LIMITER.idFromName(sessionId);
+    const stub = c.env.RATE_LIMITER.get(doId);
+
+    // Check rate limit
+    const response = await stub.fetch(new Request('http://do/check', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint, limit, windowMs }),
+    }));
+
+    if (!response.ok) {
+      // Forward rate limit headers from DO response
+      const retryAfter = response.headers.get('Retry-After');
+      const headers: Record<string, string> = {};
+      if (retryAfter) headers['Retry-After'] = retryAfter;
+
+      return c.json({ error: 'Rate limit exceeded' }, 429, headers);
+    }
+
+    await next();
+  };
+}
+
 // API Routes
 // WebSocket endpoint for real-time collaboration
-app.get('/api/notes/:id/ws', async (c) => {
+app.get('/api/notes/:id/ws', rateLimit(RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
   const password = c.req.query('password');
 
@@ -87,7 +124,7 @@ app.get('/api/notes/:id/ws', async (c) => {
   return stub.fetch(c.req.raw);
 });
 
-app.get('/api/notes/:id', async (c) => {
+app.get('/api/notes/:id', rateLimit(RATE_LIMITS.API.READ_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
   const password = c.req.query('password');
 
@@ -170,7 +207,7 @@ app.get('/api/notes/:id', async (c) => {
   });
 });
 
-app.post('/api/notes', async (c) => {
+app.post('/api/notes', rateLimit(RATE_LIMITS.API.CREATE_PER_MINUTE), async (c) => {
   const body: CreateNotePayload = await c.req.json();
   const { id, content, password, syntax_highlight, max_views, expires_in, is_encrypted } = body;
 
@@ -274,7 +311,7 @@ app.post('/api/notes', async (c) => {
   return c.json({ id: noteId, available: true, version: 1 });
 });
 
-app.put('/api/notes/:id', async (c) => {
+app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
   const body: UpdateNotePayload = await c.req.json();
   const { content, syntax_highlight, password, max_views, expires_in, clear_expiration, session_id, expected_version, is_encrypted } = body;
@@ -432,7 +469,7 @@ app.post('/api/notes/:id/refresh', async (c) => {
   }
 });
 
-app.delete('/api/notes/:id', async (c) => {
+app.delete('/api/notes/:id', rateLimit(RATE_LIMITS.API.DELETE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
   const password = c.req.query('password');
   const sessionId = c.req.query('session_id');
@@ -555,6 +592,7 @@ async function verifyNotePassword(
 }
 
 export { NoteSessionDurableObject } from './durable-objects/NoteSessionDurableObject';
+export { RateLimiterDurableObject } from './durable-objects/RateLimiterDurableObject';
 
 // Scheduled handler for cron trigger - runs every 15 minutes to clean up expired notes
 const scheduled: ExportedHandlerScheduledHandler<Bindings> = async (_event, env, _ctx) => {

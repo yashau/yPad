@@ -309,3 +309,40 @@ export const SECURITY_HEADERS = {
   X_FRAME_OPTIONS: 'DENY',
   REFERRER_POLICY: 'strict-origin-when-cross-origin',
 } as const;
+
+/**
+ * Rate limiting configuration
+ */
+export const RATE_LIMITS = {
+  /** REST API limits (per session) */
+  API: {
+    /** Max note creations per minute */
+    CREATE_PER_MINUTE: 10,
+    /** Max note reads per minute */
+    READ_PER_MINUTE: 60,
+    /** Max note updates per minute */
+    UPDATE_PER_MINUTE: 30,
+    /** Max note deletions per minute */
+    DELETE_PER_MINUTE: 20,
+    /** Max WebSocket upgrade requests per minute */
+    WS_UPGRADE_PER_MINUTE: 30,
+  },
+
+  /** WebSocket operation limits (per connection) */
+  WEBSOCKET: {
+    /** Max operations per second (typing speed ceiling) */
+    OPS_PER_SECOND: 30,
+    /** Burst allowance for paste operations (supports ~5KB paste) */
+    BURST_ALLOWANCE: 5000,
+    /** Max message size in bytes */
+    MAX_MESSAGE_SIZE: 65536, // 64KB
+  },
+
+  /** Penalty settings */
+  PENALTY: {
+    /** Disconnect after N violations */
+    DISCONNECT_THRESHOLD: 5,
+    /** Warning message to send on rate limit */
+    WARNING_MESSAGE: 'Rate limit exceeded. Please slow down.',
+  },
+} as const;

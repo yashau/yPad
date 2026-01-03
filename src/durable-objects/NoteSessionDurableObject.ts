@@ -35,6 +35,7 @@
 import { transform } from '../ot/transform';
 import { applyOperation } from '../ot/apply';
 import { simpleChecksum } from '../ot/checksum';
+import { RATE_LIMITS } from '../../config/constants';
 import type {
   Operation,
   WSMessage,
@@ -229,13 +230,18 @@ export class NoteSessionDurableObject implements DurableObject {
     // Accept the WebSocket
     ws.accept();
 
-    // Create client session
+    // Create client session with rate limiting state
     const session: ClientSession = {
       clientId,
       sessionId,
       lastAckOperation: this.operationVersion,
       isAuthenticated,
       ws,
+      rateLimit: {
+        tokens: RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE,
+        lastRefill: Date.now(),
+        violations: 0,
+      },
     };
 
     // Send initial sync message BEFORE adding to sessions
@@ -300,6 +306,13 @@ export class NoteSessionDurableObject implements DurableObject {
    * Enqueue a message for sequential processing
    */
   enqueueMessage(ws: WebSocket, message: WSMessage): void {
+    // Check message size
+    const messageStr = JSON.stringify(message);
+    if (messageStr.length > RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE) {
+      this.sendError(ws, 'Message too large');
+      return;
+    }
+
     this.messageQueue.push({
       ws,
       message,
@@ -309,6 +322,35 @@ export class NoteSessionDurableObject implements DurableObject {
     if (!this.isProcessingQueue) {
       this.processQueue();
     }
+  }
+
+  /**
+   * Check rate limit for a client session using token bucket algorithm
+   * Returns true if request is allowed, false if rate limited
+   */
+  private checkRateLimit(session: ClientSession): boolean {
+    const now = Date.now();
+    const config = RATE_LIMITS.WEBSOCKET;
+
+    // Refill tokens based on time elapsed
+    const elapsed = now - session.rateLimit.lastRefill;
+    const tokensToAdd = (elapsed / 1000) * config.OPS_PER_SECOND;
+
+    session.rateLimit.tokens = Math.min(
+      config.BURST_ALLOWANCE,
+      session.rateLimit.tokens + tokensToAdd
+    );
+    session.rateLimit.lastRefill = now;
+
+    // Check if we have tokens
+    if (session.rateLimit.tokens < 1) {
+      session.rateLimit.violations++;
+      return false; // Rate limited
+    }
+
+    // Consume a token
+    session.rateLimit.tokens--;
+    return true;
   }
 
   /**
@@ -362,6 +404,17 @@ export class NoteSessionDurableObject implements DurableObject {
     const session = this.sessions.get(ws);
     if (!session || !session.isAuthenticated) {
       this.sendError(ws, 'Unauthorized');
+      return;
+    }
+
+    // Check rate limit
+    if (!this.checkRateLimit(session)) {
+      if (session.rateLimit.violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD) {
+        ws.close(1008, 'Rate limit exceeded');
+        this.sessions.delete(ws);
+        return;
+      }
+      this.sendError(ws, RATE_LIMITS.PENALTY.WARNING_MESSAGE);
       return;
     }
 

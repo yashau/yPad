@@ -1,7 +1,7 @@
 # yPad
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-454%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-501%20passed-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -252,6 +252,7 @@ Unit test suites cover:
 - WebSocket client behavior
 - Cryptography utilities
 - Editor and collaboration hooks
+- Rate limiting (token bucket, sliding window, configuration)
 
 #### E2E Tests (Playwright)
 
@@ -345,7 +346,8 @@ yPad/
 │   └── site.webmanifest         # PWA manifest
 ├── src/                         # Backend Cloudflare Workers
 │   ├── durable-objects/
-│   │   └── NoteSessionDurableObject.ts  # WebSocket coordinator with OT & status broadcasts
+│   │   ├── NoteSessionDurableObject.ts  # WebSocket coordinator with OT & status broadcasts
+│   │   └── RateLimiterDurableObject.ts  # Per-session REST API rate limiting
 │   ├── ot/                      # Operational Transform
 │   │   ├── types.ts             # OT type definitions & WebSocket messages
 │   │   ├── transform.ts         # OT algorithm implementation
@@ -353,6 +355,13 @@ yPad/
 │   │   └── checksum.ts          # Content integrity verification
 │   ├── types.d.ts               # TypeScript type definitions
 │   └── index.ts                 # Hono API server & routes
+├── tests/                       # Vitest unit tests
+│   ├── api/                    # API route tests
+│   ├── client/                 # Client-side tests (crypto, WebSocket)
+│   ├── config/                 # Configuration tests
+│   ├── hooks/                  # Svelte hook tests
+│   ├── ot/                     # Operational Transform tests
+│   └── rate-limiting/          # Rate limiting tests
 ├── e2e/                         # Playwright e2e tests
 │   ├── alert-banners.spec.ts   # Alert banner tests
 │   ├── syntax-highlighting.spec.ts  # Syntax highlighting tests
@@ -853,6 +862,82 @@ async scheduled(event, env, ctx) {
   - GET `/api/notes/:id` - Note view
   - WebSocket connection to `/api/notes/:id/ws`
   - POST `/api/notes` - Note creation (initialized to current time)
+
+### Rate Limiting
+
+yPad implements rate limiting to prevent abuse while allowing normal usage patterns.
+
+#### REST API Rate Limits
+
+Per-session rate limiting using Cloudflare Durable Objects:
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| `POST /api/notes` (create) | 10 requests | per minute |
+| `GET /api/notes/:id` (read) | 60 requests | per minute |
+| `PUT /api/notes/:id` (update) | 30 requests | per minute |
+| `DELETE /api/notes/:id` (delete) | 20 requests | per minute |
+| `GET /api/notes/:id/ws` (WebSocket upgrade) | 30 requests | per minute |
+
+**Rate Limit Response**:
+```json
+HTTP/1.1 429 Too Many Requests
+Retry-After: 45
+
+{"error": "Rate limit exceeded"}
+```
+
+The `Retry-After` header indicates how many seconds to wait before retrying.
+
+#### WebSocket Rate Limits
+
+Token bucket algorithm for real-time operations:
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Operations per second | 30 | Sustained rate limit |
+| Burst allowance | 5,000 | Tokens for paste operations |
+| Max message size | 64 KB | Maximum WebSocket message size |
+
+**How it works**:
+- Each connection starts with 5,000 tokens (burst allowance)
+- Tokens refill at 30 per second
+- Each operation consumes 1 token
+- Normal typing (5-10 chars/sec) never hits the limit
+- Large pastes consume burst tokens but recover quickly
+
+**Violation Handling**:
+1. First violations: Warning message sent via WebSocket
+2. After 5 violations: Connection closed with code 1008
+
+```json
+{"type": "error", "message": "Rate limit exceeded. Please slow down."}
+```
+
+#### Configuration
+
+All rate limits are configurable in `config/constants.ts`:
+
+```typescript
+export const RATE_LIMITS = {
+  API: {
+    CREATE_PER_MINUTE: 10,
+    READ_PER_MINUTE: 60,
+    UPDATE_PER_MINUTE: 30,
+    DELETE_PER_MINUTE: 20,
+    WS_UPGRADE_PER_MINUTE: 30,
+  },
+  WEBSOCKET: {
+    OPS_PER_SECOND: 30,
+    BURST_ALLOWANCE: 5000,
+    MAX_MESSAGE_SIZE: 65536,
+  },
+  PENALTY: {
+    DISCONNECT_THRESHOLD: 5,
+    WARNING_MESSAGE: 'Rate limit exceeded. Please slow down.',
+  },
+} as const;
+```
 
 ## Contributing
 
