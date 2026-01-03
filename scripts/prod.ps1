@@ -148,9 +148,18 @@ name = "NOTE_SESSIONS"
 class_name = "NoteSessionDurableObject"
 script_name = "$($envVars['DO_SCRIPT_NAME'])"
 
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDurableObject"
+script_name = "$($envVars['DO_SCRIPT_NAME'])"
+
 [[migrations]]
 tag = "v1"
 new_classes = ["NoteSessionDurableObject"]
+
+[[migrations]]
+tag = "v2"
+new_classes = ["RateLimiterDurableObject"]
 
 # Cron trigger to clean up expired notes
 [triggers]
