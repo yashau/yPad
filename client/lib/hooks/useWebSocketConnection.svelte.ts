@@ -146,10 +146,10 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           noteState.saveStatus = '';
           config.onNoteDeleted?.(deletedByCurrentUser);
         },
-        onEncryptionChanged: (is_encrypted, has_password) => {
-          if (is_encrypted && has_password) {
+        onEncryptionChanged: (is_encrypted) => {
+          if (is_encrypted) {
             config.onEncryptionEnabled?.();
-          } else if (!is_encrypted && !has_password) {
+          } else {
             config.onEncryptionDisabled?.();
           }
         },

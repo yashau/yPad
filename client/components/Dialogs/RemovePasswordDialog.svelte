@@ -1,25 +1,14 @@
 <script lang="ts">
   import { Button } from '../../lib/components/ui/button/index.js';
-  import { Input } from '../../lib/components/ui/input/index.js';
   import * as Dialog from '../../lib/components/ui/dialog/index.js';
-  import * as Alert from '../../lib/components/ui/alert/index.js';
 
   interface Props {
     open: boolean;
-    removePasswordInput: string;
-    removePasswordError: string;
     onSubmit: () => void;
     onCancel: () => void;
-    onPasswordChange: (value: string) => void;
   }
 
-  let { open = $bindable(), removePasswordInput = $bindable(), removePasswordError, onSubmit, onCancel, onPasswordChange }: Props = $props();
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (e.key === 'Enter') {
-      onSubmit();
-    }
-  }
+  let { open = $bindable(), onSubmit, onCancel }: Props = $props();
 </script>
 
 <Dialog.Root bind:open>
@@ -28,21 +17,8 @@
     <Dialog.Content class="sm:top-[50%] sm:translate-y-[-50%] top-[20%] translate-y-0">
       <Dialog.Header>
         <Dialog.Title>Remove Password Protection</Dialog.Title>
-        <Dialog.Description>Enter the current password to remove encryption and enable real-time collaboration.</Dialog.Description>
+        <Dialog.Description>This will remove encryption and make the note accessible to anyone with the link. Real-time collaboration will be enabled.</Dialog.Description>
       </Dialog.Header>
-      {#if removePasswordError}
-        <Alert.Root variant="destructive" class="mb-4 border-destructive/50 bg-destructive/10">
-          <Alert.Description>{removePasswordError}</Alert.Description>
-        </Alert.Root>
-      {/if}
-      <Input
-        type="password"
-        bind:value={removePasswordInput}
-        placeholder="Enter current password"
-        class="mb-4"
-        onkeydown={handleKeyDown}
-        oninput={(e) => onPasswordChange((e.target as HTMLInputElement).value)}
-      />
       <Dialog.Footer>
         <Button variant="outline" onclick={onCancel}>
           Cancel

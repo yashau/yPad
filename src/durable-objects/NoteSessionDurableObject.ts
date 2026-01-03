@@ -126,7 +126,7 @@ export class NoteSessionDurableObject implements DurableObject {
     // Handle encryption change notification
     if (request.method === 'POST' && url.pathname === '/notify-encryption-change') {
       try {
-        const body = await request.json() as { is_encrypted: boolean; has_password: boolean; exclude_session_id?: string };
+        const body = await request.json() as { is_encrypted: boolean; exclude_session_id?: string };
 
         // Force re-initialization from database to get updated content
         // This is critical when encryption is removed - the DO has encrypted content in memory
@@ -134,7 +134,7 @@ export class NoteSessionDurableObject implements DurableObject {
         this.isInitialized = false;
         await this.initializeFromDatabase();
 
-        this.broadcastEncryptionChange(body.is_encrypted, body.has_password, body.exclude_session_id);
+        this.broadcastEncryptionChange(body.is_encrypted, body.exclude_session_id);
         return new Response('OK', { status: 200 });
       } catch (error) {
         console.error('Error handling encryption change notification:', error);
@@ -714,14 +714,13 @@ export class NoteSessionDurableObject implements DurableObject {
     );
   }
 
-  broadcastEncryptionChange(is_encrypted: boolean, has_password: boolean, excludeSessionId?: string): void {
+  broadcastEncryptionChange(is_encrypted: boolean, excludeSessionId?: string): void {
     // Update internal encryption state
     this.isEncrypted = is_encrypted;
 
     const message = {
       type: 'encryption_changed' as const,
       is_encrypted,
-      has_password,
     };
 
     // Broadcast to all clients except the one who made the change

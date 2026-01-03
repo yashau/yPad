@@ -29,20 +29,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     noteState.isInitialLoad = true;
 
     try {
-      const url = `/api/notes/${noteState.noteId}${security.passwordInput ? `?password=${encodeURIComponent(security.passwordInput)}` : ''}`;
-      const response = await fetch(url);
-
-      if (response.status === 401) {
-        if (security.passwordInput) {
-          security.passwordError = 'Invalid password. Please try again.';
-          security.passwordInput = '';
-        }
-        security.passwordRequired = true;
-        config.onPasswordRequired?.();
-        noteState.isLoading = false;
-        noteState.isInitialLoad = false;
-        return;
-      }
+      const response = await fetch(`/api/notes/${noteState.noteId}`);
 
       if (!response.ok) {
         const error = await response.json() as { error?: string };
@@ -58,7 +45,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         content: string;
         syntax_highlight: string;
         version: number;
-        has_password: boolean;
         is_encrypted: boolean;
         view_count: number;
         max_views: number | null;
@@ -66,29 +52,49 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         is_last_view: boolean;
       };
 
+      security.isEncrypted = data.is_encrypted || false;
+      security.hasPassword = security.isEncrypted;
+
       // Decrypt content if encrypted
-      if (data.is_encrypted && security.passwordInput) {
-        try {
-          editor.content = await decryptContent(data.content, security.passwordInput);
-          security.passwordError = '';
-        } catch (error) {
-          console.error('Failed to decrypt content:', error);
-          security.passwordError = 'Invalid password. Please try again.';
+      if (data.is_encrypted) {
+        if (security.passwordInput) {
+          try {
+            editor.content = await decryptContent(data.content, security.passwordInput);
+            security.password = security.passwordInput;
+            security.passwordError = '';
+
+            // Confirm view after successful decryption (for encrypted notes with max_views)
+            try {
+              const viewResponse = await fetch(`/api/notes/${noteState.noteId}/view`, {
+                method: 'POST'
+              });
+              if (viewResponse.ok) {
+                const viewData = await viewResponse.json() as { view_count: number; is_last_view: boolean };
+                data.view_count = viewData.view_count;
+                data.is_last_view = viewData.is_last_view;
+              }
+            } catch (viewError) {
+              console.error('Failed to confirm view:', viewError);
+            }
+          } catch (error) {
+            console.error('Failed to decrypt content:', error);
+            security.passwordError = 'Invalid password. Please try again.';
+            security.passwordRequired = true;
+            security.passwordInput = '';
+            noteState.isLoading = false;
+            noteState.isInitialLoad = false;
+            return;
+          }
+        } else {
+          // Encrypted but no password provided - prompt for password
           security.passwordRequired = true;
-          security.passwordInput = '';
+          config.onPasswordRequired?.();
           noteState.isLoading = false;
           noteState.isInitialLoad = false;
           return;
         }
       } else {
         editor.content = data.content;
-      }
-
-      security.hasPassword = data.has_password || false;
-      security.isEncrypted = data.is_encrypted || false;
-
-      if (security.hasPassword && security.passwordInput) {
-        security.password = security.passwordInput;
       }
 
       editor.lastLocalContent = editor.content;
@@ -161,10 +167,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         syntax_highlight: editor.syntaxHighlight || 'plaintext',
         is_encrypted: shouldEncrypt
       };
-
-      if (security.password) {
-        payload.password = security.password;
-      }
 
       if (noteState.maxViews) {
         payload.max_views = noteState.maxViews;
@@ -277,22 +279,11 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     try {
       noteState.clearSaveTimeout();
 
-      const params = new URLSearchParams();
-      if (security.password) {
-        params.set('password', security.password);
-      }
-      params.set('session_id', noteState.sessionId);
-
-      const url = `/api/notes/${noteState.noteId}?${params.toString()}`;
+      const url = `/api/notes/${noteState.noteId}?session_id=${noteState.sessionId}`;
 
       const response = await fetch(url, {
         method: 'DELETE'
       });
-
-      if (response.status === 401) {
-        alert('This note is password-protected. Please decrypt it before deleting.');
-        return;
-      }
 
       if (!response.ok) {
         throw new Error('Failed to delete note');
@@ -360,7 +351,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         content: contentToSave,
         syntax_highlight: editor.syntaxHighlight || 'plaintext',
         is_encrypted: true,
-        password: security.password,
         session_id: noteState.sessionId,
         expected_version: null
       };
@@ -410,9 +400,15 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     }
   }
 
-  async function removePasswordProtection(removePasswordInput: string, onSuccess?: () => void, onError?: (error: string) => void) {
-    noteState.clearSaveTimeout();
+  async function removePasswordProtection(onSuccess?: () => void, onError?: (error: string) => void) {
+    // Client-side verification: user must have already decrypted the note
+    // (they can see the plaintext content) which proves they know the password
+    if (!security.password) {
+      onError?.('You must decrypt the note first');
+      return;
+    }
 
+    noteState.clearSaveTimeout();
     noteState.saveStatus = 'Saving...';
 
     try {
@@ -420,7 +416,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         content: editor.content,
         syntax_highlight: editor.syntaxHighlight || 'plaintext',
         is_encrypted: false,
-        password: removePasswordInput,
         session_id: noteState.sessionId,
         expected_version: null
       };
@@ -438,12 +433,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-
-      if (response.status === 401) {
-        noteState.saveStatus = '';
-        onError?.('Incorrect password');
-        return;
-      }
 
       if (response.status === 409) {
         noteState.saveStatus = 'Conflict!';
@@ -504,10 +493,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         expected_version: security.isEncrypted ? null : noteState.currentVersion
       };
 
-      if (security.password) {
-        payload.password = security.password;
-      }
-
       const response = await fetch(`/api/notes/${noteState.noteId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -539,9 +524,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
     noteState.saveStatus = 'Saving...';
 
     try {
-      // We need to send a special value to clear expires_at
-      // The backend currently only sets expires_at if expires_in is provided
-      // We need to update the backend to support clearing it
       const payload: any = {
         content: editor.content,
         syntax_highlight: editor.syntaxHighlight || 'plaintext',
@@ -549,10 +531,6 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         session_id: noteState.sessionId,
         expected_version: security.isEncrypted ? null : noteState.currentVersion
       };
-
-      if (security.password) {
-        payload.password = security.password;
-      }
 
       const response = await fetch(`/api/notes/${noteState.noteId}`, {
         method: 'PUT',

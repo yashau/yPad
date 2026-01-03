@@ -421,8 +421,6 @@
             });
           }}
           onRemovePassword={() => {
-            security.removePasswordInput = '';
-            security.removePasswordError = '';
             showRemovePasswordDialog = true;
           }}
           onPasswordChange={(value) => security.passwordToSet = value}
@@ -510,16 +508,11 @@
 
 <RemovePasswordDialog
   bind:open={showRemovePasswordDialog}
-  bind:removePasswordInput={security.removePasswordInput}
-  removePasswordError={security.removePasswordError}
   onSubmit={() => {
     noteOps.removePasswordProtection(
-      security.removePasswordInput,
       () => {
         showPasswordDisabledBanner = true;
         showRemovePasswordDialog = false;
-        security.removePasswordInput = '';
-        security.removePasswordError = '';
         showOptions = false;
         // Focus the appropriate editor element
         if (editor.syntaxHighlight === 'plaintext') {
@@ -529,16 +522,14 @@
         }
       },
       (error) => {
-        security.removePasswordError = error;
+        alert(error);
+        showRemovePasswordDialog = false;
       }
     );
   }}
   onCancel={() => {
     showRemovePasswordDialog = false;
-    security.removePasswordInput = '';
-    security.removePasswordError = '';
   }}
-  onPasswordChange={(value) => security.removePasswordInput = value}
 />
 
 <ConflictDialog

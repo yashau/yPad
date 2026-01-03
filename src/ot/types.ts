@@ -68,7 +68,6 @@ export type NoteDeletedMessage = {
 export type EncryptionChangedMessage = {
   type: 'encryption_changed';
   is_encrypted: boolean;
-  has_password: boolean;
 };
 
 export type VersionUpdateMessage = {

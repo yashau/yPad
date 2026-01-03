@@ -16,7 +16,6 @@ interface CreateNotePayload {
   id?: string;
   content: string;
   syntax_highlight?: string;
-  password?: string;
   max_views?: number | null;
   expires_in?: number;
   is_encrypted?: boolean;
@@ -28,7 +27,6 @@ interface CreateNotePayload {
 interface UpdateNotePayload {
   content: string;
   syntax_highlight?: string;
-  password?: string;
   max_views?: number | null;
   expires_in?: number;
   clear_expiration?: boolean;
@@ -90,11 +88,10 @@ function rateLimit(limit: number, windowMs: number = 60000) {
 // WebSocket endpoint for real-time collaboration
 app.get('/api/notes/:id/ws', rateLimit(RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
-  const password = c.req.query('password');
 
   // Validate note exists
   const note = await c.env.DB.prepare(
-    'SELECT id, password_hash, expires_at FROM notes WHERE id = ?'
+    'SELECT id, expires_at FROM notes WHERE id = ?'
   ).bind(id).first();
 
   if (!note) {
@@ -106,10 +103,6 @@ app.get('/api/notes/:id/ws', rateLimit(RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE), a
     await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
     return c.json({ error: 'Note has expired' }, 410);
   }
-
-  // Check password if required
-  const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
-  if (passwordError) return passwordError;
 
   // Update last accessed timestamp
   await c.env.DB.prepare(
@@ -126,11 +119,10 @@ app.get('/api/notes/:id/ws', rateLimit(RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE), a
 
 app.get('/api/notes/:id', rateLimit(RATE_LIMITS.API.READ_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
-  const password = c.req.query('password');
 
-  // First, check note metadata from D1 (for password, expiry, view count)
+  // First, check note metadata from D1 (for expiry, view count)
   const note = await c.env.DB.prepare(
-    'SELECT id, password_hash, expires_at, view_count, max_views, created_at, is_encrypted FROM notes WHERE id = ?'
+    'SELECT id, expires_at, view_count, max_views, created_at, is_encrypted FROM notes WHERE id = ?'
   ).bind(id).first();
 
   if (!note) {
@@ -143,28 +135,45 @@ app.get('/api/notes/:id', rateLimit(RATE_LIMITS.API.READ_PER_MINUTE), async (c) 
     return c.json({ error: 'Note has expired' }, 410);
   }
 
-  // Check password protection
-  const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
-  if (passwordError) return passwordError;
+  const currentViewCount = Number(note.view_count);
+  let newViewCount = currentViewCount;
+  let isLastView = false;
 
-  // Increment view count first
-  const newViewCount = Number(note.view_count) + 1;
+  // For encrypted notes, don't increment view count here - client will confirm after decryption
+  // For non-encrypted notes, increment view count immediately
+  if (!note.is_encrypted) {
+    newViewCount = currentViewCount + 1;
 
-  // Check if this view exceeds the limit (note was already fully consumed)
-  if (note.max_views && newViewCount > Number(note.max_views)) {
-    await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
-    return c.json({ error: 'Note has reached max views' }, 410);
+    // Check if this view exceeds the limit (note was already fully consumed)
+    if (note.max_views && newViewCount > Number(note.max_views)) {
+      await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
+      return c.json({ error: 'Note has reached max views' }, 410);
+    }
+
+    // Check if this is the final allowed view
+    isLastView = !!(note.max_views && newViewCount >= Number(note.max_views));
+
+    // Update view count and last accessed timestamp (non-blocking)
+    c.env.DB.prepare(
+      'UPDATE notes SET view_count = ?, last_accessed_at = ? WHERE id = ?'
+    ).bind(newViewCount, Date.now(), id).run().catch((error: any) => {
+      console.error(`Failed to update view count for ${id}:`, error);
+    });
+
+    // If this was the last allowed view, delete the note (non-blocking)
+    if (isLastView) {
+      c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run().catch((error: any) => {
+        console.error(`Failed to delete note ${id} after last view:`, error);
+      });
+    }
+  } else {
+    // For encrypted notes, just update last accessed timestamp
+    c.env.DB.prepare(
+      'UPDATE notes SET last_accessed_at = ? WHERE id = ?'
+    ).bind(Date.now(), id).run().catch((error: any) => {
+      console.error(`Failed to update last_accessed_at for ${id}:`, error);
+    });
   }
-
-  // Check if this is the final allowed view
-  const isLastView = note.max_views && newViewCount >= Number(note.max_views);
-
-  // Update view count and last accessed timestamp (non-blocking)
-  c.env.DB.prepare(
-    'UPDATE notes SET view_count = ?, last_accessed_at = ? WHERE id = ?'
-  ).bind(newViewCount, Date.now(), id).run().catch((error: any) => {
-    console.error(`Failed to update view count for ${id}:`, error);
-  });
 
   // Get Durable Object for this note
   const doId = c.env.NOTE_SESSIONS.idFromName(id);
@@ -184,14 +193,6 @@ app.get('/api/notes/:id', rateLimit(RATE_LIMITS.API.READ_PER_MINUTE), async (c) 
     is_encrypted: boolean;
   };
 
-  // If this was the last allowed view, delete the note (non-blocking)
-  // This happens after we've fetched all the content but before returning
-  if (isLastView) {
-    c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run().catch((error: any) => {
-      console.error(`Failed to delete note ${id} after last view:`, error);
-    });
-  }
-
   return c.json({
     id: note.id,
     content: doData.content,
@@ -201,15 +202,57 @@ app.get('/api/notes/:id', rateLimit(RATE_LIMITS.API.READ_PER_MINUTE), async (c) 
     expires_at: note.expires_at,
     created_at: note.created_at,
     version: doData.version,
-    has_password: !!note.password_hash,
-    is_encrypted: doData.is_encrypted,
+    is_encrypted: !!note.is_encrypted,
+    is_last_view: isLastView
+  });
+});
+
+// Confirm view for encrypted notes (called after successful decryption)
+app.post('/api/notes/:id/view', rateLimit(RATE_LIMITS.API.READ_PER_MINUTE), async (c) => {
+  const id = c.req.param('id');
+
+  const note = await c.env.DB.prepare(
+    'SELECT id, view_count, max_views, is_encrypted FROM notes WHERE id = ?'
+  ).bind(id).first();
+
+  if (!note) {
+    return c.json({ error: 'Note not found' }, 404);
+  }
+
+  // Only count views for encrypted notes through this endpoint
+  if (!note.is_encrypted) {
+    return c.json({ error: 'This endpoint is only for encrypted notes' }, 400);
+  }
+
+  const newViewCount = Number(note.view_count) + 1;
+
+  // Check if this view exceeds the limit
+  if (note.max_views && newViewCount > Number(note.max_views)) {
+    await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
+    return c.json({ error: 'Note has reached max views' }, 410);
+  }
+
+  const isLastView = !!(note.max_views && newViewCount >= Number(note.max_views));
+
+  // Update view count
+  await c.env.DB.prepare(
+    'UPDATE notes SET view_count = ? WHERE id = ?'
+  ).bind(newViewCount, id).run();
+
+  // If this was the last allowed view, delete the note
+  if (isLastView) {
+    await c.env.DB.prepare('DELETE FROM notes WHERE id = ?').bind(id).run();
+  }
+
+  return c.json({
+    view_count: newViewCount,
     is_last_view: isLastView
   });
 });
 
 app.post('/api/notes', rateLimit(RATE_LIMITS.API.CREATE_PER_MINUTE), async (c) => {
   const body: CreateNotePayload = await c.req.json();
-  const { id, content, password, syntax_highlight, max_views, expires_in, is_encrypted } = body;
+  const { id, content, syntax_highlight, max_views, expires_in, is_encrypted } = body;
 
   // Validate content
   if (!content || content.length === 0) {
@@ -288,17 +331,15 @@ app.post('/api/notes', rateLimit(RATE_LIMITS.API.CREATE_PER_MINUTE), async (c) =
     }
   }
 
-  const password_hash = password ? await hashPassword(password) : null;
   const expires_at = expires_in ? Date.now() + expires_in : null;
   const now = Date.now();
 
   await c.env.DB.prepare(
-    `INSERT INTO notes (id, content, password_hash, syntax_highlight, max_views, expires_at, created_at, updated_at, version, last_session_id, is_encrypted, last_accessed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`
+    `INSERT INTO notes (id, content, syntax_highlight, max_views, expires_at, created_at, updated_at, version, last_session_id, is_encrypted, last_accessed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`
   ).bind(
     noteId,
     content,
-    password_hash,
     syntax_highlight || 'plaintext',
     max_views || null,
     expires_at,
@@ -314,7 +355,7 @@ app.post('/api/notes', rateLimit(RATE_LIMITS.API.CREATE_PER_MINUTE), async (c) =
 app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
   const body: UpdateNotePayload = await c.req.json();
-  const { content, syntax_highlight, password, max_views, expires_in, clear_expiration, session_id, expected_version, is_encrypted } = body;
+  const { content, syntax_highlight, max_views, expires_in, clear_expiration, session_id, expected_version, is_encrypted } = body;
 
   const existing = await c.env.DB.prepare(
     'SELECT * FROM notes WHERE id = ?'
@@ -324,16 +365,6 @@ app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c
     return c.json({ error: 'Note not found' }, 404);
   }
 
-  // Check password for updates
-  const passwordError = await verifyNotePassword(existing.password_hash as string | null, password, c);
-  if (passwordError) return passwordError;
-
-  // Determine new password hash:
-  // - If is_encrypted is explicitly false, remove password protection (set to null)
-  // - Otherwise, if password provided, hash it
-  // - Otherwise, keep existing password hash
-  const password_hash = is_encrypted === false ? null :
-                       (password && password !== '' ? await hashPassword(password) : existing.password_hash);
   // Handle expiration: clear_expiration sets to null, expires_in sets new value, otherwise keep existing
   const expires_at = clear_expiration ? null : (expires_in ? Date.now() + expires_in : existing.expires_at);
 
@@ -347,7 +378,6 @@ app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c
      SET
        content = ?,
        syntax_highlight = ?,
-       password_hash = ?,
        max_views = ?,
        view_count = CASE WHEN ? THEN 0 ELSE view_count END,
        expires_at = ?,
@@ -363,7 +393,6 @@ app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c
   ).bind(
     content !== undefined ? content : existing.content,
     syntax_highlight || existing.syntax_highlight,
-    password_hash,
     max_views !== undefined ? max_views : existing.max_views,
     isSettingMaxViews ? 1 : 0,  // Reset view_count if setting new max_views
     expires_at,
@@ -388,13 +417,12 @@ app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c
     }, 409);
   }
 
-  // Check if encryption status or password changed
+  // Check if encryption status changed
   const encryptionChanged = (is_encrypted !== undefined) &&
     (!!is_encrypted !== !!existing.is_encrypted);
-  const passwordChanged = password_hash !== existing.password_hash;
 
-  // Notify clients if encryption status changed OR password changed on an encrypted note
-  if (encryptionChanged || (passwordChanged && !!password_hash)) {
+  // Notify clients if encryption status changed
+  if (encryptionChanged) {
     // Notify all connected clients via Durable Object
     try {
       const doId = c.env.NOTE_SESSIONS.idFromName(id);
@@ -405,8 +433,7 @@ app.put('/api/notes/:id', rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          is_encrypted: !!is_encrypted !== undefined ? !!is_encrypted : !!existing.is_encrypted,
-          has_password: !!password_hash,
+          is_encrypted: !!is_encrypted,
           exclude_session_id: session_id // Don't notify the user who made the change
         })
       }));
@@ -471,21 +498,16 @@ app.post('/api/notes/:id/refresh', async (c) => {
 
 app.delete('/api/notes/:id', rateLimit(RATE_LIMITS.API.DELETE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
-  const password = c.req.query('password');
   const sessionId = c.req.query('session_id');
 
-  // Check if note exists and has password protection
+  // Check if note exists
   const note = await c.env.DB.prepare(
-    'SELECT password_hash FROM notes WHERE id = ?'
+    'SELECT id FROM notes WHERE id = ?'
   ).bind(id).first();
 
   if (!note) {
     return c.json({ error: 'Note not found' }, 404);
   }
-
-  // Verify password if note is password-protected
-  const passwordError = await verifyNotePassword(note.password_hash as string | null, password, c);
-  if (passwordError) return passwordError;
 
   // Notify connected clients before deleting
   try {
@@ -540,56 +562,6 @@ function generateId(length = 4): string {
   return result;
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-/**
- * Constant-time string comparison to prevent timing attacks
- * @param a - First string to compare
- * @param b - Second string to compare
- * @returns true if strings are equal, false otherwise
- */
-function constantTimeCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
-}
-
-/**
- * Verify password for a note
- * Returns error response if password is invalid, null if valid
- */
-async function verifyNotePassword(
-  passwordHash: string | null,
-  providedPassword: string | null | undefined,
-  context: any
-): Promise<Response | null> {
-  if (!passwordHash) return null; // No password protection
-
-  if (!providedPassword) {
-    return context.json({
-      error: 'Password required',
-      passwordRequired: true
-    }, 401);
-  }
-
-  const providedHash = await hashPassword(providedPassword);
-  if (!constantTimeCompare(providedHash, passwordHash)) {
-    return context.json({ error: 'Invalid password' }, 401);
-  }
-
-  return null; // Password valid
-}
 
 export { NoteSessionDurableObject } from './durable-objects/NoteSessionDurableObject';
 export { RateLimiterDurableObject } from './durable-objects/RateLimiterDurableObject';

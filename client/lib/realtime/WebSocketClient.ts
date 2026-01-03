@@ -38,7 +38,7 @@ export interface WebSocketClientOptions {
   onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
   onAck?: (version: number, contentChecksum?: number) => void;
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
-  onEncryptionChanged?: (is_encrypted: boolean, has_password: boolean) => void;
+  onEncryptionChanged?: (is_encrypted: boolean) => void;
   onVersionUpdate?: (version: number, message: string) => void;
   onCursorUpdate?: (clientId: string, position: number) => void;
   onUserJoined?: (clientId: string, connectedUsers: string[]) => void;
@@ -96,11 +96,7 @@ export class WebSocketClient {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    let url = `${protocol}//${host}/api/notes/${this.noteId}/ws?session_id=${this.options.sessionId}`;
-
-    if (this.options.password) {
-      url += `&password=${encodeURIComponent(this.options.password)}`;
-    }
+    const url = `${protocol}//${host}/api/notes/${this.noteId}/ws?session_id=${this.options.sessionId}`;
 
     try {
       this.ws = new WebSocket(url);
@@ -259,7 +255,7 @@ export class WebSocketClient {
       case 'encryption_changed':
         console.log('[WebSocket] Encryption status changed:', message);
         if (this.options.onEncryptionChanged) {
-          this.options.onEncryptionChanged(message.is_encrypted, message.has_password);
+          this.options.onEncryptionChanged(message.is_encrypted);
         }
         break;
 
