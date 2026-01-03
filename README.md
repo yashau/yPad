@@ -9,6 +9,7 @@
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
 
 A real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network.
 
@@ -232,8 +233,10 @@ npm run db:migrate:prod
 
 ### Testing
 
+#### Unit Tests (Vitest)
+
 ```bash
-# Run all tests
+# Run all unit tests
 npm test
 
 # Run tests in watch mode
@@ -243,12 +246,28 @@ npm run test:watch
 npm run test:coverage
 ```
 
-Test suites cover:
+Unit test suites cover:
 - API validation and constants
 - Operational Transform (OT) algorithms
 - WebSocket client behavior
 - Cryptography utilities
 - Editor and collaboration hooks
+
+#### E2E Tests (Playwright)
+
+```bash
+# Run all e2e tests
+npm run e2e
+
+# Run e2e tests with UI
+npx playwright test --ui
+```
+
+E2E test suites cover:
+- Alert banners (encryption enabled/disabled, note deleted, password errors, reload prompts)
+- Syntax highlighting (JavaScript, JSON, Python, TypeScript, YAML, SQL)
+- Theme permutations (light/dark modes with system theme combinations)
+- Screenshots generated for visual regression testing
 
 ### Project Structure
 
@@ -334,6 +353,10 @@ yPad/
 │   │   └── checksum.ts          # Content integrity verification
 │   ├── types.d.ts               # TypeScript type definitions
 │   └── index.ts                 # Hono API server & routes
+├── e2e/                         # Playwright e2e tests
+│   ├── alert-banners.spec.ts   # Alert banner tests
+│   ├── syntax-highlighting.spec.ts  # Syntax highlighting tests
+│   └── screenshots/            # Generated test screenshots
 ├── dist/                        # Build output (gitignored)
 ├── scripts/                     # Automation scripts
 │   ├── dev.ps1                  # Windows dev server script
@@ -350,6 +373,7 @@ yPad/
 ├── .env                         # Local environment config (gitignored)
 ├── wrangler.toml                # Cloudflare Workers config
 ├── vite.config.ts               # Vite build config with publicDir
+├── playwright.config.ts         # Playwright e2e test config
 └── package.json                 # Dependencies & scripts
 ```
 
