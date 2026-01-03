@@ -1,6 +1,27 @@
 import { test, expect, Page } from '@playwright/test';
 
 /**
+ * Theme permutation configuration
+ */
+type SystemTheme = 'light' | 'dark';
+type AppTheme = 'light' | 'dark';
+
+interface ThemePermutation {
+  name: string;
+  system: SystemTheme;
+  app: AppTheme;
+}
+
+const THEME_PERMUTATIONS: ThemePermutation[] = [
+  { name: 'light', system: 'light', app: 'light' },
+  { name: 'dark', system: 'dark', app: 'dark' },
+  { name: 'system-light-app-light', system: 'light', app: 'light' },
+  { name: 'system-light-app-dark', system: 'light', app: 'dark' },
+  { name: 'system-dark-app-light', system: 'dark', app: 'light' },
+  { name: 'system-dark-app-dark', system: 'dark', app: 'dark' },
+];
+
+/**
  * Helper to create a note by typing content in the editor.
  * The app only creates a note ID after content is typed and auto-saved.
  */
@@ -49,37 +70,57 @@ async function setPassword(page: Page, password: string) {
 const SCREENSHOT_DIR = 'e2e/screenshots/alert-banners';
 
 /**
- * Helper to take screenshots in both light and dark mode
+ * Helper to set app theme via class manipulation
  */
-async function takeScreenshots(page: Page, name: string) {
-  // Light mode
-  await page.evaluate(() => document.documentElement.classList.remove('dark'));
+async function setAppTheme(page: Page, theme: AppTheme) {
+  await page.evaluate((t) => {
+    document.documentElement.classList.remove('light', 'dark');
+    document.documentElement.classList.add(t);
+    localStorage.setItem('theme', t);
+  }, theme);
   await page.waitForTimeout(200);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}-light.png`, fullPage: true });
-
-  // Dark mode
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await page.waitForTimeout(200);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}-dark.png`, fullPage: true });
 }
 
 /**
- * Helper to take screenshots with a button hovered in both light and dark mode
+ * Helper to take screenshots for all theme permutations
+ */
+async function takeScreenshots(page: Page, name: string) {
+  for (const permutation of THEME_PERMUTATIONS) {
+    // Set system color scheme
+    await page.emulateMedia({ colorScheme: permutation.system });
+
+    // Set app theme
+    await setAppTheme(page, permutation.app);
+
+    // Take screenshot
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/${name}-${permutation.name}.png`,
+      fullPage: true
+    });
+  }
+}
+
+/**
+ * Helper to take screenshots with a button hovered for all theme permutations
  */
 async function takeScreenshotsWithHover(page: Page, name: string, buttonLocator: ReturnType<Page['locator']>) {
-  // Light mode
-  await page.evaluate(() => document.documentElement.classList.remove('dark'));
-  await page.waitForTimeout(200);
-  await buttonLocator.hover();
-  await page.waitForTimeout(100);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}-light.png`, fullPage: true });
+  for (const permutation of THEME_PERMUTATIONS) {
+    // Set system color scheme
+    await page.emulateMedia({ colorScheme: permutation.system });
 
-  // Dark mode
-  await page.evaluate(() => document.documentElement.classList.add('dark'));
-  await page.waitForTimeout(200);
-  await buttonLocator.hover();
-  await page.waitForTimeout(100);
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}-dark.png`, fullPage: true });
+    // Set app theme
+    await setAppTheme(page, permutation.app);
+
+    // Hover over the button
+    await buttonLocator.hover();
+    await page.waitForTimeout(100);
+
+    // Take screenshot
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/${name}-${permutation.name}.png`,
+      fullPage: true
+    });
+  }
 }
 
 test.describe('Alert Banner Tests', () => {
