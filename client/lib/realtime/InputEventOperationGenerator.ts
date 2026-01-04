@@ -7,14 +7,14 @@ import type { Operation, InsertOperation, DeleteOperation } from '../../../src/o
  * Generate operations from an InputEvent
  * Uses the browser's native input data to get exact cursor position and changes
  *
- * CRITICAL: All positions must be relative to baseContent (oldContent parameter),
- * not the current DOM content!
+ * CRITICAL: cursorPosition must be the PRE-EDIT cursor position (captured in beforeinput),
+ * not the post-edit position! This is essential for accurate OT position calculations.
  */
 export function generateOperationsFromInputEvent(
   event: InputEvent | undefined,
   baseContent: string,
   newContent: string,
-  cursorPosition: number,
+  cursorPosition: number, // PRE-EDIT cursor position
   clientId: string,
   version: number
 ): Operation[] {
@@ -37,41 +37,39 @@ export function generateOperationsFromInputEvent(
   const data = event.data;
 
   // Handle different input types
+  // NOTE: cursorPosition is the PRE-EDIT position (before DOM was modified)
   if (inputType === 'insertText' && data) {
-    // Simple text insertion
-    // cursorPosition is AFTER the insert in newContent, so we need to subtract the inserted length
+    // Simple text insertion - insert at where the cursor was
     operations.push({
       type: 'insert',
-      position: cursorPosition - data.length,
+      position: cursorPosition,
       text: data,
       clientId,
       version,
     } as InsertOperation);
   } else if (inputType === 'insertLineBreak' || inputType === 'insertParagraph') {
-    // Enter key pressed
+    // Enter key pressed - insert newline at cursor position
     operations.push({
       type: 'insert',
-      position: cursorPosition - 1,
+      position: cursorPosition,
       text: '\n',
       clientId,
       version,
     } as InsertOperation);
   } else if (inputType === 'deleteContentBackward') {
-    // Backspace - cursor is at delete position in newContent
-    // But we need position in baseContent, which is cursor position in newContent
-    // since the deleted character was BEFORE the cursor
+    // Backspace - deletion happened BEFORE the cursor position
     const deletedLength = Math.abs(lengthDiff);
     if (deletedLength > 0) {
       operations.push({
         type: 'delete',
-        position: cursorPosition, // Cursor is already at the right position in baseContent frame
+        position: cursorPosition - deletedLength,
         length: deletedLength,
         clientId,
         version,
       } as DeleteOperation);
     }
   } else if (inputType === 'deleteContentForward') {
-    // Delete key - deleted character was AT cursor position
+    // Delete key - deletion happened AT the cursor position
     const deletedLength = Math.abs(lengthDiff);
     if (deletedLength > 0) {
       operations.push({
@@ -84,18 +82,19 @@ export function generateOperationsFromInputEvent(
     }
   } else if (inputType.startsWith('delete')) {
     // Other delete operations (word, line, etc.)
+    // These typically delete content before cursor (like Ctrl+Backspace)
     const deletedLength = Math.abs(lengthDiff);
     if (deletedLength > 0) {
       operations.push({
         type: 'delete',
-        position: cursorPosition,
+        position: cursorPosition - deletedLength,
         length: deletedLength,
         clientId,
         version,
       } as DeleteOperation);
     }
   } else if (inputType === 'insertFromPaste') {
-    // Paste operation - might include deletes + inserts
+    // Paste operation - insert at cursor position
     return generateOperationsFromCursor(baseContent, newContent, cursorPosition, clientId, version);
   } else {
     // Unknown input type - fall back to cursor-based diff
@@ -107,12 +106,14 @@ export function generateOperationsFromInputEvent(
 
 /**
  * Fallback: Generate operations by comparing strings at cursor position
- * This is used when InputEvent data is not available
+ * This is used when InputEvent data is not available (e.g., paste operations)
+ *
+ * cursorPosition is the PRE-EDIT cursor position
  */
 function generateOperationsFromCursor(
   oldContent: string,
   newContent: string,
-  cursorPosition: number,
+  cursorPosition: number, // PRE-EDIT cursor position
   clientId: string,
   version: number
 ): Operation[] {
@@ -124,21 +125,22 @@ function generateOperationsFromCursor(
   const lengthDiff = newLength - oldLength;
 
   if (lengthDiff > 0) {
-    // Content was added
-    const insertedText = newContent.substring(cursorPosition - lengthDiff, cursorPosition);
+    // Content was added at the pre-edit cursor position
+    const insertedText = newContent.substring(cursorPosition, cursorPosition + lengthDiff);
     operations.push({
       type: 'insert',
-      position: cursorPosition - lengthDiff,
+      position: cursorPosition,
       text: insertedText,
       clientId,
       version,
     } as InsertOperation);
   } else if (lengthDiff < 0) {
-    // Content was deleted
+    // Content was deleted - assume deletion happened before cursor (like backspace)
+    const deletedLength = -lengthDiff;
     operations.push({
       type: 'delete',
-      position: cursorPosition,
-      length: -lengthDiff,
+      position: cursorPosition - deletedLength,
+      length: deletedLength,
       clientId,
       version,
     } as DeleteOperation);

@@ -12,6 +12,9 @@ export function useEditor() {
   let textareaScrollRef = $state<HTMLTextAreaElement | null>(null);
   let isUpdating = false;
   let lastLocalContent = $state('');
+  // Cursor position captured BEFORE DOM changes (in beforeinput event)
+  // This is critical for accurate OT position calculations
+  let preEditCursorPosition: number | null = null;
 
   return {
     get content() { return content; },
@@ -37,6 +40,9 @@ export function useEditor() {
 
     get lastLocalContent() { return lastLocalContent; },
     set lastLocalContent(value: string) { lastLocalContent = value; },
+
+    get preEditCursorPosition() { return preEditCursorPosition; },
+    set preEditCursorPosition(value: number | null) { preEditCursorPosition = value; },
 
     focusEditor() {
       setTimeout(() => {

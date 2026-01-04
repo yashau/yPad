@@ -193,6 +193,11 @@
     if (!editorElement) return;
 
     const handleBeforeInput = () => {
+      // CRITICAL: Capture cursor position BEFORE DOM changes
+      // This is essential for accurate OT position calculations
+      // The input event fires AFTER the DOM is modified, so we must capture here
+      editor.preEditCursorPosition = wsConnection.getCurrentCursorPosition();
+
       // Cursor update will be sent after the input is processed
       // This captures typing, backspace, delete, enter, paste, etc.
       setTimeout(() => wsConnection.sendCursorUpdate(), 0);
@@ -254,7 +259,14 @@
 
     // Capture the old content and cursor position before updating
     const oldContent = editor.content;
-    const cursorPosition = wsConnection.getCurrentCursorPosition();
+    // Use pre-edit cursor position captured in beforeinput event
+    // This is the cursor position BEFORE the DOM was modified, which is critical
+    // for accurate OT position calculations. Falls back to post-edit position if not available.
+    const preEditPos = editor.preEditCursorPosition;
+    const postEditPos = wsConnection.getCurrentCursorPosition();
+    const cursorPosition = preEditPos ?? postEditPos;
+    // Clear the pre-edit position after using it
+    editor.preEditCursorPosition = null;
 
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
       // For realtime mode, update editor.content optimistically

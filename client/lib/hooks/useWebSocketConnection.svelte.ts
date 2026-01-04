@@ -99,8 +99,14 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             editor.syntaxHighlight = syntax;
           }
 
-          if (collaboration.pendingLocalContent !== null && collaboration.pendingLocalContent !== syncContent) {
-            const ops = generateOperations(syncContent, collaboration.pendingLocalContent, collaboration.clientId, noteState.currentVersion);
+          // Check for local content that differs from server sync content
+          // This handles both:
+          // 1. pendingLocalContent from typing while WebSocket was connecting
+          // 2. editor.content changes made during initial PUT request (race condition)
+          const localContent = collaboration.pendingLocalContent ?? editor.content;
+
+          if (localContent !== syncContent) {
+            const ops = generateOperations(syncContent, localContent, collaboration.clientId, noteState.currentVersion);
 
             // Send each operation with correct incremental version
             ops.forEach((op, index) => {
@@ -113,12 +119,13 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             });
 
             editor.isUpdating = true;
-            editor.content = collaboration.pendingLocalContent;
-            editor.lastLocalContent = collaboration.pendingLocalContent;
+            editor.content = localContent;
+            editor.lastLocalContent = localContent;
             editor.isUpdating = false;
 
             collaboration.pendingLocalContent = null;
-          } else if (syncContent !== editor.content) {
+          } else {
+            // Content matches, just ensure editor state is in sync
             editor.isUpdating = true;
             editor.content = syncContent;
             editor.lastLocalContent = syncContent;

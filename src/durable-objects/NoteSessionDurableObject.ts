@@ -421,9 +421,13 @@ export class NoteSessionDurableObject implements DurableObject {
     let operation = message.operation;
     const baseVersion = message.baseVersion;
 
-    // Transform operation against all operations since baseVersion
+    // Transform operation against operations from OTHER clients since baseVersion
+    // CRITICAL: Do NOT transform against the same client's own operations!
+    // When a client types fast, their operations arrive with stale baseVersions
+    // but they are already sequential from the client's perspective.
+    // We only need to transform against concurrent operations from other clients.
     const operationsToTransform = this.operationHistory.filter(
-      (op) => op.version > baseVersion
+      (op) => op.version > baseVersion && op.clientId !== operation.clientId
     );
 
     for (const historicalOp of operationsToTransform) {
