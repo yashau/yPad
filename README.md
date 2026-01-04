@@ -24,9 +24,10 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 - **User Presence**: Live count of connected collaborators
 
 ### Security & Privacy
-- **End-to-End Encryption**: AES-GCM 256-bit client-side encryption for password-protected notes
+- **True End-to-End Encryption**: AES-GCM 256-bit client-side encryption for password-protected notes
+- **Password Never Leaves Browser**: Passwords are used locally for encryption/decryption only - never transmitted to the server
 - **Password Protection**: PBKDF2 key derivation (100,000 iterations)
-- **Zero-Knowledge**: Server never sees plaintext for protected notes
+- **Zero-Knowledge**: Server only stores encrypted blobs, never sees plaintext or passwords
 
 ### Note Management
 - **Auto-Save**: Automatic saving as you type
@@ -268,6 +269,7 @@ E2E test suites cover:
 - Alert banners (encryption enabled/disabled, note deleted, password errors, reload prompts)
 - Syntax highlighting (JavaScript, JSON, Python, TypeScript, YAML, SQL)
 - Theme permutations (light/dark modes with system theme combinations)
+- E2E encryption security (verifies passwords and plaintext never leave the browser)
 - Screenshots generated for visual regression testing
 
 ### Project Structure
@@ -364,6 +366,7 @@ yPad/
 │   └── rate-limiting/          # Rate limiting tests
 ├── e2e/                         # Playwright e2e tests
 │   ├── alert-banners.spec.ts   # Alert banner tests
+│   ├── e2e-encryption.spec.ts  # E2E encryption security tests
 │   ├── syntax-highlighting.spec.ts  # Syntax highlighting tests
 │   └── screenshots/            # Generated test screenshots
 ├── dist/                        # Build output (gitignored)
@@ -558,14 +561,11 @@ When a note reaches its maximum view count:
 #### `GET /api/notes/:id`
 Retrieve a note by ID. Updates `last_accessed_at` timestamp.
 
-**Query Parameters**:
-- `password` (optional): Password for protected notes
-
 **Response**:
 ```json
 {
   "id": "abc123",
-  "content": "Note content (encrypted if protected)",
+  "content": "Note content (encrypted blob if protected)",
   "syntax_highlight": "javascript",
   "view_count": 5,
   "max_views": null,
@@ -576,9 +576,11 @@ Retrieve a note by ID. Updates `last_accessed_at` timestamp.
 ```
 
 **Side Effects**:
-- Increments `view_count`
+- Increments `view_count` (for non-encrypted notes only)
 - Updates `last_accessed_at` timestamp
 - If `is_last_view` is true, note is deleted after response
+
+**Note**: For encrypted notes, content is returned as an encrypted blob. Decryption happens client-side.
 
 #### `POST /api/notes`
 Create a new note. Initializes `last_accessed_at` to current timestamp.
@@ -587,11 +589,11 @@ Create a new note. Initializes `last_accessed_at` to current timestamp.
 ```json
 {
   "id": "custom-id",
-  "content": "Note content",
-  "password": "optional-password",
+  "content": "Note content (or encrypted blob)",
   "syntax_highlight": "plaintext",
   "max_views": null,
-  "expires_in": null
+  "expires_in": null,
+  "is_encrypted": false
 }
 ```
 
@@ -629,7 +631,20 @@ Update an existing note.
 Delete a note and cleanup Durable Object state.
 
 **Query Parameters**:
-- `password` (optional): Required for protected notes
+- `session_id` (optional): Session ID for WebSocket cleanup
+
+#### `POST /api/notes/:id/view`
+Confirm view for encrypted notes after successful client-side decryption.
+
+**Response**:
+```json
+{
+  "view_count": 6,
+  "is_last_view": false
+}
+```
+
+**Note**: This endpoint is only used for encrypted notes. View count is incremented after the client successfully decrypts the content.
 
 #### `GET /api/check/:id`
 Check if a custom ID is available.
@@ -645,7 +660,7 @@ Check if a custom ID is available.
 
 #### Connection
 ```
-ws://localhost:8787/api/notes/:id/ws?password=optional
+ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Side Effects**:
@@ -807,13 +822,17 @@ For password-protected notes:
 1. User enters password
 2. Password derives encryption key (PBKDF2, 100,000 iterations)
 3. Content encrypted with AES-GCM before transmission
-4. Encrypted content + password hash sent to server
-5. Server stores encrypted content, never sees plaintext
-6. On retrieval, server verifies password hash
-7. Client decrypts content with user's password
+4. **Only encrypted blob sent to server** - password never leaves the browser
+5. Server stores encrypted content, never sees plaintext or password
+6. On retrieval, server returns encrypted blob (no password verification)
+7. Client decrypts content locally - decryption success validates password
 8. **Real-time collaboration is automatically disabled** to maintain E2E encryption
-9. Password verification required before removing encryption
-10. All connected clients notified when encryption status changes
+9. All connected clients notified when encryption status changes
+
+**Security Guarantees** (verified by E2E tests):
+- Passwords are never transmitted to the server in any form
+- Plaintext content is never sent after encryption is enabled
+- Server only stores and serves encrypted blobs
 
 ### Max Views & Expiration
 
