@@ -37,10 +37,10 @@ describe('WebSocketClient', () => {
       expect(client.isConnected()).toBe(true);
     });
 
-    it('should include password in URL when provided', () => {
+    it('should connect without password in URL (true E2E encryption)', () => {
+      // Passwords are never sent to the server - encryption/decryption is client-side only
       const options = {
         sessionId,
-        password: 'secret123',
       };
       client = new WebSocketClient(noteId, options);
 
@@ -392,11 +392,11 @@ describe('WebSocketClient', () => {
       ws.simulateMessage({
         type: 'encryption_changed',
         is_encrypted: true,
-        has_password: true,
       });
       vi.advanceTimersByTime(10);
 
-      expect(onEncryptionChanged).toHaveBeenCalledWith(true, true);
+      // With true E2E encryption, only is_encrypted is sent (no has_password)
+      expect(onEncryptionChanged).toHaveBeenCalledWith(true);
     });
 
     it('should handle version update message', () => {

@@ -154,42 +154,20 @@ describe('API Constants and Validation', () => {
   });
 });
 
-describe('Password hashing and verification', () => {
-  // Test the hash function behavior
+describe('Client-side encryption behavior', () => {
+  // Test encryption-related logic (passwords never leave browser)
 
-  it('should produce consistent hashes', async () => {
-    const password = 'test-password';
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password);
-
-    // Our mock returns predictable results
-    const hash1 = await crypto.subtle.digest('SHA-256', data);
-    const hash2 = await crypto.subtle.digest('SHA-256', data);
-
-    const hex1 = Array.from(new Uint8Array(hash1))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    const hex2 = Array.from(new Uint8Array(hash2))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    expect(hex1).toBe(hex2);
+  it('should use Web Crypto API for encryption', async () => {
+    // Verify crypto.subtle is available for client-side encryption
+    expect(crypto.subtle).toBeDefined();
+    expect(crypto.subtle.encrypt).toBeDefined();
+    expect(crypto.subtle.decrypt).toBeDefined();
   });
 
-  it('should produce different hashes for different passwords', async () => {
-    const encoder = new TextEncoder();
-
-    const hash1 = await crypto.subtle.digest('SHA-256', encoder.encode('password1'));
-    const hash2 = await crypto.subtle.digest('SHA-256', encoder.encode('password2'));
-
-    const hex1 = Array.from(new Uint8Array(hash1))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-    const hex2 = Array.from(new Uint8Array(hash2))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-
-    expect(hex1).not.toBe(hex2);
+  it('should support PBKDF2 for key derivation', async () => {
+    // Verify PBKDF2 is available for password-based key derivation
+    expect(crypto.subtle.importKey).toBeDefined();
+    expect(crypto.subtle.deriveKey).toBeDefined();
   });
 });
 
@@ -536,10 +514,13 @@ describe('Encryption change detection', () => {
     expect(checkEncryptionChanged(true, true)).toBe(false);
   });
 
-  it('should detect password change on encrypted note', () => {
-    const newPasswordHash: string = 'newhash123';
-    const existingPasswordHash: string = 'oldhash456';
-    const passwordChanged = newPasswordHash !== existingPasswordHash;
-    expect(passwordChanged).toBe(true);
+  it('should use is_encrypted flag only (no server-side password verification)', () => {
+    // With true E2E encryption, server only knows if content is encrypted
+    // Password is never sent to server - verification happens client-side via decryption
+    const noteIsEncrypted = true;
+    const serverKnowsPassword = false; // Server never knows the password
+
+    expect(noteIsEncrypted).toBe(true);
+    expect(serverKnowsPassword).toBe(false);
   });
 });

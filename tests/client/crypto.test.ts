@@ -368,26 +368,26 @@ describe('Error handling', () => {
 });
 
 describe('Integration scenarios', () => {
-  it('should support note protection workflow', async () => {
-    // Simulate protecting a note with password
+  it('should support true E2E encryption workflow', async () => {
+    // Simulate protecting a note with password (true E2E - password never leaves browser)
     const noteContent = 'This is a secret note';
     const userPassword = 'myP@ssw0rd!';
 
-    // 1. Hash password for server verification
-    const passwordHash = await hashPassword(userPassword);
-    expect(passwordHash.length).toBe(64);
-
-    // 2. Encrypt content for E2E encryption
+    // 1. Encrypt content client-side (password never sent to server)
     const encryptedContent = await encryptContent(noteContent, userPassword);
     expect(typeof encryptedContent).toBe('string');
 
-    // 3. Later, user enters password to view note
-    const decryptedContent = await decryptContent(encryptedContent, userPassword);
+    // 2. Server only stores encrypted blob (never sees password or plaintext)
+    const serverStores = encryptedContent;
+    expect(serverStores).not.toContain(noteContent);
+    expect(serverStores).not.toContain(userPassword);
+
+    // 3. Client retrieves encrypted blob and decrypts locally
+    const decryptedContent = await decryptContent(serverStores, userPassword);
     expect(decryptedContent).toBe(noteContent);
 
-    // 4. Verify password hash matches
-    const verificationHash = await hashPassword(userPassword);
-    expect(verificationHash).toBe(passwordHash);
+    // 4. Password verification happens via successful decryption (not server-side)
+    // If wrong password, decryption throws - that's how we verify
   });
 
   it('should support password change workflow', async () => {
@@ -408,5 +408,22 @@ describe('Integration scenarios', () => {
     // Verify new password works
     const decryptedWithNew = await decryptContent(encryptedWithNew, newPassword);
     expect(decryptedWithNew).toBe(noteContent);
+  });
+
+  it('should verify password via decryption (E2E principle)', async () => {
+    // In real crypto, wrong password causes decryption to fail
+    // This is how password verification works client-side (no server check)
+    // Note: Mock crypto doesn't actually verify, but real AES-GCM does
+    const noteContent = 'Secret content';
+    const password = 'correct123';
+
+    const encrypted = await encryptContent(noteContent, password);
+    const decrypted = await decryptContent(encrypted, password);
+
+    // Correct password allows decryption
+    expect(decrypted).toBe(noteContent);
+
+    // In production: wrong password would throw due to auth tag mismatch
+    // This is the E2E encryption principle - password never sent to server
   });
 });

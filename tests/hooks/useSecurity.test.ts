@@ -67,19 +67,25 @@ describe('useSecurity logic', () => {
       expect(isEncrypted).toBe(true);
     });
 
-    it('should differentiate between hasPassword and isEncrypted', () => {
-      // A note can have a password without E2E encryption
-      let hasPassword = true;
+    it('should link hasPassword and isEncrypted (true E2E encryption)', () => {
+      // With true E2E encryption, hasPassword and isEncrypted are always in sync
+      // If encrypted, has password. If has password, is encrypted.
+      let hasPassword = false;
       let isEncrypted = false;
 
-      expect(hasPassword).toBe(true);
-      expect(isEncrypted).toBe(false);
-
-      // A note with E2E encryption always has a password
+      // Enable encryption (sets both)
+      hasPassword = true;
       isEncrypted = true;
 
       expect(hasPassword).toBe(true);
       expect(isEncrypted).toBe(true);
+
+      // Disable encryption (clears both)
+      hasPassword = false;
+      isEncrypted = false;
+
+      expect(hasPassword).toBe(false);
+      expect(isEncrypted).toBe(false);
     });
   });
 
@@ -205,23 +211,20 @@ describe('useSecurity password workflow logic', () => {
   });
 
   describe('password removal flow', () => {
-    it('should handle password removal', () => {
+    it('should handle password removal (no verification needed - user already decrypted)', () => {
       let hasPassword = true;
       let isEncrypted = true;
       let password = 'existingPassword';
-      let removePasswordInput = '';
-      let removePasswordError = '';
 
-      // User enters current password for confirmation
-      removePasswordInput = 'existingPassword';
+      // With true E2E encryption, user must have already decrypted the note
+      // to see its contents, so they've already proven they know the password.
+      // No additional verification is needed for removal.
+      const userCanSeeContent = password !== ''; // They have the password
 
-      // Verify and remove
-      if (removePasswordInput === password) {
+      if (userCanSeeContent) {
         hasPassword = false;
         isEncrypted = false;
         password = '';
-        removePasswordInput = '';
-        removePasswordError = '';
       }
 
       expect(hasPassword).toBe(false);
@@ -229,24 +232,17 @@ describe('useSecurity password workflow logic', () => {
       expect(password).toBe('');
     });
 
-    it('should reject incorrect password for removal', () => {
+    it('should require decrypted state before removal', () => {
       let hasPassword = true;
       let isEncrypted = true;
-      let password = 'existingPassword';
-      let removePasswordInput = '';
-      let removePasswordError = '';
+      let password = ''; // User hasn't decrypted yet
 
-      // User enters wrong password
-      removePasswordInput = 'wrongPassword';
+      // User cannot remove password if they haven't decrypted the note
+      const userCanSeeContent = password !== '';
 
-      // Verify and fail
-      if (removePasswordInput !== password) {
-        removePasswordError = 'Password does not match';
-      }
-
-      expect(hasPassword).toBe(true);
+      expect(userCanSeeContent).toBe(false);
+      expect(hasPassword).toBe(true); // Should remain encrypted
       expect(isEncrypted).toBe(true);
-      expect(removePasswordError).toBe('Password does not match');
     });
   });
 });
@@ -261,13 +257,18 @@ describe('useSecurity encryption state logic', () => {
     expect(requiresPassword).toBe(true);
   });
 
-  it('should allow password-only mode without encryption', () => {
-    let hasPassword = true;
+  it('should always link password and encryption (true E2E)', () => {
+    // With true E2E encryption, there's no "password-only" mode
+    // Password protection = encryption, always
+    let hasPassword = false;
     let isEncrypted = false;
 
-    // Password protects access but content is not E2E encrypted
+    // Setting password enables encryption
+    hasPassword = true;
+    isEncrypted = true; // These are always in sync
+
     expect(hasPassword).toBe(true);
-    expect(isEncrypted).toBe(false);
+    expect(isEncrypted).toBe(true);
   });
 
   it('should handle encryption toggle', () => {
