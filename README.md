@@ -131,8 +131,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 ```sql
 CREATE TABLE notes (
     id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    password_hash TEXT,
+    content TEXT NOT NULL,              -- Plaintext or encrypted blob
     syntax_highlight TEXT DEFAULT 'plaintext',
     view_count INTEGER DEFAULT 0,
     max_views INTEGER,
@@ -141,8 +140,8 @@ CREATE TABLE notes (
     updated_at INTEGER NOT NULL,
     version INTEGER DEFAULT 1,
     last_session_id TEXT,
-    is_encrypted INTEGER DEFAULT 0,
-    last_accessed_at INTEGER  -- Tracks when note was last viewed
+    is_encrypted INTEGER DEFAULT 0,     -- True E2E encryption flag
+    last_accessed_at INTEGER            -- Tracks when note was last viewed
 );
 
 CREATE INDEX idx_notes_expires_at ON notes(expires_at);
@@ -376,9 +375,7 @@ yPad/
 │   ├── prod.ps1                 # Windows production deployment
 │   └── prod.sh                  # Mac/Linux production deployment
 ├── migrations/                  # D1 database migrations
-│   ├── 0001_initial_schema.sql
-│   ├── 0002_add_last_accessed_at.sql
-│   └── 0003_performance_indexes.sql
+│   └── 0001_initial_schema.sql  # Consolidated schema
 ├── config/                      # Configuration files
 │   └── constants.ts            # Application constants & validation
 ├── .env.example                 # Example environment config
