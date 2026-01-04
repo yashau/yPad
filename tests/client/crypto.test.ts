@@ -1,10 +1,10 @@
 /**
  * Tests for client-side crypto utilities
- * Tests encryption, decryption, and password hashing functions
+ * Tests encryption and decryption functions
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { encryptContent, decryptContent, hashPassword } from '../../client/lib/crypto';
+import { encryptContent, decryptContent } from '../../client/lib/crypto';
 
 describe('encryptContent', () => {
   it('should return a base64 encoded string', async () => {
@@ -145,94 +145,6 @@ describe('decryptContent', () => {
     const decrypted = await decryptContent(encrypted, password);
 
     expect(decrypted).toBe(originalContent);
-  });
-});
-
-describe('hashPassword', () => {
-  it('should return a hex string', async () => {
-    const password = 'secret123';
-
-    const hash = await hashPassword(password);
-
-    // Should be 64 characters (256 bits = 32 bytes = 64 hex chars)
-    expect(hash.length).toBe(64);
-    // Should only contain hex characters
-    expect(/^[0-9a-f]+$/.test(hash)).toBe(true);
-  });
-
-  it('should return consistent hash for same password', async () => {
-    const password = 'secret123';
-
-    const hash1 = await hashPassword(password);
-    const hash2 = await hashPassword(password);
-
-    expect(hash1).toBe(hash2);
-  });
-
-  it('should return different hashes for different passwords', async () => {
-    const password1 = 'secret123';
-    const password2 = 'secret124';
-
-    const hash1 = await hashPassword(password1);
-    const hash2 = await hashPassword(password2);
-
-    expect(hash1).not.toBe(hash2);
-  });
-
-  it('should handle empty password', async () => {
-    const password = '';
-
-    const hash = await hashPassword(password);
-
-    expect(hash.length).toBe(64);
-    expect(/^[0-9a-f]+$/.test(hash)).toBe(true);
-  });
-
-  it('should handle unicode password', async () => {
-    const password = '日本語パスワード';
-
-    const hash = await hashPassword(password);
-
-    expect(hash.length).toBe(64);
-    expect(/^[0-9a-f]+$/.test(hash)).toBe(true);
-  });
-
-  it('should handle long password', async () => {
-    const password = 'x'.repeat(10000);
-
-    const hash = await hashPassword(password);
-
-    expect(hash.length).toBe(64);
-    expect(/^[0-9a-f]+$/.test(hash)).toBe(true);
-  });
-
-  it('should handle special characters in password', async () => {
-    const password = '!@#$%^&*()_+-=[]{}|;:\'",.<>?/\\`~';
-
-    const hash = await hashPassword(password);
-
-    expect(hash.length).toBe(64);
-    expect(/^[0-9a-f]+$/.test(hash)).toBe(true);
-  });
-
-  it('should be case-sensitive', async () => {
-    const hash1 = await hashPassword('Password');
-    const hash2 = await hashPassword('password');
-    const hash3 = await hashPassword('PASSWORD');
-
-    expect(hash1).not.toBe(hash2);
-    expect(hash2).not.toBe(hash3);
-    expect(hash1).not.toBe(hash3);
-  });
-
-  it('should differentiate similar passwords', async () => {
-    const hash1 = await hashPassword('password1');
-    const hash2 = await hashPassword('password2');
-    const hash3 = await hashPassword('password3');
-
-    expect(hash1).not.toBe(hash2);
-    expect(hash2).not.toBe(hash3);
-    expect(hash1).not.toBe(hash3);
   });
 });
 

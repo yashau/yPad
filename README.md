@@ -1,7 +1,7 @@
 # yPad
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-502%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-493%20passed-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -14,6 +14,45 @@
 A real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network.
 
 **Live: [https://yp.pe](https://yp.pe)**
+
+## Table of Contents
+
+- [Features](#features)
+  - [Real-Time Collaboration](#real-time-collaboration)
+  - [Security & Privacy](#security--privacy)
+  - [Note Management](#note-management)
+  - [Editor](#editor)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Development](#development)
+  - [Development Scripts](#development-scripts)
+  - [Database Commands](#database-commands)
+  - [Testing](#testing)
+  - [Project Structure](#project-structure)
+- [Deployment](#deployment)
+- [Usage](#usage)
+  - [Creating a Note](#creating-a-note)
+  - [Setting a Custom URL](#setting-a-custom-url)
+  - [Adding Password Protection](#adding-password-protection)
+  - [Removing Password Protection](#removing-password-protection)
+  - [Configuring Note Options](#configuring-note-options)
+  - [Real-Time Collaboration](#real-time-collaboration-1)
+  - [Viewing a Protected Note](#viewing-a-protected-note)
+  - [Final View Handling](#final-view-handling)
+- [API Reference](#api-reference)
+  - [REST Endpoints](#rest-endpoints)
+  - [WebSocket Protocol](#websocket-protocol)
+- [Key Features Explained](#key-features-explained)
+  - [Operational Transform (OT)](#operational-transform-ot)
+  - [Content Integrity & Self-Healing](#content-integrity--self-healing)
+  - [Client-Side Encryption](#client-side-encryption)
+  - [Max Views & Expiration](#max-views--expiration)
+  - [Automatic Cleanup](#automatic-cleanup)
+  - [Rate Limiting](#rate-limiting)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
 
 ## Features
 
@@ -509,8 +548,8 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 ### Removing Password Protection
 
 1. Click the lock icon in the header
-2. Enter the current password to verify
-3. Password is verified before decryption
+2. Confirm removal in the dialog
+3. Content is decrypted and saved without encryption
 4. Real-time collaboration is automatically re-enabled
 
 ### Configuring Note Options
