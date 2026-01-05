@@ -169,6 +169,10 @@ export type UserJoinedMessage = {
   clientId: string;
   /** All currently connected client IDs */
   connectedUsers: string[];
+  /** Current number of active editors */
+  activeEditorCount: number;
+  /** Current number of viewers */
+  viewerCount: number;
   seqNum?: number;
 };
 
@@ -180,6 +184,10 @@ export type UserLeftMessage = {
   clientId: string;
   /** All currently connected client IDs */
   connectedUsers: string[];
+  /** Current number of active editors */
+  activeEditorCount: number;
+  /** Current number of viewers */
+  viewerCount: number;
   seqNum?: number;
 };
 
@@ -209,6 +217,42 @@ export type NoteStatusMessage = {
   view_count: number;
   max_views: number | null;
   expires_at: number | null;
+};
+
+/**
+ * Client requests permission to edit.
+ * Sent after sync to check if client can become an active editor.
+ */
+export type RequestEditMessage = {
+  type: 'request_edit';
+  clientId: string;
+  sessionId: string;
+};
+
+/**
+ * Server responds to edit permission request.
+ */
+export type RequestEditResponseMessage = {
+  type: 'request_edit_response';
+  /** Whether the client is allowed to edit */
+  canEdit: boolean;
+  /** Current number of active editors */
+  activeEditorCount: number;
+  /** Current number of viewers */
+  viewerCount: number;
+};
+
+/**
+ * Server broadcasts updated editor/viewer counts.
+ * Sent when a viewer becomes an active editor (sends their first operation).
+ */
+export type EditorCountUpdateMessage = {
+  type: 'editor_count_update';
+  /** Current number of active editors */
+  activeEditorCount: number;
+  /** Current number of viewers */
+  viewerCount: number;
+  seqNum?: number;
 };
 
 /**
@@ -260,6 +304,9 @@ export type WSMessage =
   | SyntaxChangeMessage
   | SyntaxAckMessage
   | NoteStatusMessage
+  | RequestEditMessage
+  | RequestEditResponseMessage
+  | EditorCountUpdateMessage
   | ReplayRequestMessage
   | ReplayResponseMessage;
 
@@ -291,4 +338,6 @@ export interface ClientSession {
   ws: WebSocket;
   /** Rate limiting state */
   rateLimit: RateLimitState;
+  /** Timestamp of last operation sent by this client (null = viewer, never sent an operation) */
+  lastOperationAt: number | null;
 }

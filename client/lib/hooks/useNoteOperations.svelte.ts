@@ -103,7 +103,9 @@ export function useNoteOperations(config: NoteOperationsConfig) {
       editor.lastLocalContent = editor.content;
       editor.syntaxHighlight = data.syntax_highlight || 'plaintext';
       noteState.currentVersion = data.version || 1;
-      noteState.viewMode = false;
+      // Non-encrypted notes start in viewMode until WebSocket confirms edit permission
+      // Encrypted notes don't use WebSocket, so they can edit immediately
+      noteState.viewMode = !security.isEncrypted;
       security.passwordRequired = false;
       security.passwordError = '';
 

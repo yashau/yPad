@@ -290,6 +290,14 @@ export const SECURITY_HEADERS = {
   REFERRER_POLICY: 'strict-origin-when-cross-origin',
 } as const;
 
+/** Editor limit configuration for scaling. */
+export const EDITOR_LIMITS = {
+  /** Maximum concurrent active editors per note */
+  MAX_ACTIVE_EDITORS: 10,
+  /** Time in ms before an idle editor is considered inactive */
+  ACTIVE_TIMEOUT_MS: 60_000,
+} as const;
+
 /** Rate limiting configuration. */
 export const RATE_LIMITS = {
   /** REST API limits (per session) */

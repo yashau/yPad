@@ -26,12 +26,14 @@ import type {
   CursorUpdateMessage,
   SyntaxChangeMessage,
   ReplayRequestMessage,
+  RequestEditMessage,
 } from '../ot/types';
 import {
   handleOperation as handleOperationImpl,
   handleCursorUpdate as handleCursorUpdateImpl,
   handleSyntaxChange as handleSyntaxChangeImpl,
   handleReplayRequest as handleReplayRequestImpl,
+  handleRequestEdit as handleRequestEditImpl,
   broadcastEncryptionChange as broadcastEncryptionChangeImpl,
   broadcastVersionUpdate as broadcastVersionUpdateImpl,
   broadcastUserJoined as broadcastUserJoinedImpl,
@@ -234,6 +236,7 @@ export class NoteSessionDurableObject implements DurableObject {
         lastRefill: Date.now(),
         violations: 0,
       },
+      lastOperationAt: null, // Starts as viewer until first operation
     };
 
     // Send initial sync message BEFORE adding to sessions
@@ -364,6 +367,8 @@ export class NoteSessionDurableObject implements DurableObject {
       await handleSyntaxChangeImpl(ctx, ws, message as SyntaxChangeMessage);
     } else if (message.type === 'replay_request') {
       await handleReplayRequestImpl(ctx, ws, message as ReplayRequestMessage);
+    } else if (message.type === 'request_edit') {
+      await handleRequestEditImpl(ctx, ws, message as RequestEditMessage);
     }
 
     // Sync state changes from handler back to the DO

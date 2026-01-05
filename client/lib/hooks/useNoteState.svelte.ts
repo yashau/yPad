@@ -23,6 +23,11 @@ export function useNoteState() {
   let serverExpiresAt = $state<number | null>(null);
   let isFinalView = $state(false);
 
+  // Editor limit state
+  let editorLimitReached = $state(false);
+  let activeEditorCount = $state(0);
+  let viewerCount = $state(0);
+
   function initializeSession() {
     const existingSessionId = sessionStorage.getItem('paste-session-id');
     if (existingSessionId) {
@@ -54,6 +59,9 @@ export function useNoteState() {
     serverViewCount = 0;
     serverExpiresAt = null;
     isFinalView = false;
+    editorLimitReached = false;
+    activeEditorCount = 0;
+    viewerCount = 0;
   }
 
   return {
@@ -95,6 +103,15 @@ export function useNoteState() {
 
     get isFinalView() { return isFinalView; },
     set isFinalView(value: boolean) { isFinalView = value; },
+
+    get editorLimitReached() { return editorLimitReached; },
+    set editorLimitReached(value: boolean) { editorLimitReached = value; },
+
+    get activeEditorCount() { return activeEditorCount; },
+    set activeEditorCount(value: number) { activeEditorCount = value; },
+
+    get viewerCount() { return viewerCount; },
+    set viewerCount(value: number) { viewerCount = value; },
 
     initializeSession,
     clearSaveTimeout,

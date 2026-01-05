@@ -257,13 +257,15 @@ describe('WebSocketClient', () => {
         type: 'user_joined',
         clientId: 'new-user',
         connectedUsers: ['client-id', 'new-user'],
+        activeEditorCount: 1,
+        viewerCount: 1,
         seqNum: 1,
       };
 
       ws.simulateMessage(joinMessage);
       await vi.advanceTimersByTimeAsync(10);
 
-      expect(onUserJoined).toHaveBeenCalledWith('new-user', ['client-id', 'new-user']);
+      expect(onUserJoined).toHaveBeenCalledWith('new-user', ['client-id', 'new-user'], 1, 1);
     });
 
     it('should handle user left message', async () => {
@@ -295,13 +297,15 @@ describe('WebSocketClient', () => {
         type: 'user_left',
         clientId: 'leaving-user',
         connectedUsers: ['client-id'],
+        activeEditorCount: 1,
+        viewerCount: 0,
         seqNum: 1,
       };
 
       ws.simulateMessage(leftMessage);
       await vi.advanceTimersByTimeAsync(10);
 
-      expect(onUserLeft).toHaveBeenCalledWith('leaving-user', ['client-id']);
+      expect(onUserLeft).toHaveBeenCalledWith('leaving-user', ['client-id'], 1, 0);
     });
 
     it('should handle syntax change message', async () => {
@@ -1422,6 +1426,164 @@ describe('WebSocketClient', () => {
 
       // Should still be using the same WebSocket
       expect((client as any).ws).toBe(firstWs);
+    });
+  });
+
+  describe('editor limit feature', () => {
+    it('should handle request_edit_response message', () => {
+      const onRequestEditResponse = vi.fn();
+      const options = {
+        sessionId,
+        onRequestEditResponse,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateMessage({
+        type: 'request_edit_response',
+        canEdit: true,
+        activeEditorCount: 3,
+        viewerCount: 2,
+      });
+      vi.advanceTimersByTime(10);
+
+      expect(onRequestEditResponse).toHaveBeenCalledWith(true, 3, 2);
+    });
+
+    it('should handle editor_limit_reached error', () => {
+      const onEditorLimitReached = vi.fn();
+      const onError = vi.fn();
+      const options = {
+        sessionId,
+        onEditorLimitReached,
+        onError,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateMessage({
+        type: 'error',
+        message: 'editor_limit_reached',
+      });
+      vi.advanceTimersByTime(10);
+
+      expect(onEditorLimitReached).toHaveBeenCalledTimes(1);
+      expect(onError).not.toHaveBeenCalled(); // Should not call generic error handler
+    });
+
+    it('should send request_edit message', () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      client.sendRequestEdit('my-client-id');
+
+      expect(ws.send).toHaveBeenCalled();
+      const sentMessage = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sentMessage.type).toBe('request_edit');
+      expect(sentMessage.clientId).toBe('my-client-id');
+      expect(sentMessage.sessionId).toBe(sessionId);
+    });
+
+    it('should not send request_edit when not connected', () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const options = { sessionId, autoReconnect: false };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      client.close();
+
+      client.sendRequestEdit('my-client-id');
+
+      expect(consoleSpy).toHaveBeenCalledWith('[WebSocket] Cannot send request_edit - not connected');
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle editor_count_update message', async () => {
+      const onEditorCountUpdate = vi.fn();
+      const onSync = vi.fn();
+      const options = {
+        sessionId,
+        onEditorCountUpdate,
+        onSync,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // First send sync to establish sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: 'test',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Now send editor_count_update with seqNum 1
+      ws.simulateMessage({
+        type: 'editor_count_update',
+        activeEditorCount: 5,
+        viewerCount: 3,
+        seqNum: 1,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(onEditorCountUpdate).toHaveBeenCalledWith(5, 3);
+    });
+  });
+
+  describe('connection error handling', () => {
+    it('should handle WebSocket constructor error', () => {
+      // Mock WebSocket to throw an error
+      const OriginalWebSocket = (globalThis as any).WebSocket;
+      const errorOnConnect = vi.fn().mockImplementation(() => {
+        throw new Error('Connection failed');
+      });
+      (globalThis as any).WebSocket = errorOnConnect;
+
+      const onError = vi.fn();
+      const options = {
+        sessionId,
+        onError,
+        autoReconnect: false,
+      };
+
+      try {
+        client = new WebSocketClient(noteId, options);
+        vi.advanceTimersByTime(10);
+
+        expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      } finally {
+        (globalThis as any).WebSocket = OriginalWebSocket;
+      }
+    });
+  });
+
+  describe('inbound queue edge cases', () => {
+    it('should handle JSON parse error in message', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+
+      // Simulate receiving invalid JSON
+      ws.onmessage({ data: 'invalid json {{{' });
+      vi.advanceTimersByTime(10);
+
+      expect(consoleSpy).toHaveBeenCalledWith('[WebSocket] Error parsing message:', expect.any(Error));
+      consoleSpy.mockRestore();
     });
   });
 });

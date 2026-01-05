@@ -27,6 +27,8 @@ export interface WebSocketConfig {
   onVersionUpdate?: () => void;
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
   onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
+  onRequestEditResponse?: (canEdit: boolean, activeEditorCount: number, viewerCount: number) => void;
+  onEditorLimitReached?: () => void;
 }
 
 export function useWebSocketConnection(config: WebSocketConfig) {
@@ -144,6 +146,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           }
 
           collaboration.isSyncing = false;
+
+          // Request edit permission after sync completes
+          // Server will respond with whether we can edit based on active editor limit
+          if (collaboration.wsClient && !security.isEncrypted) {
+            collaboration.wsClient.sendRequestEdit(serverClientId);
+          }
         },
         onAck: (version, contentChecksum?: number, transformedOperation?: Operation) => {
           noteState.currentVersion = version;
@@ -208,13 +216,17 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             });
           }
         },
-        onUserJoined: (joinedClientId, allConnectedUsers) => {
+        onUserJoined: (joinedClientId, allConnectedUsers, activeEditorCount, viewerCount) => {
           collaboration.connectedUsers = new Set(allConnectedUsers);
           collaboration.cleanupStaleCursors(allConnectedUsers);
+          noteState.activeEditorCount = activeEditorCount;
+          noteState.viewerCount = viewerCount;
         },
-        onUserLeft: (leftClientId, allConnectedUsers) => {
+        onUserLeft: (leftClientId, allConnectedUsers, activeEditorCount, viewerCount) => {
           collaboration.connectedUsers = new Set(allConnectedUsers);
           collaboration.cleanupStaleCursors(allConnectedUsers);
+          noteState.activeEditorCount = activeEditorCount;
+          noteState.viewerCount = viewerCount;
         },
         onSyntaxChange: (syntax) => {
           if (syntax !== editor.syntaxHighlight) {
@@ -248,6 +260,16 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           } else {
             console.error('[OT] Replay checksum mismatch - this should not happen');
           }
+        },
+        onRequestEditResponse: (canEdit, activeEditorCount, viewerCount) => {
+          config.onRequestEditResponse?.(canEdit, activeEditorCount, viewerCount);
+        },
+        onEditorLimitReached: () => {
+          config.onEditorLimitReached?.();
+        },
+        onEditorCountUpdate: (activeEditorCount, viewerCount) => {
+          noteState.activeEditorCount = activeEditorCount;
+          noteState.viewerCount = viewerCount;
         }
       });
     } catch (error) {
@@ -522,6 +544,14 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     collaboration.wsClient.sendSyntaxChange(syntax, collaboration.clientId);
   }
 
+  function sendRequestEdit() {
+    if (!collaboration.wsClient || !collaboration.isRealtimeEnabled || security.isEncrypted) {
+      return;
+    }
+
+    collaboration.wsClient.sendRequestEdit(collaboration.clientId);
+  }
+
   return {
     connectWebSocket,
     disconnectWebSocket,
@@ -529,6 +559,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     sendCursorUpdate,
     sendOperation,
     sendSyntaxChange,
+    sendRequestEdit,
     getCurrentCursorPosition,
     getCurrentSelectionRange
   };

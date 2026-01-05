@@ -1,8 +1,9 @@
 # yPad
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-638%20passed-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
+![Unit Tests](https://img.shields.io/badge/unit_tests-660_passed-brightgreen)
+![E2E Tests](https://img.shields.io/badge/e2e_tests-57_passed-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -48,6 +49,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
   - [Operational Transform (OT)](#operational-transform-ot)
   - [Content Integrity & Self-Healing](#content-integrity--self-healing)
   - [Client-Side Encryption](#client-side-encryption)
+  - [Editor Limits](#editor-limits)
   - [Max Views & Expiration](#max-views--expiration)
   - [Automatic Cleanup](#automatic-cleanup)
   - [Rate Limiting](#rate-limiting)
@@ -62,6 +64,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 - **Operational Transform**: Character-level conflict resolution
 - **Remote Cursors**: See other users' cursor positions
 - **User Presence**: Live count of connected collaborators
+- **Editor Limits**: Maximum 10 concurrent editors per note with real-time status
 
 ### Security & Privacy
 - **True End-to-End Encryption**: AES-GCM 256-bit client-side encryption for password-protected notes
@@ -352,6 +355,24 @@ E2E test suites cover:
 - Stress test: 50 rapid operations from 3 clients
 - Extreme latency difference (50ms vs 300ms clients)
 
+**Editor Limits** (`editor-limits.spec.ts`) - 16 tests
+- First user edit permission and typing capability
+- Connection status shows client ID and editor count
+- Second user joining updates connection count
+- Viewer count shown separately from editor count
+- Encrypted notes bypass editor limit (always editable)
+- Editor limit banner when 11th user tries to edit
+- Retry button allows editing after an editor leaves
+- Non-encrypted notes start in viewMode until server responds
+- Multiple editors see consistent content after concurrent edits
+- User leaving frees up editor slot
+- Editor limit banner styling (yellow warning)
+- Lock icon shown for encrypted notes
+- Ten concurrent editors at limit all can edit
+- Editor count display shows +N/M format with real-time updates
+- Multiple users blocked at limit can retry after slot opens
+- Rapid user joins and leaves maintain consistency
+
 ### Project Structure
 
 ```
@@ -449,10 +470,11 @@ yPad/
 │   ├── hooks/                  # Svelte hook tests
 │   ├── ot/                     # Operational Transform tests
 │   └── rate-limiting/          # Rate limiting tests
-├── e2e/                         # Playwright e2e tests
+├── e2e/                         # Playwright e2e tests (57 tests)
 │   ├── alert-banners.spec.ts   # Alert banner tests
 │   ├── comprehensive-ot.spec.ts # Comprehensive OT tests (13 tests)
 │   ├── e2e-encryption.spec.ts  # E2E encryption security tests
+│   ├── editor-limits.spec.ts   # Editor limit & concurrent user tests (16 tests)
 │   ├── realtime-ot.spec.ts     # Real-time OT collaboration tests
 │   ├── syntax-highlighting.spec.ts  # Syntax highlighting tests
 │   └── screenshots/            # Generated test screenshots
@@ -614,17 +636,18 @@ Click **Options** to set:
 ### Real-Time Collaboration
 
 1. Share your note URL with others
-2. Multiple users can edit simultaneously (for non-encrypted notes)
+2. Multiple users can edit simultaneously (for non-encrypted notes, max 10 concurrent editors)
 3. Changes appear in real-time with operational transform
 4. Conflicts are automatically resolved
 5. See other users' cursors with color-coded position indicators
 6. Visual status indicators in the header:
    - **Green pulse**: Real-time sync active
-   - **User count**: Shows your client ID and `+N` for N other connected users
-   - **Blue pulse**: Connected but collaboration disabled (encrypted note)
+   - **User count**: Shows your client ID with `+N/M` format (N other editors, M viewers)
+   - **Blue lock**: Connected but collaboration disabled (encrypted note)
    - **Red**: Disconnected
    - **Trash icon**: Note has been deleted
-7. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
+7. **Editor Limit**: Maximum 10 concurrent editors per note. Additional users can view in real-time but must wait for a slot to edit
+8. **Note**: Real-time collaboration is automatically disabled for password-protected notes to preserve end-to-end encryption
 
 ### Viewing a Protected Note
 
@@ -818,6 +841,8 @@ ws://localhost:8787/api/notes/:id/ws
   "type": "user_joined",
   "clientId": "abc123",
   "connectedUsers": ["abc123", "def456", "ghi789"],
+  "activeEditorCount": 2,
+  "viewerCount": 1,
   "seqNum": 6
 }
 ```
@@ -828,7 +853,38 @@ ws://localhost:8787/api/notes/:id/ws
   "type": "user_left",
   "clientId": "abc123",
   "connectedUsers": ["def456", "ghi789"],
+  "activeEditorCount": 1,
+  "viewerCount": 1,
   "seqNum": 7
+}
+```
+
+**Request Edit** (client → server):
+```json
+{
+  "type": "request_edit",
+  "clientId": "abc123",
+  "sessionId": "session-uuid"
+}
+```
+
+**Request Edit Response** (server → client):
+```json
+{
+  "type": "request_edit_response",
+  "canEdit": true,
+  "activeEditorCount": 3,
+  "viewerCount": 2
+}
+```
+
+**Editor Count Update** (server → client):
+```json
+{
+  "type": "editor_count_update",
+  "activeEditorCount": 4,
+  "viewerCount": 1,
+  "seqNum": 8
 }
 ```
 
@@ -961,6 +1017,48 @@ For password-protected notes:
 - Passwords are never transmitted to the server in any form
 - Plaintext content is never sent after encryption is enabled
 - Server only stores and serves encrypted blobs
+
+### Editor Limits
+
+yPad limits concurrent editors to prevent resource exhaustion and ensure a smooth editing experience for all users.
+
+#### How It Works
+
+- **Maximum 10 active editors** per note at any time
+- **Active editor**: A user who has sent an operation (typed/edited) within the last 60 seconds
+- **Viewer**: A connected user who hasn't edited recently (can view in real-time)
+- **Encrypted notes bypass the limit**: Since real-time collaboration is disabled for encrypted notes, they're always editable
+
+#### User Experience
+
+1. **Status Display**: Header shows `clientId +N/M` format
+   - `clientId`: Your 4-character identifier
+   - `+N`: Number of other active editors
+   - `/M`: Number of viewers (users who haven't typed recently)
+   - Example: `a1b2 +3/5` = you + 3 other editors + 5 viewers
+
+2. **Becoming an Editor**: When you start typing:
+   - Client requests edit permission from server
+   - If under limit (< 10 editors), you're granted editing
+   - Your status updates from viewer to active editor
+   - All clients receive real-time count updates
+
+3. **At the Limit**: When 10 editors are active:
+   - New users can still view the note in real-time
+   - Attempting to edit shows a yellow warning banner
+   - "Retry" button lets you check if a slot opened up
+   - When an editor leaves or times out (60s), a slot opens
+
+#### Configuration
+
+Editor limits are configured in `config/constants.ts`:
+
+```typescript
+export const EDITOR_LIMITS = {
+  MAX_ACTIVE_EDITORS: 10,      // Maximum concurrent editors per note
+  ACTIVE_TIMEOUT_MS: 60_000,   // Time before an idle editor becomes a viewer
+} as const;
+```
 
 ### Max Views & Expiration
 

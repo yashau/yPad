@@ -12,7 +12,8 @@
     isRealtimeEnabled: boolean;
     isEncrypted: boolean;
     clientId: string;
-    connectedUsers: Set<string>;
+    activeEditorCount: number;
+    viewerCount: number;
     saveStatus: string;
     isSyncing: boolean;
     viewMode: boolean;
@@ -37,7 +38,8 @@
     isRealtimeEnabled,
     isEncrypted,
     clientId,
-    connectedUsers,
+    activeEditorCount,
+    viewerCount,
     saveStatus,
     isSyncing,
     viewMode,
@@ -87,7 +89,8 @@
           {isEncrypted}
           {isRealtimeEnabled}
           {clientId}
-          {connectedUsers}
+          {activeEditorCount}
+          {viewerCount}
         />
         {#if !isFinalView}
           <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} {onCustomUrlSet} />

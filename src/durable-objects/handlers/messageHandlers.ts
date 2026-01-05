@@ -9,7 +9,7 @@
 import { transform } from '../../ot/transform';
 import { applyOperation } from '../../ot/apply';
 import { simpleChecksum } from '../../ot/checksum';
-import { RATE_LIMITS } from '../../../config/constants';
+import { RATE_LIMITS, EDITOR_LIMITS } from '../../../config/constants';
 import type {
   Operation,
   ClientSession,
@@ -21,8 +21,73 @@ import type {
   AckMessage,
   ReplayRequestMessage,
   ReplayResponseMessage,
+  RequestEditMessage,
+  RequestEditResponseMessage,
 } from '../../ot/types';
 import type { NoteSessionContext } from './types';
+
+/**
+ * Check if a session is currently an active editor (sent an operation recently).
+ */
+function isSessionActiveEditor(session: ClientSession): boolean {
+  if (session.lastOperationAt === null) return false;
+  return Date.now() - session.lastOperationAt < EDITOR_LIMITS.ACTIVE_TIMEOUT_MS;
+}
+
+/**
+ * Count the number of active editors (sessions that sent an operation recently).
+ */
+function countActiveEditors(sessions: Map<WebSocket, ClientSession>): number {
+  let count = 0;
+  for (const session of sessions.values()) {
+    if (isSessionActiveEditor(session)) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Get the current editor and viewer counts.
+ */
+function getEditorViewerCounts(sessions: Map<WebSocket, ClientSession>): { activeEditorCount: number; viewerCount: number } {
+  const activeEditorCount = countActiveEditors(sessions);
+  const viewerCount = sessions.size - activeEditorCount;
+  return { activeEditorCount, viewerCount };
+}
+
+/**
+ * Handle a request to edit from a client.
+ * Checks if the client can become an active editor based on the current limit.
+ */
+export async function handleRequestEdit(
+  ctx: NoteSessionContext,
+  ws: WebSocket,
+  _message: RequestEditMessage
+): Promise<void> {
+  const session = ctx.sessions.get(ws);
+  if (!session || !session.isAuthenticated) {
+    ctx.sendError(ws, 'Unauthorized');
+    return;
+  }
+
+  const isAlreadyActive = isSessionActiveEditor(session);
+  const activeCount = countActiveEditors(ctx.sessions);
+
+  // Can edit if: already active, or there's room for a new editor
+  const canEdit = isAlreadyActive || activeCount < EDITOR_LIMITS.MAX_ACTIVE_EDITORS;
+
+  const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
+
+  const response: RequestEditResponseMessage = {
+    type: 'request_edit_response',
+    canEdit,
+    activeEditorCount,
+    viewerCount,
+  };
+
+  ws.send(JSON.stringify(response));
+}
 
 /**
  * Handle an incoming OT operation from a client.
@@ -39,6 +104,16 @@ export async function handleOperation(
     return;
   }
 
+  // Check editor limit before allowing operation
+  const isAlreadyActive = isSessionActiveEditor(session);
+  if (!isAlreadyActive) {
+    const activeCount = countActiveEditors(ctx.sessions);
+    if (activeCount >= EDITOR_LIMITS.MAX_ACTIVE_EDITORS) {
+      ctx.sendError(ws, 'editor_limit_reached');
+      return;
+    }
+  }
+
   // Check rate limit
   if (!checkRateLimit(session)) {
     if (session.rateLimit.violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD) {
@@ -48,6 +123,17 @@ export async function handleOperation(
     }
     ctx.sendError(ws, RATE_LIMITS.PENALTY.WARNING_MESSAGE);
     return;
+  }
+
+  // Track if this is a viewer becoming an active editor
+  const wasViewer = !isAlreadyActive;
+
+  // Mark session as active editor
+  session.lastOperationAt = Date.now();
+
+  // Broadcast count update if a viewer just became an active editor
+  if (wasViewer) {
+    broadcastEditorCountUpdate(ctx);
   }
 
   let operation = message.operation;
@@ -347,10 +433,13 @@ export function broadcastUserJoined(
 ): void {
   const seqNum = getNextSeqNum(ctx);
   const connectedUsers = Array.from(ctx.sessions.values()).map(s => s.clientId);
+  const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
   const message = {
     type: 'user_joined' as const,
     clientId: joinedClientId,
     connectedUsers,
+    activeEditorCount,
+    viewerCount,
     seqNum,
   };
   broadcast(ctx, message);
@@ -365,10 +454,13 @@ export function broadcastUserLeft(
 ): void {
   const seqNum = getNextSeqNum(ctx);
   const connectedUsers = Array.from(ctx.sessions.values()).map(s => s.clientId);
+  const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
   const message = {
     type: 'user_left' as const,
     clientId: leftClientId,
     connectedUsers,
+    activeEditorCount,
+    viewerCount,
     seqNum,
   };
   broadcast(ctx, message);
@@ -388,6 +480,22 @@ export function broadcastNoteStatus(
     view_count: viewCount,
     max_views: maxViews,
     expires_at: expiresAt,
+  };
+  broadcast(ctx, message);
+}
+
+/**
+ * Broadcast updated editor/viewer counts to all clients.
+ * Called when a viewer becomes an active editor.
+ */
+export function broadcastEditorCountUpdate(ctx: NoteSessionContext): void {
+  const seqNum = getNextSeqNum(ctx);
+  const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
+  const message = {
+    type: 'editor_count_update' as const,
+    activeEditorCount,
+    viewerCount,
+    seqNum,
   };
   broadcast(ctx, message);
 }

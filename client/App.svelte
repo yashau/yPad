@@ -31,6 +31,7 @@
   import EncryptionDisabledBanner from './components/Banners/EncryptionDisabledBanner.svelte';
   import NoteDeletedBanner from './components/Banners/NoteDeletedBanner.svelte';
   import FinalViewBanner from './components/Banners/FinalViewBanner.svelte';
+  import EditorLimitBanner from './components/Banners/EditorLimitBanner.svelte';
 
   // Initialize hooks
   const noteState = useNoteState();
@@ -125,6 +126,21 @@
       noteState.serverViewCount = viewCount;
       noteState.serverMaxViews = maxViews;
       noteState.serverExpiresAt = expiresAt;
+    },
+    onRequestEditResponse: (canEdit, activeEditorCount, viewerCount) => {
+      noteState.activeEditorCount = activeEditorCount;
+      noteState.viewerCount = viewerCount;
+      if (canEdit) {
+        noteState.viewMode = false;
+        noteState.editorLimitReached = false;
+      } else {
+        noteState.viewMode = true;
+        noteState.editorLimitReached = true;
+      }
+    },
+    onEditorLimitReached: () => {
+      noteState.viewMode = true;
+      noteState.editorLimitReached = true;
     }
   });
 
@@ -457,7 +473,8 @@
     noteId={noteState.noteId}
     connectionStatus={collaboration.connectionStatus}
     clientId={collaboration.clientId}
-    connectedUsers={collaboration.connectedUsers}
+    activeEditorCount={noteState.activeEditorCount}
+    viewerCount={noteState.viewerCount}
     isRealtimeEnabled={collaboration.isRealtimeEnabled}
     isEncrypted={security.isEncrypted}
     saveStatus={noteState.saveStatus}
@@ -548,6 +565,8 @@
   <NoteDeletedBanner show={showNoteDeletedBanner} deletedByCurrentUser={noteDeletedByCurrentUser} />
 
   <FinalViewBanner show={noteState.isFinalView} />
+
+  <EditorLimitBanner show={noteState.editorLimitReached} onRetry={() => wsConnection.sendRequestEdit()} />
 
   <EditorView
     bind:content={editor.content}

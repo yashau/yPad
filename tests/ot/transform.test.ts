@@ -213,6 +213,21 @@ describe('transform', () => {
       expect((op2Prime as DeleteOperation).length).toBe(4 - overlap); // 2
     });
 
+    it('should handle partial overlap (op2 starts before, extends into op1)', () => {
+      // This covers lines 207-210 in transform.ts
+      const op1 = del(8, 4, 'clientA'); // deletes 8-12
+      const op2 = del(5, 5, 'clientB'); // deletes 5-10
+
+      const [op1Prime, op2Prime] = transform(op1, op2);
+
+      // op2 starts before op1, op2 ends before op1 end
+      // overlap = op2End(10) - op1.position(8) = 2
+      const overlap = 10 - 8; // 2
+      expect((op1Prime as DeleteOperation).position).toBe(5); // Moves to op2.position
+      expect((op1Prime as DeleteOperation).length).toBe(4 - overlap); // 2
+      expect((op2Prime as DeleteOperation).length).toBe(5 - overlap); // 3
+    });
+
     it('should handle op1 completely containing op2', () => {
       const op1 = del(5, 10, 'clientA'); // deletes 5-15
       const op2 = del(7, 3, 'clientB'); // deletes 7-10
@@ -340,6 +355,18 @@ describe('transformCursorPosition', () => {
       const newCursor = transformCursorPosition(cursor, op);
 
       expect(newCursor).toBe(5);
+    });
+  });
+
+  describe('with unknown operation types', () => {
+    it('should return cursor unchanged for unknown operation type', () => {
+      const cursor = 10;
+      // Create an operation with an unknown type to test the fallback path
+      const op = { type: 'unknown', position: 5, clientId: 'client1', version: 1 } as unknown as Operation;
+
+      const newCursor = transformCursorPosition(cursor, op);
+
+      expect(newCursor).toBe(10); // Cursor unchanged
     });
   });
 });

@@ -15,26 +15,53 @@
  * - Out-of-order messages buffered until gaps filled
  */
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage, ReplayResponseMessage } from '../../../src/ot/types';
+import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage, ReplayResponseMessage, RequestEditResponseMessage, EditorCountUpdateMessage } from '../../../src/ot/types';
 
+/**
+ * Configuration options for the WebSocket client.
+ */
 export interface WebSocketClientOptions {
+  /** Password for encrypted notes (client-side only, never sent to server) */
   password?: string;
+  /** Unique session identifier for this connection */
   sessionId: string;
+  /** Called when WebSocket connection is established */
   onOpen?: () => void;
+  /** Called when a remote operation is received */
   onOperation?: (operation: Operation, contentChecksum?: number) => void;
+  /** Called when WebSocket connection is closed */
   onClose?: () => void;
+  /** Called on WebSocket or server errors */
   onError?: (error: Error) => void;
+  /** Called when initial sync message is received from server */
   onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
+  /** Called when server acknowledges a sent operation */
   onAck?: (version: number, contentChecksum?: number, transformedOperation?: Operation) => void;
+  /** Called when note is deleted (param indicates if deleted by current user) */
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
+  /** Called when note encryption status changes */
   onEncryptionChanged?: (is_encrypted: boolean) => void;
+  /** Called when note version is updated by another user (encrypted notes) */
   onVersionUpdate?: (version: number, message: string) => void;
+  /** Called when a remote cursor position update is received */
   onCursorUpdate?: (clientId: string, position: number) => void;
-  onUserJoined?: (clientId: string, connectedUsers: string[]) => void;
-  onUserLeft?: (clientId: string, connectedUsers: string[]) => void;
+  /** Called when a user joins the session */
+  onUserJoined?: (clientId: string, connectedUsers: string[], activeEditorCount: number, viewerCount: number) => void;
+  /** Called when a user leaves the session */
+  onUserLeft?: (clientId: string, connectedUsers: string[], activeEditorCount: number, viewerCount: number) => void;
+  /** Called when syntax highlighting mode changes */
   onSyntaxChange?: (syntax: string) => void;
+  /** Called when note status (view count, expiration) is received */
   onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
+  /** Called when server responds to a replay request for state recovery */
   onReplayResponse?: (baseContent: string, baseVersion: number, operations: Operation[], currentVersion: number, contentChecksum: number) => void;
+  /** Called when server responds to an edit permission request */
+  onRequestEditResponse?: (canEdit: boolean, activeEditorCount: number, viewerCount: number) => void;
+  /** Called when editor limit is reached and operation is rejected */
+  onEditorLimitReached?: () => void;
+  /** Called when editor/viewer counts change (e.g., viewer becomes editor) */
+  onEditorCountUpdate?: (activeEditorCount: number, viewerCount: number) => void;
+  /** Whether to automatically reconnect on connection loss (default: true) */
   autoReconnect?: boolean;
 }
 
@@ -226,7 +253,12 @@ export class WebSocketClient {
 
       case 'error':
         console.error('[WebSocket] Server error:', message.message);
-        if (this.options.onError) {
+        // Handle editor limit reached error specially
+        if (message.message === 'editor_limit_reached') {
+          if (this.options.onEditorLimitReached) {
+            this.options.onEditorLimitReached();
+          }
+        } else if (this.options.onError) {
           this.options.onError(new Error(message.message));
         }
         break;
@@ -267,6 +299,10 @@ export class WebSocketClient {
           const statusMsg = message as NoteStatusMessage;
           this.options.onNoteStatus(statusMsg.view_count, statusMsg.max_views, statusMsg.expires_at);
         }
+        break;
+
+      case 'request_edit_response':
+        await this.handleRequestEditResponse(message as RequestEditResponseMessage);
         break;
 
       default:
@@ -335,6 +371,10 @@ export class WebSocketClient {
 
       case 'syntax_change':
         await this.handleSyntaxChange(message as SyntaxChangeMessage);
+        break;
+
+      case 'editor_count_update':
+        await this.handleEditorCountUpdate(message as EditorCountUpdateMessage);
         break;
 
       default:
@@ -474,19 +514,25 @@ export class WebSocketClient {
 
   private async handleUserJoined(message: UserJoinedMessage): Promise<void> {
     if (this.options.onUserJoined) {
-      this.options.onUserJoined(message.clientId, message.connectedUsers);
+      this.options.onUserJoined(message.clientId, message.connectedUsers, message.activeEditorCount, message.viewerCount);
     }
   }
 
   private async handleUserLeft(message: UserLeftMessage): Promise<void> {
     if (this.options.onUserLeft) {
-      this.options.onUserLeft(message.clientId, message.connectedUsers);
+      this.options.onUserLeft(message.clientId, message.connectedUsers, message.activeEditorCount, message.viewerCount);
     }
   }
 
   private async handleSyntaxChange(message: SyntaxChangeMessage): Promise<void> {
     if (this.options.onSyntaxChange) {
       this.options.onSyntaxChange(message.syntax);
+    }
+  }
+
+  private async handleEditorCountUpdate(message: EditorCountUpdateMessage): Promise<void> {
+    if (this.options.onEditorCountUpdate) {
+      this.options.onEditorCountUpdate(message.activeEditorCount, message.viewerCount);
     }
   }
 
@@ -505,6 +551,31 @@ export class WebSocketClient {
         message.contentChecksum
       );
     }
+  }
+
+  private async handleRequestEditResponse(message: RequestEditResponseMessage): Promise<void> {
+    if (this.options.onRequestEditResponse) {
+      this.options.onRequestEditResponse(message.canEdit, message.activeEditorCount, message.viewerCount);
+    }
+  }
+
+  /**
+   * Request permission to edit the note.
+   * Server will respond with whether editing is allowed based on active editor limit.
+   */
+  sendRequestEdit(clientId: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WebSocket] Cannot send request_edit - not connected');
+      return;
+    }
+
+    const message = {
+      type: 'request_edit',
+      clientId,
+      sessionId: this.options.sessionId,
+    };
+
+    this.ws.send(JSON.stringify(message));
   }
 
   /**

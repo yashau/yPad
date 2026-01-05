@@ -10,6 +10,7 @@ import {
   handleCursorUpdate,
   handleSyntaxChange,
   handleReplayRequest,
+  handleRequestEdit,
   broadcast,
   broadcastCursorUpdate,
   broadcastSyntaxChange,
@@ -19,10 +20,11 @@ import {
   broadcastUserJoined,
   broadcastUserLeft,
   broadcastNoteStatus,
+  broadcastEditorCountUpdate,
 } from '../../src/durable-objects/handlers/messageHandlers';
 import type { NoteSessionContext } from '../../src/durable-objects/handlers/types';
-import type { Operation, ClientSession, OperationMessage, CursorUpdateMessage, SyntaxChangeMessage, ReplayRequestMessage } from '../../src/ot/types';
-import { RATE_LIMITS } from '../../config/constants';
+import type { Operation, ClientSession, OperationMessage, CursorUpdateMessage, SyntaxChangeMessage, ReplayRequestMessage, RequestEditMessage } from '../../src/ot/types';
+import { RATE_LIMITS, EDITOR_LIMITS } from '../../config/constants';
 
 // Helper to create insert operations
 function insert(position: number, text: string, clientId = 'client1', version = 1): Operation {
@@ -44,7 +46,7 @@ function createMockWebSocket(): WebSocket {
 }
 
 // Helper to create an authenticated client session
-function createMockSession(clientId: string, sessionId: string): ClientSession {
+function createMockSession(clientId: string, sessionId: string, lastOperationAt: number | null = null): ClientSession {
   return {
     clientId,
     sessionId,
@@ -56,6 +58,7 @@ function createMockSession(clientId: string, sessionId: string): ClientSession {
       lastRefill: Date.now(),
       violations: 0,
     },
+    lastOperationAt,
   };
 }
 
@@ -235,7 +238,14 @@ describe('handleOperation', () => {
     await handleOperation(ctx, ws, message);
 
     expect(ws.send).toHaveBeenCalled();
-    const sentMessage = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    // Find the ACK message (there may also be an editor_count_update broadcast)
+    const wsCalls = (ws.send as ReturnType<typeof vi.fn>).mock.calls;
+    const ackCall = wsCalls.find((call: string[]) => {
+      const msg = JSON.parse(call[0]);
+      return msg.type === 'ack';
+    });
+    expect(ackCall).toBeDefined();
+    const sentMessage = JSON.parse(ackCall![0]);
 
     expect(sentMessage.type).toBe('ack');
     expect(sentMessage.version).toBe(1);
@@ -264,7 +274,14 @@ describe('handleOperation', () => {
 
     // ws2 should receive broadcast (ws is the sender, so it gets ACK instead)
     expect(ws2.send).toHaveBeenCalled();
-    const broadcastMsg = JSON.parse((ws2.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    // Find the operation broadcast (there may also be an editor_count_update)
+    const ws2Calls = (ws2.send as ReturnType<typeof vi.fn>).mock.calls;
+    const operationBroadcast = ws2Calls.find((call: string[]) => {
+      const msg = JSON.parse(call[0]);
+      return msg.type === 'operation';
+    });
+    expect(operationBroadcast).toBeDefined();
+    const broadcastMsg = JSON.parse(operationBroadcast![0]);
     expect(broadcastMsg.type).toBe('operation');
   });
 
@@ -883,5 +900,298 @@ describe('broadcast functions', () => {
       expect(msg.max_views).toBeNull();
       expect(msg.expires_at).toBeNull();
     });
+  });
+
+  describe('broadcastEditorCountUpdate', () => {
+    it('should broadcast editor and viewer counts to all clients', () => {
+      const ws1 = createMockWebSocket();
+      const ws2 = createMockWebSocket();
+      // One active editor, one viewer
+      ctx.sessions.set(ws1, createMockSession('editor-1', 'session-1', Date.now()));
+      ctx.sessions.set(ws2, createMockSession('viewer-1', 'session-2', null));
+
+      broadcastEditorCountUpdate(ctx);
+
+      // Both clients should receive the message
+      expect(ws1.send).toHaveBeenCalled();
+      expect(ws2.send).toHaveBeenCalled();
+
+      const msg = JSON.parse((ws1.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+      expect(msg.type).toBe('editor_count_update');
+      expect(msg.activeEditorCount).toBe(1);
+      expect(msg.viewerCount).toBe(1);
+      expect(msg.seqNum).toBeDefined();
+    });
+
+    it('should increment seqNum for each broadcast', () => {
+      const ws = createMockWebSocket();
+      ctx.sessions.set(ws, createMockSession('client-A', 'session-A'));
+      const initialSeqNum = ctx.globalSeqNum;
+
+      broadcastEditorCountUpdate(ctx);
+
+      expect(ctx.globalSeqNum).toBe(initialSeqNum + 1);
+    });
+  });
+});
+
+describe('handleRequestEdit', () => {
+  let ctx: NoteSessionContext;
+  let ws: WebSocket;
+  let session: ClientSession;
+
+  beforeEach(() => {
+    ctx = createMockContext();
+    ws = createMockWebSocket();
+    session = createMockSession('client-A', 'session-A');
+    ctx.sessions.set(ws, session);
+  });
+
+  it('should reject unauthorized sessions', async () => {
+    session.isAuthenticated = false;
+
+    const message: RequestEditMessage = {
+      type: 'request_edit',
+    };
+
+    await handleRequestEdit(ctx, ws, message);
+
+    expect(ctx.sendError).toHaveBeenCalledWith(ws, 'Unauthorized');
+  });
+
+  it('should allow edit when under the limit', async () => {
+    const message: RequestEditMessage = {
+      type: 'request_edit',
+    };
+
+    await handleRequestEdit(ctx, ws, message);
+
+    const response = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(response.type).toBe('request_edit_response');
+    expect(response.canEdit).toBe(true);
+  });
+
+  it('should allow edit for already active editors', async () => {
+    // Mark session as active editor
+    session.lastOperationAt = Date.now();
+
+    // Add 10 more active editors to hit the limit
+    for (let i = 0; i < EDITOR_LIMITS.MAX_ACTIVE_EDITORS; i++) {
+      const otherWs = createMockWebSocket();
+      const otherSession = createMockSession(`client-${i}`, `session-${i}`, Date.now());
+      ctx.sessions.set(otherWs, otherSession);
+    }
+
+    const message: RequestEditMessage = {
+      type: 'request_edit',
+    };
+
+    await handleRequestEdit(ctx, ws, message);
+
+    const response = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(response.type).toBe('request_edit_response');
+    expect(response.canEdit).toBe(true);
+  });
+
+  it('should deny edit when at limit and not already active', async () => {
+    // Add MAX_ACTIVE_EDITORS active editors
+    for (let i = 0; i < EDITOR_LIMITS.MAX_ACTIVE_EDITORS; i++) {
+      const otherWs = createMockWebSocket();
+      const otherSession = createMockSession(`client-${i}`, `session-${i}`, Date.now());
+      ctx.sessions.set(otherWs, otherSession);
+    }
+
+    const message: RequestEditMessage = {
+      type: 'request_edit',
+    };
+
+    await handleRequestEdit(ctx, ws, message);
+
+    const response = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(response.type).toBe('request_edit_response');
+    expect(response.canEdit).toBe(false);
+  });
+
+  it('should return correct editor and viewer counts', async () => {
+    // Add 2 active editors
+    for (let i = 0; i < 2; i++) {
+      const otherWs = createMockWebSocket();
+      const otherSession = createMockSession(`editor-${i}`, `session-${i}`, Date.now());
+      ctx.sessions.set(otherWs, otherSession);
+    }
+
+    // Add 3 viewers (no lastOperationAt)
+    for (let i = 0; i < 3; i++) {
+      const otherWs = createMockWebSocket();
+      const otherSession = createMockSession(`viewer-${i}`, `vsession-${i}`, null);
+      ctx.sessions.set(otherWs, otherSession);
+    }
+
+    const message: RequestEditMessage = {
+      type: 'request_edit',
+    };
+
+    await handleRequestEdit(ctx, ws, message);
+
+    const response = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(response.activeEditorCount).toBe(2);
+    expect(response.viewerCount).toBe(4); // 3 viewers + requesting client (also a viewer)
+  });
+
+  it('should not count stale editors as active', async () => {
+    // Add an editor whose lastOperationAt is beyond the timeout
+    const staleTime = Date.now() - EDITOR_LIMITS.ACTIVE_TIMEOUT_MS - 1000;
+    const staleWs = createMockWebSocket();
+    const staleSession = createMockSession('stale-editor', 'stale-session', staleTime);
+    ctx.sessions.set(staleWs, staleSession);
+
+    const message: RequestEditMessage = {
+      type: 'request_edit',
+    };
+
+    await handleRequestEdit(ctx, ws, message);
+
+    const response = JSON.parse((ws.send as ReturnType<typeof vi.fn>).mock.calls[0][0]);
+    expect(response.activeEditorCount).toBe(0);
+    expect(response.viewerCount).toBe(2); // stale editor + requesting client
+    expect(response.canEdit).toBe(true);
+  });
+});
+
+describe('handleOperation with editor limits', () => {
+  let ctx: NoteSessionContext;
+  let ws: WebSocket;
+  let session: ClientSession;
+
+  beforeEach(() => {
+    ctx = createMockContext();
+    ws = createMockWebSocket();
+    session = createMockSession('client-A', 'session-A');
+    ctx.sessions.set(ws, session);
+  });
+
+  it('should reject operation when at limit and not already active', async () => {
+    // Add MAX_ACTIVE_EDITORS active editors
+    for (let i = 0; i < EDITOR_LIMITS.MAX_ACTIVE_EDITORS; i++) {
+      const otherWs = createMockWebSocket();
+      const otherSession = createMockSession(`client-${i}`, `session-${i}`, Date.now());
+      ctx.sessions.set(otherWs, otherSession);
+    }
+
+    const message: OperationMessage = {
+      type: 'operation',
+      operation: insert(0, 'test'),
+      baseVersion: 0,
+      clientId: 'client-A',
+      sessionId: 'session-A',
+    };
+
+    await handleOperation(ctx, ws, message);
+
+    expect(ctx.sendError).toHaveBeenCalledWith(ws, 'editor_limit_reached');
+    expect(ctx.currentContent).toBe('Hello World'); // Content unchanged
+  });
+
+  it('should allow operation when already an active editor', async () => {
+    // Mark session as active editor
+    session.lastOperationAt = Date.now();
+
+    // Add MAX_ACTIVE_EDITORS - 1 other active editors (total = MAX)
+    for (let i = 0; i < EDITOR_LIMITS.MAX_ACTIVE_EDITORS - 1; i++) {
+      const otherWs = createMockWebSocket();
+      const otherSession = createMockSession(`client-${i}`, `session-${i}`, Date.now());
+      ctx.sessions.set(otherWs, otherSession);
+    }
+
+    const message: OperationMessage = {
+      type: 'operation',
+      operation: insert(0, 'test'),
+      baseVersion: 0,
+      clientId: 'client-A',
+      sessionId: 'session-A',
+    };
+
+    await handleOperation(ctx, ws, message);
+
+    expect(ctx.sendError).not.toHaveBeenCalled();
+    expect(ctx.currentContent).toBe('testHello World');
+  });
+
+  it('should update lastOperationAt after successful operation', async () => {
+    expect(session.lastOperationAt).toBeNull();
+
+    const message: OperationMessage = {
+      type: 'operation',
+      operation: insert(0, 'test'),
+      baseVersion: 0,
+      clientId: 'client-A',
+      sessionId: 'session-A',
+    };
+
+    await handleOperation(ctx, ws, message);
+
+    expect(session.lastOperationAt).not.toBeNull();
+    expect(session.lastOperationAt).toBeGreaterThan(Date.now() - 1000);
+  });
+
+  it('should broadcast editor count update when viewer becomes active editor', async () => {
+    // Add another client to receive the broadcast
+    const otherWs = createMockWebSocket();
+    const otherSession = createMockSession('client-B', 'session-B', null);
+    ctx.sessions.set(otherWs, otherSession);
+
+    // Our session starts as a viewer (lastOperationAt = null)
+    expect(session.lastOperationAt).toBeNull();
+
+    const message: OperationMessage = {
+      type: 'operation',
+      operation: insert(0, 'test'),
+      baseVersion: 0,
+      clientId: 'client-A',
+      sessionId: 'session-A',
+    };
+
+    await handleOperation(ctx, ws, message);
+
+    // Find the editor_count_update broadcast
+    const otherWsSendCalls = (otherWs.send as ReturnType<typeof vi.fn>).mock.calls;
+    const countUpdateMsg = otherWsSendCalls.find((call: string[]) => {
+      const msg = JSON.parse(call[0]);
+      return msg.type === 'editor_count_update';
+    });
+
+    expect(countUpdateMsg).toBeDefined();
+    const parsedMsg = JSON.parse(countUpdateMsg![0]);
+    expect(parsedMsg.activeEditorCount).toBe(1);
+    expect(parsedMsg.viewerCount).toBe(1);
+  });
+
+  it('should not broadcast editor count update when already an active editor', async () => {
+    // Mark session as already active
+    session.lastOperationAt = Date.now();
+
+    // Add another client to check for broadcast
+    const otherWs = createMockWebSocket();
+    const otherSession = createMockSession('client-B', 'session-B', null);
+    ctx.sessions.set(otherWs, otherSession);
+
+    const message: OperationMessage = {
+      type: 'operation',
+      operation: insert(0, 'test'),
+      baseVersion: 0,
+      clientId: 'client-A',
+      sessionId: 'session-A',
+    };
+
+    await handleOperation(ctx, ws, message);
+
+    // Check that no editor_count_update was sent (only operation broadcast)
+    const otherWsSendCalls = (otherWs.send as ReturnType<typeof vi.fn>).mock.calls;
+    const countUpdateMsg = otherWsSendCalls.find((call: string[]) => {
+      const msg = JSON.parse(call[0]);
+      return msg.type === 'editor_count_update';
+    });
+
+    expect(countUpdateMsg).toBeUndefined();
   });
 });
