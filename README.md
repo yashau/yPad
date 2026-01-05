@@ -1,7 +1,8 @@
 # yPad
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-517%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-638%20passed-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -427,6 +428,10 @@ yPad/
 │   └── site.webmanifest         # PWA manifest
 ├── src/                         # Backend Cloudflare Workers
 │   ├── durable-objects/
+│   │   ├── handlers/            # Message handler modules
+│   │   │   ├── messageHandlers.ts  # OT operation & broadcast handlers
+│   │   │   ├── types.ts            # Handler context types
+│   │   │   └── index.ts            # Re-exports
 │   │   ├── NoteSessionDurableObject.ts  # WebSocket coordinator with OT & status broadcasts
 │   │   └── RateLimiterDurableObject.ts  # Per-session REST API rate limiting
 │   ├── ot/                      # Operational Transform
@@ -440,6 +445,7 @@ yPad/
 │   ├── api/                    # API route tests
 │   ├── client/                 # Client-side tests (crypto, WebSocket)
 │   ├── config/                 # Configuration tests
+│   ├── handlers/               # Message handler unit tests
 │   ├── hooks/                  # Svelte hook tests
 │   ├── ot/                     # Operational Transform tests
 │   └── rate-limiting/          # Rate limiting tests

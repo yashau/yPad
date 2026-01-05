@@ -303,7 +303,7 @@
     const newContent = getContent();
 
     if (collaboration.isSyncing) {
-      collaboration.pendingLocalContent = newContent;
+      collaboration.pending = { ...collaboration.pending, content: newContent };
       editor.content = newContent;
       return;
     }
@@ -339,8 +339,8 @@
 
       if (operations.length > 0) {
         // If this is the first pending operation, capture the base version
-        if (collaboration.pendingLocalContent === null) {
-          collaboration.pendingBaseVersion = noteState.currentVersion;
+        if (collaboration.pending.content === null) {
+          collaboration.pending = { ...collaboration.pending, baseVersion: noteState.currentVersion };
         }
 
         // Send each operation with correct incremental version
@@ -352,7 +352,7 @@
           wsConnection.sendOperation(op);
         });
 
-        collaboration.pendingLocalContent = newContent;
+        collaboration.pending = { ...collaboration.pending, content: newContent };
 
         // Apply operations to editor content, transforming against any remote ops
         // that arrived between beforeinput and input events

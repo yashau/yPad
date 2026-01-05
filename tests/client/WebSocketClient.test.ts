@@ -5,7 +5,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WebSocketClient } from '../../client/lib/realtime/WebSocketClient';
-import type { SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage } from '../../src/ot/types';
+import type { SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, ReplayResponseMessage } from '../../src/ot/types';
 
 // Get the mock WebSocket class from our setup
 const MockWebSocket = (globalThis as any).WebSocket;
@@ -760,6 +760,668 @@ describe('WebSocketClient', () => {
       client.close();
 
       expect(client.isConnected()).toBe(false);
+    });
+
+    it('should clear reconnect timeout on close', () => {
+      const options = { sessionId, autoReconnect: true };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+
+      // Trigger unexpected close to schedule reconnect
+      ws.readyState = 3;
+      ws.onclose(new CloseEvent('close'));
+
+      // Reconnect should be scheduled
+      expect((client as any).reconnectTimeout).not.toBeNull();
+
+      // Now call close() which should clear the timeout
+      client.close();
+
+      expect((client as any).reconnectTimeout).toBeNull();
+    });
+
+    it('should clear gap timer on close', async () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Send out-of-order message to trigger gap timer
+      ws.simulateMessage({
+        type: 'operation',
+        operation: { type: 'insert', position: 0, text: 'x', clientId: 'other', version: 1 },
+        baseVersion: 1,
+        clientId: 'other',
+        sessionId: 'other-session',
+        seqNum: 5, // Gap - expecting 1
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Gap timer should be set
+      expect((client as any).gapTimer).not.toBeNull();
+
+      // Close should clear it
+      client.close();
+
+      expect((client as any).gapTimer).toBeNull();
+    });
+  });
+
+  describe('error handling', () => {
+    it('should call onError callback on WebSocket error', () => {
+      const onError = vi.fn();
+      const options = {
+        sessionId,
+        onError,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateError();
+
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onError.mock.calls[0][0].message).toBe('WebSocket error');
+    });
+
+    it('should handle error message from server', () => {
+      const onError = vi.fn();
+      const options = {
+        sessionId,
+        onError,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateMessage({
+        type: 'error',
+        message: 'Server error occurred',
+      });
+      vi.advanceTimersByTime(10);
+
+      expect(onError).toHaveBeenCalledWith(expect.any(Error));
+      expect(onError.mock.calls[0][0].message).toBe('Server error occurred');
+    });
+
+    it('should handle note_expired message', () => {
+      const onNoteDeleted = vi.fn();
+      const options = {
+        sessionId,
+        onNoteDeleted,
+        autoReconnect: false,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateMessage({ type: 'note_expired' });
+      vi.advanceTimersByTime(10);
+
+      expect(onNoteDeleted).toHaveBeenCalledWith(false);
+    });
+
+    it('should handle reload message', () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const options = { sessionId };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateMessage({
+        type: 'reload',
+        reason: 'Server restart',
+      });
+      vi.advanceTimersByTime(10);
+
+      expect(consoleSpy).toHaveBeenCalledWith('[WebSocket] Reload requested:', 'Server restart');
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle unknown message type', () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const options = { sessionId };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      ws.simulateMessage({
+        type: 'unknown_type',
+        data: 'some data',
+      });
+      vi.advanceTimersByTime(10);
+
+      expect(consoleSpy).toHaveBeenCalledWith('[WebSocket] Unknown message type:', expect.any(Object));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('replay request and response', () => {
+    it('should send replay request', () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      client.sendReplayRequest(5, 'my-client');
+
+      expect(ws.send).toHaveBeenCalled();
+      const sentMessage = JSON.parse(ws.send.mock.calls[0][0]);
+      expect(sentMessage.type).toBe('replay_request');
+      expect(sentMessage.fromVersion).toBe(5);
+      expect(sentMessage.clientId).toBe('my-client');
+      expect(sentMessage.sessionId).toBe(sessionId);
+    });
+
+    it('should not send replay request when not connected', () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const options = { sessionId, autoReconnect: false };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      client.close();
+
+      client.sendReplayRequest(5, 'my-client');
+
+      expect(consoleSpy).toHaveBeenCalledWith('[WebSocket] Cannot send replay request - not connected');
+      consoleSpy.mockRestore();
+    });
+
+    it('should handle replay response', () => {
+      const onReplayResponse = vi.fn();
+      const options = {
+        sessionId,
+        onReplayResponse,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      const replayResponse: ReplayResponseMessage = {
+        type: 'replay_response',
+        baseContent: 'Hello World',
+        baseVersion: 5,
+        operations: [
+          { type: 'insert', position: 11, text: '!', clientId: 'other', version: 6 },
+        ],
+        currentVersion: 6,
+        contentChecksum: 12345,
+      };
+
+      ws.simulateMessage(replayResponse);
+      vi.advanceTimersByTime(10);
+
+      expect(onReplayResponse).toHaveBeenCalledWith(
+        'Hello World',
+        5,
+        [{ type: 'insert', position: 11, text: '!', clientId: 'other', version: 6 }],
+        6,
+        12345
+      );
+    });
+  });
+
+  describe('gap detection and resync', () => {
+    it('should trigger resync after gap timeout', async () => {
+      const options = { sessionId, autoReconnect: false };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+      const closeSpy = vi.spyOn(ws, 'close');
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Send out-of-order message (seqNum 5 when expecting 1)
+      ws.simulateMessage({
+        type: 'operation',
+        operation: { type: 'insert', position: 0, text: 'x', clientId: 'other', version: 1 },
+        baseVersion: 1,
+        clientId: 'other',
+        sessionId: 'other-session',
+        seqNum: 5,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Gap timer should be set
+      expect((client as any).gapTimer).not.toBeNull();
+
+      // Fast forward past gap timeout (5 seconds)
+      await vi.advanceTimersByTimeAsync(6000);
+
+      // Should have closed WebSocket to trigger resync
+      expect(closeSpy).toHaveBeenCalled();
+    });
+
+    it('should resync when pending buffer overflows', async () => {
+      const options = { sessionId, autoReconnect: false };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+      const closeSpy = vi.spyOn(ws, 'close');
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Send 21 out-of-order messages to overflow buffer (max is 20)
+      for (let i = 2; i <= 22; i++) {
+        ws.simulateMessage({
+          type: 'operation',
+          operation: { type: 'insert', position: 0, text: 'x', clientId: 'other', version: 1 },
+          baseVersion: 1,
+          clientId: 'other',
+          sessionId: 'other-session',
+          seqNum: i, // Skip seqNum 1
+        });
+        await vi.advanceTimersByTimeAsync(1);
+      }
+
+      // Should have closed WebSocket to trigger resync due to buffer overflow
+      expect(closeSpy).toHaveBeenCalled();
+    });
+
+    it('should clear gap timer when sync clears pending messages', async () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Send out-of-order message to start gap timer
+      ws.simulateMessage({
+        type: 'operation',
+        operation: { type: 'insert', position: 0, text: 'x', clientId: 'other', version: 1 },
+        baseVersion: 1,
+        clientId: 'other',
+        sessionId: 'other-session',
+        seqNum: 5,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect((client as any).gapTimer).not.toBeNull();
+
+      // Receive new sync which clears pending messages
+      ws.simulateMessage({
+        type: 'sync',
+        content: 'new content',
+        version: 10,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 100,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Gap timer should be cleared
+      expect((client as any).gapTimer).toBeNull();
+    });
+
+    it('should call requestSync public method', () => {
+      const options = { sessionId, autoReconnect: false };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+      const closeSpy = vi.spyOn(ws, 'close');
+
+      client.requestSync();
+
+      expect(closeSpy).toHaveBeenCalled();
+    });
+
+    it('should ignore old sequence numbers', async () => {
+      const onOperation = vi.fn();
+      const options = {
+        sessionId,
+        onOperation,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking at seqNum 10
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 10,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Send old sequence number (already processed)
+      ws.simulateMessage({
+        type: 'operation',
+        operation: { type: 'insert', position: 0, text: 'old', clientId: 'other', version: 1 },
+        baseVersion: 1,
+        clientId: 'other',
+        sessionId: 'other-session',
+        seqNum: 5, // Old, should be ignored
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Should not have processed the old message
+      expect(onOperation).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('reconnection edge cases', () => {
+    it('should stop reconnecting after max attempts', async () => {
+      const onError = vi.fn();
+      const options = {
+        sessionId,
+        onError,
+        autoReconnect: true,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Set reconnect attempts to exactly max (5) to trigger the error path
+      (client as any).reconnectAttempts = 5;
+
+      // Call attemptReconnect directly - this should trigger the "max attempts reached" error
+      (client as any).attemptReconnect();
+
+      // Should have called onError with failed to reconnect message
+      expect(onError).toHaveBeenCalledWith(new Error('Failed to reconnect'));
+    });
+
+    it('should use exponential backoff for reconnection', async () => {
+      const options = {
+        sessionId,
+        autoReconnect: true,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+      ws.readyState = 3;
+      ws.onclose(new CloseEvent('close'));
+
+      // First attempt should be after 1 second
+      expect((client as any).reconnectAttempts).toBe(1);
+      expect((client as any).reconnectTimeout).not.toBeNull();
+
+      // Advance 500ms - should not have reconnected yet
+      await vi.advanceTimersByTimeAsync(500);
+      expect((client as any).ws).toBeNull();
+
+      // Advance another 600ms - should have reconnected
+      await vi.advanceTimersByTimeAsync(600);
+      expect((client as any).ws).not.toBeNull();
+    });
+
+    it('should reset reconnect attempts on successful connection', async () => {
+      const onOpen = vi.fn();
+      const options = {
+        sessionId,
+        onOpen,
+        autoReconnect: true,
+      };
+
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Verify initial connection reset attempts
+      expect((client as any).reconnectAttempts).toBe(0);
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    });
+
+    it('should clear pending messages on reconnect', async () => {
+      const options = { sessionId, autoReconnect: true };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Add a pending message
+      ws.simulateMessage({
+        type: 'operation',
+        operation: { type: 'insert', position: 0, text: 'x', clientId: 'other', version: 1 },
+        baseVersion: 1,
+        clientId: 'other',
+        sessionId: 'other-session',
+        seqNum: 5,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect((client as any).pendingMessages.size).toBe(1);
+
+      // Simulate close and reconnect
+      ws.readyState = 3;
+      ws.onclose(new CloseEvent('close'));
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // Pending messages should be cleared on new connection's onopen
+      expect((client as any).pendingMessages.size).toBe(0);
+    });
+  });
+
+  describe('cursor and syntax ack', () => {
+    it('should update sequence from cursor ACK', async () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Receive cursor ACK with seqNum
+      ws.simulateMessage({
+        type: 'cursor_ack',
+        seqNum: 10,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Next expected should be 11
+      expect((client as any).nextExpectedSeq).toBe(11);
+    });
+
+    it('should update sequence from syntax ACK', async () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Receive syntax ACK with seqNum
+      ws.simulateMessage({
+        type: 'syntax_ack',
+        seqNum: 15,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Next expected should be 16
+      expect((client as any).nextExpectedSeq).toBe(16);
+    });
+  });
+
+  describe('outbound queue backpressure', () => {
+    it('should apply backpressure when max operations in flight', () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+
+      // Send more operations than max in flight (20)
+      for (let i = 0; i < 25; i++) {
+        client.sendOperation({
+          type: 'insert',
+          position: i,
+          text: String(i),
+          clientId: 'my-client',
+          version: 1,
+        }, 1);
+      }
+
+      // Should have sent only 20 (max in flight)
+      expect(ws.send).toHaveBeenCalledTimes(20);
+      expect((client as any).operationsInFlight).toBe(20);
+      expect((client as any).outboundQueue.length).toBe(5);
+    });
+
+    it('should process queued operations after ACK', () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const ws = (client as any).ws;
+
+      // Send more operations than max in flight
+      for (let i = 0; i < 22; i++) {
+        client.sendOperation({
+          type: 'insert',
+          position: i,
+          text: String(i),
+          clientId: 'my-client',
+          version: 1,
+        }, 1);
+      }
+
+      expect(ws.send).toHaveBeenCalledTimes(20);
+      expect((client as any).outboundQueue.length).toBe(2);
+
+      // Receive ACK to free up a slot
+      ws.simulateMessage({ type: 'ack', version: 1 });
+      vi.advanceTimersByTime(10);
+
+      // Should have sent one more operation
+      expect(ws.send).toHaveBeenCalledTimes(21);
+      expect((client as any).outboundQueue.length).toBe(1);
+    });
+  });
+
+  describe('unknown sequenced message type', () => {
+    it('should warn on unknown sequenced message type', async () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      await vi.advanceTimersByTimeAsync(10);
+
+      const ws = (client as any).ws;
+
+      // Set up sequence tracking
+      ws.simulateMessage({
+        type: 'sync',
+        content: '',
+        version: 1,
+        operations: [],
+        clientId: 'client-id',
+        seqNum: 0,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Send unknown sequenced message
+      ws.simulateMessage({
+        type: 'unknown_sequenced',
+        seqNum: 1,
+      });
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(consoleSpy).toHaveBeenCalledWith('[WebSocket] Unknown sequenced message type:', expect.any(Object));
+      consoleSpy.mockRestore();
+    });
+  });
+
+  describe('connection guards', () => {
+    it('should not create new connection if already connected', () => {
+      const options = { sessionId };
+      client = new WebSocketClient(noteId, options);
+      vi.advanceTimersByTime(10);
+
+      const firstWs = (client as any).ws;
+
+      // Try to connect again by calling private connect method
+      (client as any).connect();
+
+      // Should still be using the same WebSocket
+      expect((client as any).ws).toBe(firstWs);
     });
   });
 });

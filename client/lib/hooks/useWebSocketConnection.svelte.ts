@@ -14,7 +14,7 @@ import type { Operation } from '../../../src/ot/types';
 import type { useNoteState } from './useNoteState.svelte';
 import type { useEditor } from './useEditor.svelte';
 import type { useSecurity } from './useSecurity.svelte';
-import type { useCollaboration, RemoteCursorData, PendingOperation } from './useCollaboration.svelte';
+import type { useCollaboration, PendingOperation } from './useCollaboration.svelte';
 
 /** Configuration for WebSocket connection hook. */
 export interface WebSocketConfig {
@@ -41,7 +41,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     collaboration.isSyncing = true;
 
     if (editor.content && editor.content !== editor.lastLocalContent) {
-      collaboration.pendingLocalContent = editor.content;
+      collaboration.pending = { ...collaboration.pending, content: editor.content };
     }
 
     try {
@@ -68,9 +68,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
           // Clear pending operations - they'll be recalculated on reconnect sync
           // This prevents duplicate operations from being sent after reconnection
-          collaboration.pendingLocalContent = null;
-          collaboration.pendingBaseVersion = null;
-          collaboration.pendingOperations = [];
+          collaboration.pending = { content: null, baseVersion: null, operations: [] };
 
           // Only attempt reconnection if note was not deleted and not encrypted
           // Encrypted notes don't use WebSocket for realtime sync
@@ -105,15 +103,15 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
           // Check for local content that differs from server sync content
           // This handles both:
-          // 1. pendingLocalContent from typing while WebSocket was connecting
+          // 1. pending.content from typing while WebSocket was connecting
           // 2. editor.content changes made during initial PUT request (race condition)
-          const localContent = collaboration.pendingLocalContent ?? editor.content;
+          const localContent = collaboration.pending.content ?? editor.content;
 
           if (localContent !== syncContent) {
             const ops = generateOperations(syncContent, localContent, collaboration.clientId, noteState.currentVersion);
 
             // Send each operation with correct incremental version
-            // Also add to pendingOperations so client-side OT works correctly
+            // Also add to pending.operations so client-side OT works correctly
             ops.forEach((op, index) => {
               if (collaboration.wsClient) {
                 const baseVersion = noteState.currentVersion + index;
@@ -122,7 +120,10 @@ export function useWebSocketConnection(config: WebSocketConfig) {
                 // Add to pending operations for OT transform against incoming remote ops
                 // Track the baseVersion so we know what server state this was based on
                 const pendingOp: PendingOperation = { operation: op, baseVersion };
-                collaboration.pendingOperations = [...collaboration.pendingOperations, pendingOp];
+                collaboration.pending = {
+                  ...collaboration.pending,
+                  operations: [...collaboration.pending.operations, pendingOp]
+                };
                 collaboration.wsClient.sendOperation(op, baseVersion);
                 noteState.currentVersion++;
               }
@@ -133,7 +134,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             editor.lastLocalContent = localContent;
             editor.isUpdating = false;
 
-            collaboration.pendingLocalContent = null;
+            collaboration.pending = { ...collaboration.pending, content: null };
           } else {
             // Content matches, just ensure editor state is in sync
             editor.isUpdating = true;
@@ -148,25 +149,27 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           noteState.currentVersion = version;
 
           // Remove the acknowledged operation from pending list (FIFO order)
-          // When we send an operation, it's added to pendingOperations.
+          // When we send an operation, it's added to pending.operations.
           // When we receive ACK, the server has applied it, so remove from pending.
-          const pendingOps = collaboration.pendingOperations;
+          const pendingOps = collaboration.pending.operations;
           if (pendingOps.length > 0) {
-            collaboration.pendingOperations = pendingOps.slice(1);
+            collaboration.pending = {
+              ...collaboration.pending,
+              operations: pendingOps.slice(1)
+            };
           }
 
           // Update lastLocalContent to confirm this operation is now server-side
           editor.lastLocalContent = editor.content;
 
           // If no more pending operations, clear pending state
-          if (collaboration.pendingOperations.length === 0) {
-            collaboration.pendingLocalContent = null;
-            collaboration.pendingBaseVersion = null;
+          if (collaboration.pending.operations.length === 0) {
+            collaboration.pending = { content: null, baseVersion: null, operations: [] };
           }
 
           // Verify content checksum if provided
           // Only verify when we have no pending ops (local content matches server)
-          if (contentChecksum !== undefined && collaboration.pendingOperations.length === 0) {
+          if (contentChecksum !== undefined && collaboration.pending.operations.length === 0) {
             verifyContentChecksum(contentChecksum);
           }
         },
@@ -226,9 +229,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           console.log(`[OT] Replay response: version ${baseVersion} -> ${currentVersion}, ${operations.length} ops`);
 
           // Clear pending operations - they're no longer valid after replay
-          collaboration.pendingOperations = [];
-          collaboration.pendingLocalContent = null;
-          collaboration.pendingBaseVersion = null;
+          collaboration.pending = { content: null, baseVersion: null, operations: [] };
 
           // Adopt the server's content
           editor.isUpdating = true;
@@ -253,7 +254,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       console.error('[WebSocket] Failed to create client:', error);
       collaboration.connectionStatus = 'disconnected';
       collaboration.isSyncing = false;
-      collaboration.pendingLocalContent = null;
+      collaboration.pending = { ...collaboration.pending, content: null };
     }
   }
 
@@ -271,7 +272,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     noteWasDeleted = false;
     checksumMismatchCount = 0;
     // Clear pending operations on reset
-    collaboration.pendingOperations = [];
+    collaboration.pending = { content: null, baseVersion: null, operations: [] };
   }
 
   function verifyContentChecksum(serverChecksum: number) {
@@ -283,7 +284,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
       // If we have a mismatch and no pending operations, request a replay immediately.
       // The server's content is authoritative, so we should sync to it ASAP.
-      if (collaboration.pendingOperations.length === 0) {
+      if (collaboration.pending.operations.length === 0) {
         console.warn('[OT] Requesting replay due to checksum mismatch (no pending ops)');
         if (collaboration.wsClient && collaboration.clientId) {
           collaboration.wsClient.sendReplayRequest(noteState.currentVersion, collaboration.clientId);
@@ -308,14 +309,14 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       let transformedOp = operation;
       const newPendingOps: PendingOperation[] = [];
 
-      for (const pending of collaboration.pendingOperations) {
-        const [transformedPending, transformedRemote] = transform(pending.operation, transformedOp);
-        newPendingOps.push({ operation: transformedPending, baseVersion: pending.baseVersion });
+      for (const pendingOp of collaboration.pending.operations) {
+        const [transformedPending, transformedRemote] = transform(pendingOp.operation, transformedOp);
+        newPendingOps.push({ operation: transformedPending, baseVersion: pendingOp.baseVersion });
         transformedOp = transformedRemote;
       }
 
       // Update pending operations with their transformed versions
-      collaboration.pendingOperations = newPendingOps;
+      collaboration.pending = { ...collaboration.pending, operations: newPendingOps };
 
       // Now apply the transformed remote operation
       collaboration.lastSentCursorPos = transformCursorPosition(collaboration.lastSentCursorPos, transformedOp);
@@ -345,14 +346,14 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       // Note: We don't verify checksum here because our local content includes
       // pending operations that the server doesn't know about yet.
       // Checksum verification only makes sense when we have no pending operations.
-      if (contentChecksum !== undefined && collaboration.pendingOperations.length === 0) {
+      if (contentChecksum !== undefined && collaboration.pending.operations.length === 0) {
         verifyContentChecksum(contentChecksum);
       }
 
       // Update lastLocalContent to stay in sync (but preserve pending ops effect)
       // lastLocalContent should reflect what we've sent to the server
       // Since we have pending ops, don't update it here
-      if (collaboration.pendingOperations.length === 0) {
+      if (collaboration.pending.operations.length === 0) {
         editor.lastLocalContent = editor.content;
       }
 
@@ -504,7 +505,10 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       // Add to pending operations list for OT transform against incoming remote ops
       // Track the baseVersion so we know what server state this was based on
       const pendingOp: PendingOperation = { operation, baseVersion };
-      collaboration.pendingOperations = [...collaboration.pendingOperations, pendingOp];
+      collaboration.pending = {
+        ...collaboration.pending,
+        operations: [...collaboration.pending.operations, pendingOp]
+      };
       collaboration.wsClient.sendOperation(operation, baseVersion);
       noteState.currentVersion++;
     }

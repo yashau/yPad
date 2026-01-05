@@ -22,15 +22,30 @@ export interface PendingOperation {
   baseVersion: number;
 }
 
+/**
+ * Groups related pending state for OT conflict resolution.
+ * These fields track local changes that haven't been acknowledged by the server.
+ */
+export interface PendingState {
+  /** Local content snapshot while operations are pending */
+  content: string | null;
+  /** Server version when pending operations started */
+  baseVersion: number | null;
+  /** Unacknowledged operations awaiting server confirmation */
+  operations: PendingOperation[];
+}
+
 export function useCollaboration() {
   let wsClient = $state<WebSocketClient | null>(null);
   let isRealtimeEnabled = $state(false);
   let lastSentCursorPos = $state(0);
   let connectionStatus = $state<'connected' | 'disconnected' | 'connecting'>('disconnected');
   let clientId = $state('');
-  let pendingLocalContent = $state<string | null>(null);
-  let pendingBaseVersion = $state<number | null>(null); // Version at which pending operations started
-  let pendingOperations = $state<PendingOperation[]>([]); // Unacknowledged operations for OT transform
+  let pending = $state<PendingState>({
+    content: null,
+    baseVersion: null,
+    operations: [],
+  });
   // Remote operations received between beforeinput and input events.
   // When user is typing and a remote op arrives, we apply it to editor.content but the DOM
   // hasn't been updated yet. New local operations need to be transformed against these.
@@ -82,14 +97,8 @@ export function useCollaboration() {
     get clientId() { return clientId; },
     set clientId(value: string) { clientId = value; },
 
-    get pendingLocalContent() { return pendingLocalContent; },
-    set pendingLocalContent(value: string | null) { pendingLocalContent = value; },
-
-    get pendingBaseVersion() { return pendingBaseVersion; },
-    set pendingBaseVersion(value: number | null) { pendingBaseVersion = value; },
-
-    get pendingOperations() { return pendingOperations; },
-    set pendingOperations(value: PendingOperation[]) { pendingOperations = value; },
+    get pending() { return pending; },
+    set pending(value: PendingState) { pending = value; },
 
     get recentRemoteOps() { return recentRemoteOps; },
     set recentRemoteOps(value: Operation[]) { recentRemoteOps = value; },

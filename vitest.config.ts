@@ -13,6 +13,8 @@ export default defineConfig({
       include: [
         // Core OT logic
         'src/ot/**/*.ts',
+        // Durable Object handlers
+        'src/durable-objects/handlers/**/*.ts',
         // Client-side realtime and crypto (testable without Svelte)
         'client/lib/realtime/**/*.ts',
         'client/lib/crypto.ts',
@@ -27,6 +29,9 @@ export default defineConfig({
         '**/*.d.ts',
         // Type definitions only
         'src/ot/types.ts',
+        'src/durable-objects/handlers/types.ts',
+        // Re-export barrels
+        'src/durable-objects/handlers/index.ts',
       ],
       thresholds: {
         lines: 90,

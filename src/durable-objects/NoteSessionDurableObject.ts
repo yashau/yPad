@@ -12,11 +12,10 @@
  * 2. Server transforms against history, increments version
  * 3. Server broadcasts to other clients with sequence number
  * 4. Server ACKs sender with transformed operation
+ *
+ * Message handlers are extracted to handlers/messageHandlers.ts for organization.
  */
 
-import { transform } from '../ot/transform';
-import { applyOperation } from '../ot/apply';
-import { simpleChecksum } from '../ot/checksum';
 import { RATE_LIMITS } from '../../config/constants';
 import type {
   Operation,
@@ -24,17 +23,22 @@ import type {
   ClientSession,
   OperationMessage,
   SyncMessage,
-  AckMessage,
   CursorUpdateMessage,
-  CursorAckMessage,
-  UserJoinedMessage,
-  UserLeftMessage,
   SyntaxChangeMessage,
-  SyntaxAckMessage,
-  NoteStatusMessage,
   ReplayRequestMessage,
-  ReplayResponseMessage,
 } from '../ot/types';
+import {
+  handleOperation as handleOperationImpl,
+  handleCursorUpdate as handleCursorUpdateImpl,
+  handleSyntaxChange as handleSyntaxChangeImpl,
+  handleReplayRequest as handleReplayRequestImpl,
+  broadcastEncryptionChange as broadcastEncryptionChangeImpl,
+  broadcastVersionUpdate as broadcastVersionUpdateImpl,
+  broadcastUserJoined as broadcastUserJoinedImpl,
+  broadcastUserLeft as broadcastUserLeftImpl,
+  broadcastNoteStatus as broadcastNoteStatusImpl,
+} from './handlers';
+import type { NoteSessionContext } from './handlers';
 
 /** Queued WebSocket message for sequential processing. */
 interface QueuedMessage {
@@ -51,7 +55,6 @@ interface NoteRecord {
 }
 
 export class NoteSessionDurableObject implements DurableObject {
-  private state: DurableObjectState;
   private env: Env;
   private sessions: Map<WebSocket, ClientSession>;
   private noteId: string;
@@ -60,7 +63,6 @@ export class NoteSessionDurableObject implements DurableObject {
   private operationHistory: Operation[];
   private persistenceTimer: number | null;
   private operationsSincePersist: number;
-  private doSessionId: string;
   private isInitialized: boolean;
   private lastOperationSessionId: string | null = null;
   private isEncrypted: boolean = false;
@@ -77,8 +79,7 @@ export class NoteSessionDurableObject implements DurableObject {
   private statusBroadcastTimer: number | null = null;
   private readonly STATUS_BROADCAST_INTERVAL = 10000; // 10 seconds
 
-  constructor(state: DurableObjectState, env: Env) {
-    this.state = state;
+  constructor(_state: DurableObjectState, env: Env) {
     this.env = env;
     this.sessions = new Map();
     this.noteId = '';
@@ -87,7 +88,6 @@ export class NoteSessionDurableObject implements DurableObject {
     this.operationHistory = [];
     this.persistenceTimer = null;
     this.operationsSincePersist = 0;
-    this.doSessionId = crypto.randomUUID(); // Unique ID for this DO instance
     this.isInitialized = false;
     this.lastOperationSessionId = null;
   }
@@ -317,35 +317,6 @@ export class NoteSessionDurableObject implements DurableObject {
   }
 
   /**
-   * Check rate limit for a client session using token bucket algorithm
-   * Returns true if request is allowed, false if rate limited
-   */
-  private checkRateLimit(session: ClientSession): boolean {
-    const now = Date.now();
-    const config = RATE_LIMITS.WEBSOCKET;
-
-    // Refill tokens based on time elapsed
-    const elapsed = now - session.rateLimit.lastRefill;
-    const tokensToAdd = (elapsed / 1000) * config.OPS_PER_SECOND;
-
-    session.rateLimit.tokens = Math.min(
-      config.BURST_ALLOWANCE,
-      session.rateLimit.tokens + tokensToAdd
-    );
-    session.rateLimit.lastRefill = now;
-
-    // Check if we have tokens
-    if (session.rateLimit.tokens < 1) {
-      session.rateLimit.violations++;
-      return false; // Rate limited
-    }
-
-    // Consume a token
-    session.rateLimit.tokens--;
-    return true;
-  }
-
-  /**
    * Process queued messages sequentially
    */
   async processQueue(): Promise<void> {
@@ -383,209 +354,57 @@ export class NoteSessionDurableObject implements DurableObject {
       return;
     }
 
+    const ctx = this.getContext();
+
     if (message.type === 'operation') {
-      await this.handleOperation(ws, message as OperationMessage);
+      await handleOperationImpl(ctx, ws, message as OperationMessage);
     } else if (message.type === 'cursor_update') {
-      await this.handleCursorUpdate(ws, message as CursorUpdateMessage);
+      await handleCursorUpdateImpl(ctx, ws, message as CursorUpdateMessage);
     } else if (message.type === 'syntax_change') {
-      await this.handleSyntaxChange(ws, message as SyntaxChangeMessage);
+      await handleSyntaxChangeImpl(ctx, ws, message as SyntaxChangeMessage);
     } else if (message.type === 'replay_request') {
-      await this.handleReplayRequest(ws, message as ReplayRequestMessage);
-    }
-  }
-
-  async handleOperation(ws: WebSocket, message: OperationMessage): Promise<void> {
-    const session = this.sessions.get(ws);
-    if (!session || !session.isAuthenticated) {
-      this.sendError(ws, 'Unauthorized');
-      return;
+      await handleReplayRequestImpl(ctx, ws, message as ReplayRequestMessage);
     }
 
-    // Check rate limit
-    if (!this.checkRateLimit(session)) {
-      if (session.rateLimit.violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD) {
-        ws.close(1008, 'Rate limit exceeded');
-        this.sessions.delete(ws);
-        return;
-      }
-      this.sendError(ws, RATE_LIMITS.PENALTY.WARNING_MESSAGE);
-      return;
-    }
-
-    let operation = message.operation;
-    const baseVersion = message.baseVersion;
-
-    // Transform against other clients' operations only - same client's ops are already sequential
-    const operationsToTransform = this.operationHistory.filter(
-      (op) => op.version > baseVersion && op.clientId !== operation.clientId
-    );
-
-    for (const historicalOp of operationsToTransform) {
-      [operation] = transform(operation, historicalOp);
-    }
-
-    // Increment version and update operation
-    this.operationVersion++;
-    operation.version = this.operationVersion;
-
-    // Apply operation to current content
-    this.currentContent = applyOperation(this.currentContent, operation);
-
-    // Add to history
-    this.operationHistory.push(operation);
-
-    // Compact history if needed (keep last 100 operations)
-    if (this.operationHistory.length > 100) {
-      this.operationHistory = this.operationHistory.slice(-100);
-    }
-
-    // Track operations since last persist and session ID
-    this.operationsSincePersist++;
-    this.lastOperationSessionId = session.sessionId;
-
-    // Calculate checksum of server content after applying operation
-    const contentChecksum = simpleChecksum(this.currentContent);
-
-    // Broadcast to all other clients and get the sequence number
-    const broadcastSeqNum = this.broadcastOperation(operation, session.clientId, contentChecksum);
-
-    // ACK includes transformed operation so client can rebase to server's canonical version
-    const ackMessage: AckMessage = {
-      type: 'ack',
-      version: this.operationVersion,
-      seqNum: broadcastSeqNum,
-      contentChecksum, // Include checksum so client can verify state
-      transformedOperation: operation, // The server's canonical transformed version
-    };
-    ws.send(JSON.stringify(ackMessage));
-
-    // Schedule persistence (debounced)
-    this.schedulePersistence(false);
-  }
-
-  async handleCursorUpdate(ws: WebSocket, message: CursorUpdateMessage): Promise<void> {
-    const session = this.sessions.get(ws);
-    if (!session || !session.isAuthenticated) {
-      return;
-    }
-
-    // Broadcast cursor position to all other clients and get the sequence number
-    const broadcastSeqNum = this.broadcastCursorUpdate(session.clientId, message.position);
-
-    // Send acknowledgment to sender with the sequence number of the broadcast
-    // This allows the sender to stay in sync with the global sequence
-    const ackMessage: CursorAckMessage = {
-      type: 'cursor_ack',
-      seqNum: broadcastSeqNum,
-    };
-    ws.send(JSON.stringify(ackMessage));
-  }
-
-  async handleSyntaxChange(ws: WebSocket, message: SyntaxChangeMessage): Promise<void> {
-    const session = this.sessions.get(ws);
-    if (!session || !session.isAuthenticated) {
-      return;
-    }
-
-    // Update the current syntax in memory
-    this.currentSyntax = message.syntax;
-
-    // Broadcast syntax change to all other clients and get the sequence number
-    const broadcastSeqNum = this.broadcastSyntaxChange(session.clientId, message.syntax);
-
-    // Send acknowledgment to sender with the sequence number of the broadcast
-    const ackMessage: SyntaxAckMessage = {
-      type: 'syntax_ack',
-      seqNum: broadcastSeqNum,
-    };
-    ws.send(JSON.stringify(ackMessage));
-
-    // Persist syntax change to database
-    this.persistSyntaxToDB(message.syntax);
+    // Sync state changes from handler back to the DO
+    this.syncFromContext(ctx);
   }
 
   /**
-   * Handle a replay request from a client that detected state drift.
-   * Sends back the current content and operation history so the client
-   * can rebuild its state from a known good point.
+   * Create a context object for message handlers.
+   * This provides handlers access to the DO's mutable state and helper methods.
    */
-  async handleReplayRequest(ws: WebSocket, message: ReplayRequestMessage): Promise<void> {
-    const session = this.sessions.get(ws);
-    if (!session || !session.isAuthenticated) {
-      return;
-    }
-
-    // Get operations from the requested version onwards
-    const fromVersion = message.fromVersion;
-    const opsToReplay = this.operationHistory.filter(op => op.version > fromVersion);
-
-    // Calculate the content checksum for verification
-    const contentChecksum = simpleChecksum(this.currentContent);
-
-    // Send the replay response with current server state
-    // The client will use this to rebuild its local state
-    const replayResponse: ReplayResponseMessage = {
-      type: 'replay_response',
-      baseContent: this.currentContent,
-      baseVersion: this.operationVersion,
-      operations: opsToReplay,
-      currentVersion: this.operationVersion,
-      contentChecksum,
+  private getContext(): NoteSessionContext {
+    return {
+      noteId: this.noteId,
+      currentContent: this.currentContent,
+      operationVersion: this.operationVersion,
+      operationHistory: this.operationHistory,
+      operationsSincePersist: this.operationsSincePersist,
+      lastOperationSessionId: this.lastOperationSessionId,
+      isEncrypted: this.isEncrypted,
+      currentSyntax: this.currentSyntax,
+      globalSeqNum: this.globalSeqNum,
+      sessions: this.sessions,
+      sendError: this.sendError.bind(this),
+      schedulePersistence: this.schedulePersistence.bind(this),
+      persistSyntaxToDB: this.persistSyntaxToDB.bind(this),
     };
-
-    ws.send(JSON.stringify(replayResponse));
   }
 
   /**
-   * Get the next global sequence number for a broadcast message.
-   * All sequenced broadcasts (operations, cursors, presence) must use this
-   * to ensure proper ordering across all clients.
+   * Sync state changes from handler context back to the DO.
+   * Call this after handler execution to persist mutable state changes.
    */
-  private getNextSeqNum(): number {
-    return ++this.globalSeqNum;
-  }
-
-  /**
-   * Broadcast a message to connected clients with optional exclusion.
-   */
-  private broadcast(
-    message: WSMessage | Record<string, unknown>,
-    options?: { excludeClientId?: string; excludeSessionId?: string }
-  ): void {
-    const messageStr = JSON.stringify(message);
-    for (const [ws, session] of this.sessions) {
-      if (options?.excludeClientId && session.clientId === options.excludeClientId) continue;
-      if (options?.excludeSessionId && session.sessionId === options.excludeSessionId) continue;
-      try {
-        ws.send(messageStr);
-      } catch (error) {
-        console.error(`[DO ${this.noteId}] Broadcast error:`, error);
-      }
-    }
-  }
-
-  broadcastCursorUpdate(clientId: string, position: number): number {
-    const seqNum = this.getNextSeqNum();
-    const message: CursorUpdateMessage = {
-      type: 'cursor_update',
-      clientId,
-      position,
-      seqNum,
-    };
-    this.broadcast(message, { excludeClientId: clientId });
-    return seqNum;
-  }
-
-  broadcastSyntaxChange(clientId: string, syntax: string): number {
-    const seqNum = this.getNextSeqNum();
-    const message: SyntaxChangeMessage = {
-      type: 'syntax_change',
-      clientId,
-      syntax,
-      seqNum,
-    };
-    this.broadcast(message, { excludeClientId: clientId });
-    return seqNum;
+  private syncFromContext(ctx: NoteSessionContext): void {
+    this.currentContent = ctx.currentContent;
+    this.operationVersion = ctx.operationVersion;
+    this.operationHistory = ctx.operationHistory;
+    this.operationsSincePersist = ctx.operationsSincePersist;
+    this.lastOperationSessionId = ctx.lastOperationSessionId;
+    this.isEncrypted = ctx.isEncrypted;
+    this.currentSyntax = ctx.currentSyntax;
+    this.globalSeqNum = ctx.globalSeqNum;
   }
 
   async persistSyntaxToDB(syntax: string): Promise<void> {
@@ -596,21 +415,6 @@ export class NoteSessionDurableObject implements DurableObject {
     } catch (error) {
       console.error(`[DO ${this.noteId}] Error persisting syntax to database:`, error);
     }
-  }
-
-  broadcastOperation(operation: Operation, senderClientId: string, contentChecksum: number): number {
-    const seqNum = this.getNextSeqNum();
-    const message: OperationMessage = {
-      type: 'operation',
-      operation,
-      baseVersion: operation.version - 1,
-      clientId: operation.clientId,
-      sessionId: '',
-      seqNum,
-      contentChecksum,
-    };
-    this.broadcast(message, { excludeClientId: senderClientId });
-    return seqNum;
   }
 
   schedulePersistence(immediate: boolean): void {
@@ -714,48 +518,33 @@ export class NoteSessionDurableObject implements DurableObject {
     );
   }
 
-  broadcastEncryptionChange(is_encrypted: boolean, excludeSessionId?: string): void {
-    this.isEncrypted = is_encrypted;
-    const message = { type: 'encryption_changed' as const, is_encrypted };
-    this.broadcast(message, { excludeSessionId });
+  private broadcastEncryptionChange(is_encrypted: boolean, excludeSessionId?: string): void {
+    const ctx = this.getContext();
+    broadcastEncryptionChangeImpl(ctx, is_encrypted, excludeSessionId);
+    this.syncFromContext(ctx);
   }
 
-  broadcastVersionUpdate(version: number, excludeSessionId?: string): void {
-    const message = {
-      type: 'version_update' as const,
-      version,
-      message: 'Note was updated by another user'
-    };
-    this.broadcast(message, { excludeSessionId });
+  private broadcastVersionUpdate(version: number, excludeSessionId?: string): void {
+    const ctx = this.getContext();
+    broadcastVersionUpdateImpl(ctx, version, excludeSessionId);
+    this.syncFromContext(ctx);
   }
 
-  broadcastUserJoined(joinedClientId: string): void {
-    const seqNum = this.getNextSeqNum();
-    const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
-    const message: UserJoinedMessage = {
-      type: 'user_joined',
-      clientId: joinedClientId,
-      connectedUsers,
-      seqNum,
-    };
-    this.broadcast(message);
+  private broadcastUserJoined(joinedClientId: string): void {
+    const ctx = this.getContext();
+    broadcastUserJoinedImpl(ctx, joinedClientId);
+    this.syncFromContext(ctx);
   }
 
-  broadcastUserLeft(leftClientId: string): void {
-    const seqNum = this.getNextSeqNum();
-    const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
-    const message: UserLeftMessage = {
-      type: 'user_left',
-      clientId: leftClientId,
-      connectedUsers,
-      seqNum,
-    };
-    this.broadcast(message);
+  private broadcastUserLeft(leftClientId: string): void {
+    const ctx = this.getContext();
+    broadcastUserLeftImpl(ctx, leftClientId);
+    this.syncFromContext(ctx);
   }
 
   resetState(deletedBySessionId?: string): void {
     // Close all WebSocket connections
-    for (const [ws, session] of this.sessions) {
+    for (const [ws] of this.sessions) {
       try {
         ws.send(JSON.stringify({
           type: 'note_deleted',
@@ -828,13 +617,14 @@ export class NoteSessionDurableObject implements DurableObject {
         return;
       }
 
-      const message: NoteStatusMessage = {
-        type: 'note_status',
-        view_count: Number(note.view_count) || 0,
-        max_views: note.max_views !== null ? Number(note.max_views) : null,
-        expires_at: note.expires_at !== null ? Number(note.expires_at) : null,
-      };
-      this.broadcast(message);
+      const ctx = this.getContext();
+      broadcastNoteStatusImpl(
+        ctx,
+        Number(note.view_count) || 0,
+        note.max_views !== null ? Number(note.max_views) : null,
+        note.expires_at !== null ? Number(note.expires_at) : null
+      );
+      this.syncFromContext(ctx);
     } catch (error) {
       console.error(`[DO ${this.noteId}] Error fetching note status:`, error);
     }
