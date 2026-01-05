@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import hljs from 'highlight.js';
   import { generateOperationsFromInputEvent } from './lib/realtime/InputEventOperationGenerator';
+  import { transform } from '../src/ot/transform';
+  import { applyOperation } from '../src/ot/apply';
 
   // Hooks
   import { useNoteState } from './lib/hooks/useNoteState.svelte';
@@ -193,10 +195,20 @@
     if (!editorElement) return;
 
     const handleBeforeInput = () => {
-      // CRITICAL: Capture cursor position BEFORE DOM changes
+      // CRITICAL: Capture selection range AND content BEFORE DOM changes
       // This is essential for accurate OT position calculations
       // The input event fires AFTER the DOM is modified, so we must capture here
-      editor.preEditCursorPosition = wsConnection.getCurrentCursorPosition();
+      const selectionRange = wsConnection.getCurrentSelectionRange();
+      editor.preEditCursorPosition = selectionRange.start;
+      // Only set selectionEnd if there's actually a selection (not just a cursor)
+      editor.preEditSelectionEnd = selectionRange.end !== selectionRange.start ? selectionRange.end : null;
+      // Capture content BEFORE the edit - this is crucial because a remote operation
+      // might modify editor.content between beforeinput and input events
+      editor.preEditContent = editor.content;
+      // Clear recent remote ops since we're starting a new edit cycle.
+      // Any remote ops that arrive after this point (before the corresponding input event)
+      // will be tracked fresh.
+      collaboration.recentRemoteOps = [];
 
       // Cursor update will be sent after the input is processed
       // This captures typing, backspace, delete, enter, paste, etc.
@@ -209,8 +221,49 @@
     };
 
     const handleKeyDown = (e: Event) => {
-      // Handle navigation keys that don't trigger beforeinput
       const keyEvent = e as KeyboardEvent;
+
+      // Handle Tab key - insert spaces instead of changing focus
+      if (keyEvent.key === 'Tab' && !keyEvent.ctrlKey && !keyEvent.altKey && !keyEvent.metaKey) {
+        e.preventDefault();
+
+        // Capture selection and content before modification
+        const selectionRange = wsConnection.getCurrentSelectionRange();
+        editor.preEditCursorPosition = selectionRange.start;
+        editor.preEditSelectionEnd = selectionRange.end !== selectionRange.start ? selectionRange.end : null;
+        editor.preEditContent = editor.content;
+        collaboration.recentRemoteOps = [];
+
+        // Insert 2 spaces (common convention for code editors)
+        const tabSpaces = '  ';
+
+        if (editor.syntaxHighlight === 'plaintext' && editor.textareaScrollRef) {
+          const textarea = editor.textareaScrollRef;
+          const start = textarea.selectionStart;
+          const end = textarea.selectionEnd;
+          const value = textarea.value;
+
+          // Insert spaces at cursor/replace selection
+          textarea.value = value.substring(0, start) + tabSpaces + value.substring(end);
+
+          // Move cursor after inserted spaces
+          const newPos = start + tabSpaces.length;
+          textarea.selectionStart = newPos;
+          textarea.selectionEnd = newPos;
+
+          // Trigger input handler to send OT operation
+          const inputEvent = new InputEvent('input', { inputType: 'insertText', data: tabSpaces });
+          handleEditorInput(() => textarea.value, inputEvent);
+        } else if (editor.editorRef) {
+          // For contenteditable, use execCommand or manual insertion
+          document.execCommand('insertText', false, tabSpaces);
+          // The input event handler will be triggered automatically
+        }
+
+        return;
+      }
+
+      // Handle navigation keys that don't trigger beforeinput
       const navigationKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'];
       if (navigationKeys.includes(keyEvent.key)) {
         setTimeout(() => wsConnection.sendCursorUpdate(), 0);
@@ -257,16 +310,25 @@
       return;
     }
 
-    // Capture the old content and cursor position before updating
-    const oldContent = editor.content;
-    // Use pre-edit cursor position captured in beforeinput event
-    // This is the cursor position BEFORE the DOM was modified, which is critical
+    // Use pre-edit content and selection range captured in beforeinput event
+    // This is CRITICAL for OT correctness: if a remote operation modifies editor.content
+    // between beforeinput and input events, we'd generate operations against the wrong base.
+    // By capturing content in beforeinput, we ensure operations are generated against the
+    // state the user was editing, not a state modified by remote operations.
+    const oldContent = editor.preEditContent ?? editor.content;
+    // Use pre-edit selection range captured in beforeinput event
+    // This is the selection BEFORE the DOM was modified, which is critical
     // for accurate OT position calculations. Falls back to post-edit position if not available.
     const preEditPos = editor.preEditCursorPosition;
-    const postEditPos = wsConnection.getCurrentCursorPosition();
-    const cursorPosition = preEditPos ?? postEditPos;
-    // Clear the pre-edit position after using it
+    const preEditSelEnd = editor.preEditSelectionEnd;
+    const postEditRange = wsConnection.getCurrentSelectionRange();
+    const selectionStart = preEditPos ?? postEditRange.start;
+    const selectionEnd = preEditSelEnd ?? (preEditPos !== null ? null :
+      (postEditRange.end !== postEditRange.start ? postEditRange.end : null));
+    // Clear the pre-edit state after using it
     editor.preEditCursorPosition = null;
+    editor.preEditSelectionEnd = null;
+    editor.preEditContent = null;
 
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
       // For realtime mode, update editor.content optimistically
@@ -280,7 +342,8 @@
         event,
         oldContent,
         newContent,
-        cursorPosition,
+        selectionStart,
+        selectionEnd,
         collaboration.clientId,
         baseVersion
       );
@@ -302,10 +365,43 @@
 
         // Track the optimistic state (what we expect after all pending ops apply)
         collaboration.pendingLocalContent = newContent;
-      }
 
-      // Update editor.content optimistically so checksum verification works
-      editor.content = newContent;
+        // CRITICAL: Apply the operation to editor.content, don't just set it to newContent.
+        // If a remote operation was applied between beforeinput and input events,
+        // editor.content will have changed. We need to apply our operation on top of that,
+        // not overwrite it with newContent (which doesn't include the remote op).
+        //
+        // The operations we generated were based on oldContent (preEditContent).
+        // If remote ops arrived, we need to transform our operations against them.
+        const recentRemoteOps = collaboration.recentRemoteOps;
+        if (recentRemoteOps.length === 0) {
+          // No remote ops arrived between beforeinput and input, simple case
+          editor.content = newContent;
+        } else {
+          // Remote ops arrived! Transform our new operations against them and apply.
+          // The operations were generated against oldContent, but editor.content is now
+          // oldContent + remoteOps. We need to transform our ops to apply on current state.
+          let currentContent = editor.content;
+          for (let op of operations) {
+            // Transform this operation against all remote ops that arrived
+            for (const remoteOp of recentRemoteOps) {
+              // transform(local, remote) returns [local', remote']
+              // We want local' (our op transformed to apply after remote)
+              const [transformedLocal] = transform(op, remoteOp);
+              op = transformedLocal;
+            }
+            currentContent = applyOperation(currentContent, op);
+          }
+          editor.content = currentContent;
+        }
+        // Clear recent remote ops - they've been accounted for
+        collaboration.recentRemoteOps = [];
+      } else {
+        // No operations generated, but still update content to match DOM
+        editor.content = newContent;
+        // Clear recent remote ops even if no operations generated
+        collaboration.recentRemoteOps = [];
+      }
     } else {
       // For non-realtime modes (encrypted notes, no WebSocket), update content immediately
       editor.content = newContent;

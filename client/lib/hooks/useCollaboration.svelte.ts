@@ -4,11 +4,23 @@
  */
 
 import type { WebSocketClient } from '../realtime/WebSocketClient';
+import type { Operation } from '../../../src/ot/types';
 
 export interface RemoteCursorData {
   position: number;
   color: string;
   label: string;
+}
+
+/**
+ * A pending operation with its base version for OT conflict resolution.
+ * The baseVersion is the server version at which this operation was created.
+ * This allows us to determine if the server has seen this operation when
+ * processing incoming remote operations.
+ */
+export interface PendingOperation {
+  operation: Operation;
+  baseVersion: number;
 }
 
 export function useCollaboration() {
@@ -19,6 +31,11 @@ export function useCollaboration() {
   let clientId = $state('');
   let pendingLocalContent = $state<string | null>(null);
   let pendingBaseVersion = $state<number | null>(null); // Version at which pending operations started
+  let pendingOperations = $state<PendingOperation[]>([]); // Unacknowledged operations for OT transform
+  // Remote operations received between beforeinput and input events.
+  // When user is typing and a remote op arrives, we apply it to editor.content but the DOM
+  // hasn't been updated yet. New local operations need to be transformed against these.
+  let recentRemoteOps = $state<Operation[]>([]);
   let isSyncing = $state(false);
   let remoteCursors = $state<Map<string, RemoteCursorData>>(new Map());
   let connectedUsers = $state<Set<string>>(new Set());
@@ -71,6 +88,12 @@ export function useCollaboration() {
 
     get pendingBaseVersion() { return pendingBaseVersion; },
     set pendingBaseVersion(value: number | null) { pendingBaseVersion = value; },
+
+    get pendingOperations() { return pendingOperations; },
+    set pendingOperations(value: PendingOperation[]) { pendingOperations = value; },
+
+    get recentRemoteOps() { return recentRemoteOps; },
+    set recentRemoteOps(value: Operation[]) { recentRemoteOps = value; },
 
     get isSyncing() { return isSyncing; },
     set isSyncing(value: boolean) { isSyncing = value; },

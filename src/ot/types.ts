@@ -44,6 +44,7 @@ export type AckMessage = {
   version: number;
   seqNum?: number; // Global sequence number for the broadcast triggered by this operation
   contentChecksum?: number; // Simple checksum of server content after applying operation
+  transformedOperation?: Operation; // The server's canonical transformed version of the operation
 };
 
 export type ErrorMessage = {
@@ -122,6 +123,24 @@ export type NoteStatusMessage = {
   expires_at: number | null;
 };
 
+// Request replay of operations from a specific version
+export type ReplayRequestMessage = {
+  type: 'replay_request';
+  fromVersion: number; // Client wants ops from this version onwards
+  clientId: string;
+  sessionId: string;
+};
+
+// Response with base content and operations to replay
+export type ReplayResponseMessage = {
+  type: 'replay_response';
+  baseContent: string; // Content at fromVersion (or earliest available)
+  baseVersion: number; // Version of the base content
+  operations: Operation[]; // Operations to apply on top of base
+  currentVersion: number; // Current server version after all ops
+  contentChecksum: number; // Checksum of final content for verification
+};
+
 export type WSMessage =
   | OperationMessage
   | SyncMessage
@@ -138,7 +157,9 @@ export type WSMessage =
   | UserLeftMessage
   | SyntaxChangeMessage
   | SyntaxAckMessage
-  | NoteStatusMessage;
+  | NoteStatusMessage
+  | ReplayRequestMessage
+  | ReplayResponseMessage;
 
 // Rate limit state for WebSocket connections
 export interface RateLimitState {

@@ -5,14 +5,14 @@
 
 import { WebSocketClient } from '../realtime/WebSocketClient';
 import { generateOperations } from '../realtime/OperationGenerator';
-import { transformCursorPosition } from '../../../src/ot/transform';
+import { transform, transformCursorPosition } from '../../../src/ot/transform';
 import { applyOperation } from '../../../src/ot/apply';
 import { simpleChecksum } from '../../../src/ot/checksum';
 import type { Operation } from '../../../src/ot/types';
 import type { useNoteState } from './useNoteState.svelte';
 import type { useEditor } from './useEditor.svelte';
 import type { useSecurity } from './useSecurity.svelte';
-import type { useCollaboration, RemoteCursorData } from './useCollaboration.svelte';
+import type { useCollaboration, RemoteCursorData, PendingOperation } from './useCollaboration.svelte';
 
 export interface WebSocketConfig {
   noteState: ReturnType<typeof useNoteState>;
@@ -67,6 +67,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           // This prevents duplicate operations from being sent after reconnection
           collaboration.pendingLocalContent = null;
           collaboration.pendingBaseVersion = null;
+          collaboration.pendingOperations = [];
 
           // Only attempt reconnection if note was not deleted and not encrypted
           // Encrypted notes don't use WebSocket for realtime sync
@@ -109,11 +110,17 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             const ops = generateOperations(syncContent, localContent, collaboration.clientId, noteState.currentVersion);
 
             // Send each operation with correct incremental version
+            // Also add to pendingOperations so client-side OT works correctly
             ops.forEach((op, index) => {
               if (collaboration.wsClient) {
+                const baseVersion = noteState.currentVersion + index;
                 // Update operation version to be currentVersion + index
-                op.version = noteState.currentVersion + index;
-                collaboration.wsClient.sendOperation(op, noteState.currentVersion + index);
+                op.version = baseVersion;
+                // Add to pending operations for OT transform against incoming remote ops
+                // Track the baseVersion so we know what server state this was based on
+                const pendingOp: PendingOperation = { operation: op, baseVersion };
+                collaboration.pendingOperations = [...collaboration.pendingOperations, pendingOp];
+                collaboration.wsClient.sendOperation(op, baseVersion);
                 noteState.currentVersion++;
               }
             });
@@ -134,11 +141,29 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
           collaboration.isSyncing = false;
         },
-        onAck: (version, contentChecksum?: number) => {
+        onAck: (version, contentChecksum?: number, transformedOperation?: Operation) => {
           noteState.currentVersion = version;
 
+          // Remove the acknowledged operation from pending list (FIFO order)
+          // When we send an operation, it's added to pendingOperations.
+          // When we receive ACK, the server has applied it, so remove from pending.
+          const pendingOps = collaboration.pendingOperations;
+          if (pendingOps.length > 0) {
+            collaboration.pendingOperations = pendingOps.slice(1);
+          }
+
+          // Update lastLocalContent to confirm this operation is now server-side
+          editor.lastLocalContent = editor.content;
+
+          // If no more pending operations, clear pending state
+          if (collaboration.pendingOperations.length === 0) {
+            collaboration.pendingLocalContent = null;
+            collaboration.pendingBaseVersion = null;
+          }
+
           // Verify content checksum if provided
-          if (contentChecksum !== undefined) {
+          // Only verify when we have no pending ops (local content matches server)
+          if (contentChecksum !== undefined && collaboration.pendingOperations.length === 0) {
             verifyContentChecksum(contentChecksum);
           }
         },
@@ -192,6 +217,33 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         },
         onNoteStatus: (viewCount, maxViews, expiresAt) => {
           config.onNoteStatus?.(viewCount, maxViews, expiresAt);
+        },
+        onReplayResponse: (baseContent, baseVersion, operations, currentVersion, contentChecksum) => {
+          // Server sent us the authoritative state - adopt it
+          console.log(`[OT] Replay response: version ${baseVersion} -> ${currentVersion}, ${operations.length} ops`);
+
+          // Clear pending operations - they're no longer valid after replay
+          collaboration.pendingOperations = [];
+          collaboration.pendingLocalContent = null;
+          collaboration.pendingBaseVersion = null;
+
+          // Adopt the server's content
+          editor.isUpdating = true;
+          editor.content = baseContent;
+          editor.lastLocalContent = baseContent;
+          editor.isUpdating = false;
+
+          // Update version
+          noteState.currentVersion = currentVersion;
+
+          // Verify the checksum matches
+          const localChecksum = simpleChecksum(editor.content);
+          if (localChecksum === contentChecksum) {
+            checksumMismatchCount = 0;
+            console.log('[OT] Replay successful - checksums match');
+          } else {
+            console.error('[OT] Replay checksum mismatch - this should not happen');
+          }
         }
       });
     } catch (error) {
@@ -215,6 +267,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     // Reset the noteWasDeleted flag to allow WebSocket reconnection for new notes
     noteWasDeleted = false;
     checksumMismatchCount = 0;
+    // Clear pending operations on reset
+    collaboration.pendingOperations = [];
   }
 
   function verifyContentChecksum(serverChecksum: number) {
@@ -222,8 +276,16 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
     if (localChecksum !== serverChecksum) {
       checksumMismatchCount++;
-      // Log for debugging - don't force resync automatically
-      // User can manually refresh if needed
+      console.warn(`[OT] Checksum mismatch: local=${localChecksum}, server=${serverChecksum}, count=${checksumMismatchCount}`);
+
+      // If we have a mismatch and no pending operations, request a replay immediately.
+      // The server's content is authoritative, so we should sync to it ASAP.
+      if (collaboration.pendingOperations.length === 0) {
+        console.warn('[OT] Requesting replay due to checksum mismatch (no pending ops)');
+        if (collaboration.wsClient && collaboration.clientId) {
+          collaboration.wsClient.sendReplayRequest(noteState.currentVersion, collaboration.clientId);
+        }
+      }
     } else {
       // Reset mismatch counter on successful verification
       checksumMismatchCount = 0;
@@ -231,65 +293,113 @@ export function useWebSocketConnection(config: WebSocketConfig) {
   }
 
   function applyRemoteOperation(operation: Operation, contentChecksum?: number) {
-    const isOwnOp = operation.clientId === collaboration.clientId;
+    // This function is ONLY called for remote operations (from other clients).
+    // Our own operations are acknowledged via onAck callback, not onOperation.
+    // The server excludes the sender from broadcasts.
 
     editor.isUpdating = true;
 
     try {
-      // For our own operations, we already applied them optimistically
-      // Just verify checksum and update tracking
-      if (isOwnOp) {
-        // Verify checksum if provided
-        if (contentChecksum !== undefined) {
-          verifyContentChecksum(contentChecksum);
-        }
+      // Transform the remote operation against our pending local operations.
+      // CRITICAL: Only transform against pending operations that the server DIDN'T know about
+      // when it processed this remote operation. The server already transformed the remote op
+      // against operations it knew about.
+      //
+      // The remote operation has version V. The server knew about all operations with
+      // version < V when processing it. Our pending operation with baseVersion B was sent
+      // based on server state at version B. If B < V, the server might have seen our op.
+      // If B >= V, the server definitely didn't see our op when processing the remote op.
+      //
+      // However, there's a subtle issue: when the server transforms the remote op against
+      // our pending op, it only transforms if our op was already processed (has a version < V).
+      // Our pending ops haven't been assigned final server versions yet.
+      //
+      // The safest approach: transform against ALL pending operations. The server transforms
+      // incoming ops against history from OTHER clients only. Since our pending ops are from
+      // us (same client), the server won't have transformed this remote op against them.
 
-        // Update lastLocalContent to confirm this operation is now server-side
-        editor.lastLocalContent = editor.content;
+      // Transform the remote operation against our pending local operations.
+      // IMPORTANT: We only transform the remote op, NOT our pending ops!
+      //
+      // Why? Because the server will also transform our pending ops when they arrive.
+      // If we transform our pending ops here AND the server transforms them again,
+      // we get double-transformation which breaks convergence.
+      //
+      // The remote op needs to be transformed against our pending ops because:
+      // - The server transformed it against acknowledged ops from other clients
+      // - But it wasn't transformed against our pending ops (they're not on server yet)
+      // - So we transform it here to account for our pending ops
+      //
+      // CRITICAL: We MUST also update our pending operations!
+      // This follows the ot.js algorithm (AwaitingConfirm.applyServer):
+      //   var pair = transform(outstanding, operation);
+      //   client.applyOperation(pair[1]);
+      //   return new AwaitingConfirm(pair[0]);  // Updated outstanding!
+      //
+      // Why update pending ops? Because they will be ACKed based on the server state
+      // AFTER the remote op is applied. Our pending op needs to be transformed to
+      // correctly apply on top of the remote op.
 
-        // If content matches pending state, clear pending
-        if (editor.content === collaboration.pendingLocalContent) {
-          collaboration.pendingLocalContent = null;
-          collaboration.pendingBaseVersion = null;
-        }
+      let transformedOp = operation;
+      const newPendingOps: PendingOperation[] = [];
 
-        if (operation.version > noteState.currentVersion) {
-          noteState.currentVersion = operation.version;
-        }
-      } else {
-        // Remote operation - apply it
-        collaboration.lastSentCursorPos = transformCursorPosition(collaboration.lastSentCursorPos, operation);
-
-        let cursorPos = getCurrentCursorPosition();
-        cursorPos = transformCursorPosition(cursorPos, operation);
-
-        // Update cursor positions and trigger reactivity
-        // Only transform cursors that are NOT from the operation's client
-        // The operation client's cursor position comes from their cursor_update messages
-        const updatedCursors = new Map(collaboration.remoteCursors);
-        updatedCursors.forEach((cursorData, remoteClientId) => {
-          if (remoteClientId !== operation.clientId) {
-            cursorData.position = transformCursorPosition(cursorData.position, operation);
-          }
-        });
-        collaboration.remoteCursors = updatedCursors;
-
-        editor.content = applyOperation(editor.content, operation);
-
-        // Verify checksum if provided
-        if (contentChecksum !== undefined) {
-          verifyContentChecksum(contentChecksum);
-        }
-
-        // Update lastLocalContent to stay in sync
-        editor.lastLocalContent = editor.content;
-
-        if (operation.version > noteState.currentVersion) {
-          noteState.currentVersion = operation.version;
-        }
-
-        restoreCursorPosition(cursorPos);
+      for (const pending of collaboration.pendingOperations) {
+        // Transform both: pending against remote, and remote against pending
+        // transform(op1, op2) returns [op1', op2'] where:
+        // - op1' is op1 transformed to apply after op2
+        // - op2' is op2 transformed to apply after op1
+        const [transformedPending, transformedRemote] = transform(pending.operation, transformedOp);
+        newPendingOps.push({ operation: transformedPending, baseVersion: pending.baseVersion });
+        transformedOp = transformedRemote;
       }
+
+      // Update pending operations with their transformed versions
+      collaboration.pendingOperations = newPendingOps;
+
+      // Now apply the transformed remote operation
+      collaboration.lastSentCursorPos = transformCursorPosition(collaboration.lastSentCursorPos, transformedOp);
+
+      let cursorPos = getCurrentCursorPosition();
+      cursorPos = transformCursorPosition(cursorPos, transformedOp);
+
+      // Update cursor positions and trigger reactivity
+      // Only transform cursors that are NOT from the operation's client
+      // The operation client's cursor position comes from their cursor_update messages
+      const updatedCursors = new Map(collaboration.remoteCursors);
+      updatedCursors.forEach((cursorData, remoteClientId) => {
+        if (remoteClientId !== transformedOp.clientId) {
+          cursorData.position = transformCursorPosition(cursorData.position, transformedOp);
+        }
+      });
+      collaboration.remoteCursors = updatedCursors;
+
+      editor.content = applyOperation(editor.content, transformedOp);
+
+      // Track this remote operation for transformation of local operations that are
+      // currently being input. If the user is typing (beforeinput fired but input hasn't),
+      // the new local operation will need to be transformed against this remote op.
+      // We already transformed it against pending ops, so this is the "effective" remote op.
+      collaboration.recentRemoteOps = [...collaboration.recentRemoteOps, transformedOp];
+
+      // Note: We don't verify checksum here because our local content includes
+      // pending operations that the server doesn't know about yet.
+      // Checksum verification only makes sense when we have no pending operations.
+      if (contentChecksum !== undefined && collaboration.pendingOperations.length === 0) {
+        verifyContentChecksum(contentChecksum);
+      }
+
+      // Update lastLocalContent to stay in sync (but preserve pending ops effect)
+      // lastLocalContent should reflect what we've sent to the server
+      // Since we have pending ops, don't update it here
+      if (collaboration.pendingOperations.length === 0) {
+        editor.lastLocalContent = editor.content;
+      }
+
+      if (operation.version > noteState.currentVersion) {
+        noteState.currentVersion = operation.version;
+      }
+
+      restoreCursorPosition(cursorPos);
     } finally {
       editor.isUpdating = false;
     }
@@ -325,6 +435,52 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     }
 
     return 0;
+  }
+
+  function getCurrentSelectionRange(): { start: number; end: number } {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      return { start: 0, end: 0 };
+    }
+
+    const range = selection.getRangeAt(0);
+    const activeElement = document.activeElement;
+
+    if (activeElement === editor.editorRef && editor.editorRef) {
+      const walker = document.createTreeWalker(editor.editorRef, NodeFilter.SHOW_TEXT);
+      let charCount = 0;
+      let startPos = 0;
+      let endPos = 0;
+      let foundStart = false;
+      let foundEnd = false;
+      let node: Node | null = null;
+
+      while ((node = walker.nextNode())) {
+        const nodeLength = node.textContent?.length || 0;
+
+        if (!foundStart && node === range.startContainer) {
+          startPos = charCount + range.startOffset;
+          foundStart = true;
+        }
+
+        if (!foundEnd && node === range.endContainer) {
+          endPos = charCount + range.endOffset;
+          foundEnd = true;
+        }
+
+        if (foundStart && foundEnd) break;
+        charCount += nodeLength;
+      }
+
+      return { start: startPos, end: endPos };
+    } else if (activeElement === editor.textareaScrollRef && editor.textareaScrollRef) {
+      return {
+        start: editor.textareaScrollRef.selectionStart,
+        end: editor.textareaScrollRef.selectionEnd
+      };
+    }
+
+    return { start: 0, end: 0 };
   }
 
   function restoreCursorPosition(cursorPos: number) {
@@ -383,7 +539,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
 
   function sendOperation(operation: Operation) {
     if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
-      collaboration.wsClient.sendOperation(operation, noteState.currentVersion);
+      const baseVersion = noteState.currentVersion;
+      // Add to pending operations list for OT transform against incoming remote ops
+      // Track the baseVersion so we know what server state this was based on
+      const pendingOp: PendingOperation = { operation, baseVersion };
+      collaboration.pendingOperations = [...collaboration.pendingOperations, pendingOp];
+      collaboration.wsClient.sendOperation(operation, baseVersion);
       noteState.currentVersion++;
     }
   }
@@ -403,6 +564,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     sendCursorUpdate,
     sendOperation,
     sendSyntaxChange,
-    getCurrentCursorPosition
+    getCurrentCursorPosition,
+    getCurrentSelectionRange
   };
 }

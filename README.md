@@ -1,7 +1,7 @@
 # yPad
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-493%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-517%20passed-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -301,14 +301,55 @@ npm run e2e
 
 # Run e2e tests with UI
 npx playwright test --ui
+
+# Run specific test suite
+npx playwright test e2e/comprehensive-ot.spec.ts
 ```
 
 E2E test suites cover:
-- Alert banners (encryption enabled/disabled, note deleted, password errors, reload prompts)
-- Syntax highlighting (JavaScript, JSON, Python, TypeScript, YAML, SQL)
-- Theme permutations (light/dark modes with system theme combinations)
-- E2E encryption security (verifies passwords and plaintext never leave the browser)
-- Screenshots generated for visual regression testing
+
+**Alert Banners** (`alert-banners.spec.ts`)
+- Encryption enabled/disabled banners
+- Note deleted banner
+- Password dialog errors
+- Final view banner (max views reached)
+- Reload banner (encrypted note updated by another user)
+- Baseline screenshots (no banners)
+
+**Syntax Highlighting** (`syntax-highlighting.spec.ts`)
+- JavaScript, JSON, Python, TypeScript, YAML, SQL highlighting
+- Plain text mode (no highlighting)
+- Theme permutations (light/dark modes)
+- Screenshots for visual regression testing
+
+**E2E Encryption Security** (`e2e-encryption.spec.ts`)
+- Verifies passwords are NEVER sent to the server
+- Verifies plaintext content never leaves the browser
+- WebSocket messages never contain password or plaintext
+- Password hash is not sent (true E2E encryption)
+- Multiple password attempts don't leak to server
+
+**Real-Time OT** (`realtime-ot.spec.ts`)
+- Fast typing with network latency
+- Two users typing concurrently
+- Rapid insertions and deletions
+- Content persistence after fast typing
+- Typing during WebSocket reconnection
+
+**Comprehensive OT** (`comprehensive-ot.spec.ts`) - 13 tests
+- Race conditions with high latency (client types while PUT in flight)
+- Concurrent insertions at different positions
+- Concurrent insertions at SAME position (conflict resolution)
+- Backspace and Delete key operations
+- Word deletion (Ctrl+Backspace) with concurrent edits
+- Selection replacement (typing over selection)
+- Tab key insertion with concurrent edits
+- Rapid fire typing from 3 clients simultaneously
+- Enter key (newlines) with concurrent edits
+- Cut (Ctrl+X) operation with concurrent edits
+- Mixed operations (insert, delete, replace all at once)
+- Stress test: 50 rapid operations from 3 clients
+- Extreme latency difference (50ms vs 300ms clients)
 
 ### Project Structure
 
@@ -404,9 +445,13 @@ yPad/
 │   └── rate-limiting/          # Rate limiting tests
 ├── e2e/                         # Playwright e2e tests
 │   ├── alert-banners.spec.ts   # Alert banner tests
+│   ├── comprehensive-ot.spec.ts # Comprehensive OT tests (13 tests)
 │   ├── e2e-encryption.spec.ts  # E2E encryption security tests
+│   ├── realtime-ot.spec.ts     # Real-time OT collaboration tests
 │   ├── syntax-highlighting.spec.ts  # Syntax highlighting tests
 │   └── screenshots/            # Generated test screenshots
+├── docs/                        # Technical documentation
+│   └── OT_IMPLEMENTATION.md    # Detailed OT implementation docs
 ├── dist/                        # Build output (gitignored)
 ├── scripts/                     # Automation scripts
 │   ├── dev.ps1                  # Windows dev server script
@@ -820,22 +865,63 @@ ws://localhost:8787/api/notes/:id/ws
 
 ### Operational Transform (OT)
 
-yPad uses OT for real-time collaboration, not CRDTs. This provides:
-- **Character-level precision**: No text duplication or corruption
-- **Deterministic conflict resolution**: Same result for all clients
-- **Cursor position transformation**: Cursors move correctly during concurrent edits
-- **Efficient bandwidth**: Only operations are transmitted, not full state
-- **InputEvent-Based Generation**: Operations generated directly from browser InputEvent for accurate cursor tracking
-- **Dual Operation Modes**:
-  - InputEvent-based for live typing (accurate cursor position)
-  - fast-diff based for state reconciliation (WebSocket reconnect sync)
+yPad uses Operational Transform (OT) for real-time collaborative editing, enabling multiple users to edit the same document simultaneously with automatic conflict resolution.
 
-Operations are defined as:
+#### How It Works
+
+When multiple users edit a document at the same time, their changes may conflict. OT resolves these conflicts by mathematically transforming operations so that all users converge to the same final result, regardless of the order in which changes arrive.
+
+**Example**: If User A inserts "hello" at position 5 while User B simultaneously deletes characters 3-7, OT transforms both operations so that:
+- User A's insert is adjusted to account for B's deletion
+- User B's delete is adjusted to account for A's insert
+- Both users end up with identical documents
+
+#### Key Capabilities
+
+- **Character-level precision**: Each keystroke is tracked as an individual operation
+- **Deterministic conflict resolution**: All clients arrive at the same result
+- **Cursor synchronization**: See other users' cursor positions in real-time
+- **Bandwidth efficient**: Only operations (not full content) are transmitted
+- **Self-healing**: Content checksums detect and automatically recover from any state drift
+
+#### Architecture
+
+The system uses a **server-authoritative** model with **optimistic updates**:
+
+1. **Optimistic**: When you type, changes appear immediately (no waiting for server)
+2. **Server-authoritative**: The server maintains the canonical document state
+3. **Transform on conflict**: If your changes conflict with another user's, the server transforms both operations to preserve everyone's intent
+
+#### Dual Tracking System
+
+yPad uses two separate numbering systems for robust synchronization:
+
+- **Operation Version** (persistent): Tracks document revisions, survives reconnections, enables offline conflict detection
+- **Sequence Number** (transient): Ensures real-time message ordering for 3+ concurrent users
+
+#### Recovery Mechanisms
+
+- **Checksum verification**: Server sends content checksums with every operation; clients verify their local state matches
+- **Replay recovery**: If a client detects divergence, it requests the server's authoritative state and rebuilds locally
+- **Gap detection**: Out-of-order messages are buffered; persistent gaps trigger automatic resync
+
+#### Operation Types
+
 ```typescript
 type Operation =
   | { type: 'insert', position: number, text: string, clientId: string, version: number }
-  | { type: 'delete', position: number, count: number, clientId: string, version: number }
+  | { type: 'delete', position: number, length: number, clientId: string, version: number }
 ```
+
+#### Inspiration
+
+The implementation was inspired by [ot.js](https://github.com/Operational-Transformation/ot.js), but extended significantly to handle:
+- WebSocket message ordering for 3+ users (sequence numbers)
+- State drift detection and recovery (checksums + replay)
+- E2E encryption compatibility (disabling real-time for encrypted notes)
+- Deterministic same-position conflict resolution (clientId tie-breaking)
+
+> **Technical Deep Dive**: For comprehensive implementation details including transform algorithms, message protocols, and edge case handling, see [docs/OT_IMPLEMENTATION.md](docs/OT_IMPLEMENTATION.md).
 
 ### Content Integrity & Self-Healing
 

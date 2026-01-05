@@ -186,7 +186,7 @@ describe('WebSocketClient', () => {
       ws.simulateMessage(ackMessage);
       vi.advanceTimersByTime(10);
 
-      expect(onAck).toHaveBeenCalledWith(2, 67890);
+      expect(onAck).toHaveBeenCalledWith(2, 67890, undefined);
     });
 
     it('should handle cursor update message', async () => {

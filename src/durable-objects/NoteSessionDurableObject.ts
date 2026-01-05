@@ -50,6 +50,8 @@ import type {
   SyntaxChangeMessage,
   SyntaxAckMessage,
   NoteStatusMessage,
+  ReplayRequestMessage,
+  ReplayResponseMessage,
 } from '../ot/types';
 
 // Message queue item for sequential processing
@@ -397,6 +399,8 @@ export class NoteSessionDurableObject implements DurableObject {
       await this.handleCursorUpdate(ws, message as CursorUpdateMessage);
     } else if (message.type === 'syntax_change') {
       await this.handleSyntaxChange(ws, message as SyntaxChangeMessage);
+    } else if (message.type === 'replay_request') {
+      await this.handleReplayRequest(ws, message as ReplayRequestMessage);
     }
   }
 
@@ -461,11 +465,15 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Send acknowledgment to sender with the sequence number of the broadcast
     // This allows the sender to stay in sync with the global sequence
+    // IMPORTANT: Include the transformed operation so the client can rebase its state
+    // This is crucial for convergence - the client's optimistic operation may have been
+    // transformed on the server, and the client needs to know the canonical version
     const ackMessage: AckMessage = {
       type: 'ack',
       version: this.operationVersion,
       seqNum: broadcastSeqNum,
       contentChecksum, // Include checksum so client can verify state
+      transformedOperation: operation, // The server's canonical transformed version
     };
     ws.send(JSON.stringify(ackMessage));
 
@@ -512,6 +520,38 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Persist syntax change to database
     this.persistSyntaxToDB(message.syntax);
+  }
+
+  /**
+   * Handle a replay request from a client that detected state drift.
+   * Sends back the current content and operation history so the client
+   * can rebuild its state from a known good point.
+   */
+  async handleReplayRequest(ws: WebSocket, message: ReplayRequestMessage): Promise<void> {
+    const session = this.sessions.get(ws);
+    if (!session || !session.isAuthenticated) {
+      return;
+    }
+
+    // Get operations from the requested version onwards
+    const fromVersion = message.fromVersion;
+    const opsToReplay = this.operationHistory.filter(op => op.version > fromVersion);
+
+    // Calculate the content checksum for verification
+    const contentChecksum = simpleChecksum(this.currentContent);
+
+    // Send the replay response with current server state
+    // The client will use this to rebuild its local state
+    const replayResponse: ReplayResponseMessage = {
+      type: 'replay_response',
+      baseContent: this.currentContent,
+      baseVersion: this.operationVersion,
+      operations: opsToReplay,
+      currentVersion: this.operationVersion,
+      contentChecksum,
+    };
+
+    ws.send(JSON.stringify(replayResponse));
   }
 
   /**

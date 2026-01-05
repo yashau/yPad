@@ -52,3 +52,28 @@ function applyDelete(content: string, position: number, length: number): string 
 
   return content.slice(0, safePosition) + content.slice(safePosition + safeLength);
 }
+
+/**
+ * Apply the inverse of an operation to undo it
+ * Insert becomes delete, delete becomes insert (requires knowing deleted text)
+ * Note: For delete operations, we need to know what text was deleted.
+ * Since we don't store that, this is a best-effort approach that may not
+ * perfectly undo deletes. For inserts, it works perfectly.
+ */
+export function applyInverse(content: string, operation: Operation): string {
+  if (operation.type === 'insert') {
+    // Inverse of insert is delete at the same position with the same length
+    const deleteLength = operation.text.length;
+    const safePosition = Math.max(0, Math.min(operation.position, content.length));
+    const safeEnd = Math.min(safePosition + deleteLength, content.length);
+    return content.slice(0, safePosition) + content.slice(safeEnd);
+  } else if (operation.type === 'delete') {
+    // Inverse of delete is insert - but we don't know the deleted text!
+    // This is a limitation. For rebasing purposes, we need to track deleted text.
+    // For now, return content unchanged for deletes (this will cause issues).
+    // TODO: Store deleted text in delete operations for proper undo support.
+    console.warn('applyInverse: Cannot undo delete operation without stored text');
+    return content;
+  }
+  return content;
+}

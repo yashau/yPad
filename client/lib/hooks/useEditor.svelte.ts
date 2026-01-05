@@ -12,9 +12,17 @@ export function useEditor() {
   let textareaScrollRef = $state<HTMLTextAreaElement | null>(null);
   let isUpdating = false;
   let lastLocalContent = $state('');
-  // Cursor position captured BEFORE DOM changes (in beforeinput event)
+  // Selection range captured BEFORE DOM changes (in beforeinput event)
   // This is critical for accurate OT position calculations
+  // preEditCursorPosition is the selection start (where cursor/selection begins)
+  // preEditSelectionEnd is the selection end (null if no selection, just a cursor)
   let preEditCursorPosition: number | null = null;
+  let preEditSelectionEnd: number | null = null;
+  // preEditContent captures the editor content BEFORE the DOM changes
+  // This is essential for OT because if a remote operation arrives between
+  // beforeinput and input events, editor.content would be modified and we'd
+  // generate operations against the wrong base state
+  let preEditContent: string | null = null;
 
   return {
     get content() { return content; },
@@ -43,6 +51,12 @@ export function useEditor() {
 
     get preEditCursorPosition() { return preEditCursorPosition; },
     set preEditCursorPosition(value: number | null) { preEditCursorPosition = value; },
+
+    get preEditSelectionEnd() { return preEditSelectionEnd; },
+    set preEditSelectionEnd(value: number | null) { preEditSelectionEnd = value; },
+
+    get preEditContent() { return preEditContent; },
+    set preEditContent(value: string | null) { preEditContent = value; },
 
     focusEditor() {
       setTimeout(() => {

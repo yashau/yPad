@@ -26,7 +26,7 @@
  * - Unencrypted notes use both (version for persistence, sequence for real-time ordering)
  */
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage } from '../../../src/ot/types';
+import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage, ReplayResponseMessage } from '../../../src/ot/types';
 
 export interface WebSocketClientOptions {
   password?: string;
@@ -36,7 +36,7 @@ export interface WebSocketClientOptions {
   onClose?: () => void;
   onError?: (error: Error) => void;
   onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
-  onAck?: (version: number, contentChecksum?: number) => void;
+  onAck?: (version: number, contentChecksum?: number, transformedOperation?: Operation) => void;
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
   onEncryptionChanged?: (is_encrypted: boolean) => void;
   onVersionUpdate?: (version: number, message: string) => void;
@@ -45,6 +45,7 @@ export interface WebSocketClientOptions {
   onUserLeft?: (clientId: string, connectedUsers: string[]) => void;
   onSyntaxChange?: (syntax: string) => void;
   onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
+  onReplayResponse?: (baseContent: string, baseVersion: number, operations: Operation[], currentVersion: number, contentChecksum: number) => void;
   autoReconnect?: boolean;
 }
 
@@ -214,6 +215,12 @@ export class WebSocketClient {
     // Process syntax ACK immediately - it tells us what sequence number was used
     if (message.type === 'syntax_ack') {
       await this.handleSyntaxAck(message as SyntaxAckMessage);
+      return;
+    }
+
+    // Process replay response immediately - it's a response to our replay request
+    if (message.type === 'replay_response') {
+      await this.handleReplayResponse(message as ReplayResponseMessage);
       return;
     }
 
@@ -448,7 +455,7 @@ export class WebSocketClient {
 
   private async handleAck(message: AckMessage): Promise<void> {
     if (this.options.onAck) {
-      this.options.onAck(message.version, message.contentChecksum);
+      this.options.onAck(message.version, message.contentChecksum, message.transformedOperation);
     }
 
     // Update sequence tracking based on the broadcast we didn't receive
@@ -497,6 +504,38 @@ export class WebSocketClient {
   private async handleSyntaxAck(message: SyntaxAckMessage): Promise<void> {
     // Update sequence tracking based on the syntax broadcast we didn't receive
     this.updateSequenceFromAck(message.seqNum);
+  }
+
+  private async handleReplayResponse(message: ReplayResponseMessage): Promise<void> {
+    if (this.options.onReplayResponse) {
+      this.options.onReplayResponse(
+        message.baseContent,
+        message.baseVersion,
+        message.operations,
+        message.currentVersion,
+        message.contentChecksum
+      );
+    }
+  }
+
+  /**
+   * Request a replay of operations from a specific version.
+   * Used when checksum mismatch is detected to rebuild state from server.
+   */
+  sendReplayRequest(fromVersion: number, clientId: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      console.warn('[WebSocket] Cannot send replay request - not connected');
+      return;
+    }
+
+    const message = {
+      type: 'replay_request',
+      fromVersion,
+      clientId,
+      sessionId: this.options.sessionId,
+    };
+
+    this.ws.send(JSON.stringify(message));
   }
 
   /**
@@ -635,5 +674,13 @@ export class WebSocketClient {
 
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Request a full resync with the server.
+   * This closes and reconnects to get fresh server state.
+   */
+  requestSync(): void {
+    this.requestResync();
   }
 }
