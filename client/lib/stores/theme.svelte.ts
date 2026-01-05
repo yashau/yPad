@@ -1,3 +1,9 @@
+/**
+ * @fileoverview Theme store for light/dark mode.
+ *
+ * Persists preference to localStorage, falls back to system preference.
+ */
+
 type Theme = 'light' | 'dark';
 
 function createThemeStore() {
@@ -8,20 +14,15 @@ function createThemeStore() {
 		}
 	}
 
-	// Determine initial theme
 	let initialTheme: Theme = 'dark';
 	if (typeof window !== 'undefined') {
 		const stored = localStorage.getItem('theme') as Theme | null;
 		if (stored === 'light' || stored === 'dark') {
-			// User has manually set a theme preference
 			initialTheme = stored;
 		} else {
-			// No manual preference, use system preference
 			const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 			initialTheme = prefersDark ? 'dark' : 'light';
 		}
-
-		// Apply theme to document
 		applyTheme(initialTheme);
 	}
 

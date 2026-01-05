@@ -1,3 +1,9 @@
+<!--
+  @fileoverview Main application component.
+
+  Orchestrates note state, editor, encryption, and real-time collaboration.
+  Handles URL routing, auto-save, and OT operation generation.
+-->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import hljs from 'highlight.js';
@@ -195,19 +201,11 @@
     if (!editorElement) return;
 
     const handleBeforeInput = () => {
-      // CRITICAL: Capture selection range AND content BEFORE DOM changes
-      // This is essential for accurate OT position calculations
-      // The input event fires AFTER the DOM is modified, so we must capture here
+      // Capture state before DOM changes for accurate OT position calculations
       const selectionRange = wsConnection.getCurrentSelectionRange();
       editor.preEditCursorPosition = selectionRange.start;
-      // Only set selectionEnd if there's actually a selection (not just a cursor)
       editor.preEditSelectionEnd = selectionRange.end !== selectionRange.start ? selectionRange.end : null;
-      // Capture content BEFORE the edit - this is crucial because a remote operation
-      // might modify editor.content between beforeinput and input events
       editor.preEditContent = editor.content;
-      // Clear recent remote ops since we're starting a new edit cycle.
-      // Any remote ops that arrive after this point (before the corresponding input event)
-      // will be tracked fresh.
       collaboration.recentRemoteOps = [];
 
       // Cursor update will be sent after the input is processed
@@ -310,15 +308,8 @@
       return;
     }
 
-    // Use pre-edit content and selection range captured in beforeinput event
-    // This is CRITICAL for OT correctness: if a remote operation modifies editor.content
-    // between beforeinput and input events, we'd generate operations against the wrong base.
-    // By capturing content in beforeinput, we ensure operations are generated against the
-    // state the user was editing, not a state modified by remote operations.
+    // Use pre-edit state captured in beforeinput for accurate OT position calculations
     const oldContent = editor.preEditContent ?? editor.content;
-    // Use pre-edit selection range captured in beforeinput event
-    // This is the selection BEFORE the DOM was modified, which is critical
-    // for accurate OT position calculations. Falls back to post-edit position if not available.
     const preEditPos = editor.preEditCursorPosition;
     const preEditSelEnd = editor.preEditSelectionEnd;
     const postEditRange = wsConnection.getCurrentSelectionRange();
@@ -335,9 +326,7 @@
       // This allows checksum verification to work correctly
       const baseVersion = noteState.currentVersion;
 
-      // CRITICAL: Use InputEvent-based generation for accurate cursor positions
-      // oldContent→newContent represents the actual DOM change that just happened
-      // This preserves edit locality regardless of pending operations
+      // Generate operations from the actual DOM change (oldContent → newContent)
       const operations = generateOperationsFromInputEvent(
         event,
         oldContent,
@@ -363,30 +352,18 @@
           wsConnection.sendOperation(op);
         });
 
-        // Track the optimistic state (what we expect after all pending ops apply)
         collaboration.pendingLocalContent = newContent;
 
-        // CRITICAL: Apply the operation to editor.content, don't just set it to newContent.
-        // If a remote operation was applied between beforeinput and input events,
-        // editor.content will have changed. We need to apply our operation on top of that,
-        // not overwrite it with newContent (which doesn't include the remote op).
-        //
-        // The operations we generated were based on oldContent (preEditContent).
-        // If remote ops arrived, we need to transform our operations against them.
+        // Apply operations to editor content, transforming against any remote ops
+        // that arrived between beforeinput and input events
         const recentRemoteOps = collaboration.recentRemoteOps;
         if (recentRemoteOps.length === 0) {
-          // No remote ops arrived between beforeinput and input, simple case
           editor.content = newContent;
         } else {
-          // Remote ops arrived! Transform our new operations against them and apply.
-          // The operations were generated against oldContent, but editor.content is now
-          // oldContent + remoteOps. We need to transform our ops to apply on current state.
+          // Transform local ops against concurrent remote ops before applying
           let currentContent = editor.content;
           for (let op of operations) {
-            // Transform this operation against all remote ops that arrived
             for (const remoteOp of recentRemoteOps) {
-              // transform(local, remote) returns [local', remote']
-              // We want local' (our op transformed to apply after remote)
               const [transformedLocal] = transform(op, remoteOp);
               op = transformedLocal;
             }

@@ -1,8 +1,11 @@
-// Client-side encryption utilities for password-protected notes
-
 /**
- * Derives an encryption key from a password using PBKDF2
+ * @fileoverview Client-side E2E encryption for password-protected notes.
+ *
+ * Uses AES-256-GCM with PBKDF2 key derivation (100k iterations).
+ * Encryption format: base64(salt[16] + iv[12] + ciphertext)
  */
+
+/** Derives AES-256 key from password using PBKDF2. */
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey(
@@ -27,10 +30,7 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
-/**
- * Encrypts content with a password
- * Returns base64-encoded encrypted data with salt and IV prepended
- */
+/** Encrypts content with password. Returns base64(salt + iv + ciphertext). */
 export async function encryptContent(content: string, password: string): Promise<string> {
   const encoder = new TextEncoder();
 
@@ -61,10 +61,7 @@ export async function encryptContent(content: string, password: string): Promise
   return btoa(String.fromCharCode(...combined));
 }
 
-/**
- * Decrypts content with a password
- * Expects base64-encoded encrypted data with salt and IV prepended
- */
+/** Decrypts content. Expects base64(salt + iv + ciphertext). */
 export async function decryptContent(encryptedBase64: string, password: string): Promise<string> {
   const decoder = new TextDecoder();
 

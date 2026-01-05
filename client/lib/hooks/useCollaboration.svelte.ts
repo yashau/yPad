@@ -1,25 +1,24 @@
 /**
- * Real-time collaboration state management hook
- * Handles WebSocket connection, remote cursors, and connected users
+ * @fileoverview Real-time collaboration state management.
+ *
+ * Manages WebSocket connection state, remote cursor positions,
+ * connected users, and pending operations for OT conflict resolution.
  */
 
 import type { WebSocketClient } from '../realtime/WebSocketClient';
 import type { Operation } from '../../../src/ot/types';
 
+/** Remote user's cursor position and display info. */
 export interface RemoteCursorData {
   position: number;
   color: string;
   label: string;
 }
 
-/**
- * A pending operation with its base version for OT conflict resolution.
- * The baseVersion is the server version at which this operation was created.
- * This allows us to determine if the server has seen this operation when
- * processing incoming remote operations.
- */
+/** Unacknowledged operation awaiting server confirmation. */
 export interface PendingOperation {
   operation: Operation;
+  /** Server version when this operation was created */
   baseVersion: number;
 }
 

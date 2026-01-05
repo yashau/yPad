@@ -1,13 +1,10 @@
 /**
- * Application Configuration Constants
+ * @fileoverview Application configuration constants.
  *
- * Centralized configuration for timing, limits, and security settings
- * across the yPad application.
+ * Centralized configuration for timing, limits, and security settings.
  */
 
-/**
- * Timing constants for delays, throttles, and debounces (in milliseconds)
- */
+/** Timing constants (milliseconds). */
 export const TIMINGS = {
   /** Wait time after initial load before enabling auto-save */
   INITIAL_LOAD_DELAY: 1000,
@@ -31,9 +28,7 @@ export const TIMINGS = {
   GAP_DETECTION_TIMEOUT: 5000,
 } as const;
 
-/**
- * Validation limits and constraints
- */
+/** Validation limits and constraints. */
 export const LIMITS = {
   /** Maximum content size in bytes (1MB) */
   MAX_CONTENT_SIZE: 1024 * 1024,
@@ -63,10 +58,7 @@ export const LIMITS = {
   INACTIVE_NOTE_EXPIRY_DAYS: 90,
 } as const;
 
-/**
- * Language options for syntax highlighting
- * Maps language value to display label
- */
+/** Language options for syntax highlighting. */
 export const LANGUAGE_OPTIONS = [
   { value: 'plaintext', label: 'Plain Text' },
   { value: '1c', label: '1C' },
@@ -262,15 +254,10 @@ export const LANGUAGE_OPTIONS = [
   { value: 'zephir', label: 'Zephir' }
 ] as const;
 
-/**
- * Allowed syntax highlighting modes (for validation)
- * Derived from LANGUAGE_OPTIONS
- */
+/** Allowed syntax modes (derived from LANGUAGE_OPTIONS). */
 export const ALLOWED_SYNTAX_MODES = LANGUAGE_OPTIONS.map(lang => lang.value);
 
-/**
- * Expiration time options for notes
- */
+/** Expiration time options for notes. */
 export const EXPIRATION_OPTIONS = [
   { value: 'null', label: 'Never' },
   { value: String(60 * 60 * 1000), label: '1 hour' },
@@ -279,23 +266,16 @@ export const EXPIRATION_OPTIONS = [
   { value: String(30 * 24 * 60 * 60 * 1000), label: '1 month' }
 ] as const;
 
-/**
- * Custom ID validation pattern
- * Allows only letters, numbers, hyphens, and underscores
- */
+/** Custom ID validation pattern (letters, numbers, hyphens, underscores). */
 export const CUSTOM_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
-/**
- * Contact information
- */
+/** Contact information. */
 export const CONTACT = {
   /** Email address for abuse reports */
   ABUSE_EMAIL: 'abuse@example.com',
 } as const;
 
-/**
- * Security headers configuration
- */
+/** Security headers configuration. */
 export const SECURITY_HEADERS = {
   CONTENT_SECURITY_POLICY:
     "default-src 'self'; " +
@@ -310,9 +290,7 @@ export const SECURITY_HEADERS = {
   REFERRER_POLICY: 'strict-origin-when-cross-origin',
 } as const;
 
-/**
- * Rate limiting configuration
- */
+/** Rate limiting configuration. */
 export const RATE_LIMITS = {
   /** REST API limits (per session) */
   API: {

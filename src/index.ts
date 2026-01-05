@@ -1,17 +1,23 @@
+/**
+ * @fileoverview REST API server for yPad note management.
+ *
+ * Endpoints:
+ * - POST /api/notes - Create note
+ * - GET /api/notes/:id - Get note
+ * - PUT /api/notes/:id - Update note
+ * - DELETE /api/notes/:id - Delete note
+ * - GET /api/notes/:id/ws - WebSocket connection for real-time editing
+ * - POST /api/notes/:id/view - Increment view count
+ * - GET /api/check-id/:id - Check if custom ID is available
+ *
+ * Uses Cloudflare Workers with D1 database and Durable Objects.
+ */
+
 import { Hono, Context, Next } from 'hono';
 import { cors } from 'hono/cors';
 import { LIMITS, ALLOWED_SYNTAX_MODES, CUSTOM_ID_PATTERN, SECURITY_HEADERS, RATE_LIMITS } from '../config/constants';
 
-type Bindings = {
-  DB: D1Database;
-  ASSETS: Fetcher;
-  NOTE_SESSIONS: DurableObjectNamespace;
-  RATE_LIMITER: DurableObjectNamespace;
-};
-
-/**
- * Payload for creating a new note
- */
+/** Request body for creating a new note. */
 interface CreateNotePayload {
   id?: string;
   content: string;
@@ -21,9 +27,7 @@ interface CreateNotePayload {
   is_encrypted?: boolean;
 }
 
-/**
- * Payload for updating an existing note
- */
+/** Request body for updating an existing note. */
 interface UpdateNotePayload {
   content: string;
   syntax_highlight?: string;
@@ -35,11 +39,11 @@ interface UpdateNotePayload {
   expected_version?: number | null;
 }
 
-const app = new Hono<{ Bindings: Bindings }>();
+const app = new Hono<{ Bindings: Env }>();
 
 app.use('/*', cors());
 
-// Security headers middleware
+// Add security headers to all responses
 app.use('*', async (c, next) => {
   await next();
   c.header('Content-Security-Policy', SECURITY_HEADERS.CONTENT_SECURITY_POLICY);
@@ -49,42 +53,35 @@ app.use('*', async (c, next) => {
 });
 
 /**
- * Rate limiting middleware factory
- * Uses Durable Objects for per-session rate limiting
+ * Creates rate limiting middleware using Durable Objects.
+ * @param limit - Maximum requests per window
+ * @param windowMs - Window duration in milliseconds
  */
 function rateLimit(limit: number, windowMs: number = 60000) {
-  return async (c: Context<{ Bindings: Bindings }>, next: Next) => {
-    // Get session ID from query param or header
+  return async (c: Context<{ Bindings: Env }>, next: Next) => {
     const sessionId = c.req.query('session_id') ||
                       c.req.header('X-Session-ID') ||
                       'anonymous';
 
     const endpoint = c.req.method + ':' + c.req.routePath;
-
-    // Get rate limiter DO for this session
     const doId = c.env.RATE_LIMITER.idFromName(sessionId);
     const stub = c.env.RATE_LIMITER.get(doId);
 
-    // Check rate limit
     const response = await stub.fetch(new Request('http://do/check', {
       method: 'POST',
       body: JSON.stringify({ endpoint, limit, windowMs }),
     }));
 
     if (!response.ok) {
-      // Forward rate limit headers from DO response
       const retryAfter = response.headers.get('Retry-After');
       const headers: Record<string, string> = {};
       if (retryAfter) headers['Retry-After'] = retryAfter;
-
       return c.json({ error: 'Rate limit exceeded' }, 429, headers);
     }
 
     await next();
   };
 }
-
-// API Routes
 // WebSocket endpoint for real-time collaboration
 app.get('/api/notes/:id/ws', rateLimit(RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE), async (c) => {
   const id = c.req.param('id');
@@ -567,7 +564,7 @@ export { NoteSessionDurableObject } from './durable-objects/NoteSessionDurableOb
 export { RateLimiterDurableObject } from './durable-objects/RateLimiterDurableObject';
 
 // Scheduled handler for cron trigger - runs every 15 minutes to clean up expired notes
-const scheduled: ExportedHandlerScheduledHandler<Bindings> = async (_event, env, _ctx) => {
+const scheduled: ExportedHandlerScheduledHandler<Env> = async (_event, env, _ctx) => {
   const now = Date.now();
   const inactiveThreshold = now - (LIMITS.INACTIVE_NOTE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 

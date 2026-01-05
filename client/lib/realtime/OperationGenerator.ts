@@ -1,4 +1,9 @@
-// Generate operations from content diffs using fast-diff
+/**
+ * @fileoverview Generate OT operations from content diffs.
+ *
+ * Uses fast-diff library to compute minimal change sets between document versions.
+ * Includes OperationBatcher for debouncing rapid edits.
+ */
 
 import diff from 'fast-diff';
 import type { Operation, InsertOperation, DeleteOperation } from '../../../src/ot/types';

@@ -1,29 +1,18 @@
 /**
- * WebSocket client for real-time collaboration
+ * @fileoverview WebSocket client for real-time collaborative editing.
  *
- * ARCHITECTURE OVERVIEW:
- * This client implements a dual-tracking system for collaborative editing:
+ * Implements dual-tracking for collaborative editing:
  *
- * 1. VERSION TRACKING (Operation Transform - OT):
- *    - Used for ALL notes (encrypted and unencrypted)
- *    - Tracked at database level and in App.svelte as `currentVersion`
- *    - Ensures operations are applied in correct logical order for OT transforms
- *    - Required for conflict detection when real-time collaboration is disabled
- *    - Critical for E2E encrypted notes where WebSocket collaboration is turned off
+ * VERSION TRACKING (OT):
+ * - Used for all notes, tracked at DB level and in App.svelte
+ * - Ensures correct operation ordering for OT transforms
+ * - Enables conflict detection for encrypted notes (no WebSocket)
  *
- * 2. GLOBAL SEQUENCE TRACKING (WebSocket Message Ordering):
- *    - Only used when WebSockets are active (unencrypted notes with real-time collab)
- *    - Tracked client-side as `nextExpectedSeq`
- *    - Server assigns monotonically increasing `seqNum` to ALL broadcast messages
- *    - Ensures correct ordering of operations, cursor updates, and presence events
- *    - Solves race conditions when 3+ users collaborate simultaneously
- *    - Messages received out-of-order are buffered until gaps are filled
- *
- * WHY BOTH EXIST:
- * - Version: Persistent, survives disconnections, enables conflict detection
- * - Sequence: Transient, WebSocket session only, ensures real-time message ordering
- * - E2E encrypted notes use version-only (no WebSocket collaboration to preserve E2E)
- * - Unencrypted notes use both (version for persistence, sequence for real-time ordering)
+ * SEQUENCE TRACKING (WebSocket):
+ * - Only for active WebSocket connections (unencrypted notes)
+ * - Server assigns monotonic seqNum to broadcasts
+ * - Ensures ordering of ops, cursors, presence events
+ * - Out-of-order messages buffered until gaps filled
  */
 
 import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage, ReplayResponseMessage } from '../../../src/ot/types';

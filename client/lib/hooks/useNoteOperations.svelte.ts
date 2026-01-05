@@ -1,6 +1,8 @@
 /**
- * Note operations hook
- * Contains business logic for loading, saving, and deleting notes
+ * @fileoverview Note CRUD operations with encryption support.
+ *
+ * Handles loading, saving, creating, and deleting notes via REST API.
+ * Automatically encrypts/decrypts content for password-protected notes.
  */
 
 import { encryptContent, decryptContent } from '../crypto';
@@ -8,6 +10,7 @@ import type { useNoteState } from './useNoteState.svelte';
 import type { useEditor } from './useEditor.svelte';
 import type { useSecurity } from './useSecurity.svelte';
 
+/** Configuration for note operations hook. */
 export interface NoteOperationsConfig {
   noteState: ReturnType<typeof useNoteState>;
   editor: ReturnType<typeof useEditor>;

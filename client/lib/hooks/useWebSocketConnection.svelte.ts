@@ -1,6 +1,8 @@
 /**
- * WebSocket connection management hook
- * Contains business logic for establishing and managing real-time collaboration
+ * @fileoverview WebSocket connection management for real-time collaboration.
+ *
+ * Handles WebSocket lifecycle, OT operation processing, cursor updates,
+ * and state synchronization between client and server.
  */
 
 import { WebSocketClient } from '../realtime/WebSocketClient';
@@ -14,6 +16,7 @@ import type { useEditor } from './useEditor.svelte';
 import type { useSecurity } from './useSecurity.svelte';
 import type { useCollaboration, RemoteCursorData, PendingOperation } from './useCollaboration.svelte';
 
+/** Configuration for WebSocket connection hook. */
 export interface WebSocketConfig {
   noteState: ReturnType<typeof useNoteState>;
   editor: ReturnType<typeof useEditor>;
@@ -300,54 +303,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     editor.isUpdating = true;
 
     try {
-      // Transform the remote operation against our pending local operations.
-      // CRITICAL: Only transform against pending operations that the server DIDN'T know about
-      // when it processed this remote operation. The server already transformed the remote op
-      // against operations it knew about.
-      //
-      // The remote operation has version V. The server knew about all operations with
-      // version < V when processing it. Our pending operation with baseVersion B was sent
-      // based on server state at version B. If B < V, the server might have seen our op.
-      // If B >= V, the server definitely didn't see our op when processing the remote op.
-      //
-      // However, there's a subtle issue: when the server transforms the remote op against
-      // our pending op, it only transforms if our op was already processed (has a version < V).
-      // Our pending ops haven't been assigned final server versions yet.
-      //
-      // The safest approach: transform against ALL pending operations. The server transforms
-      // incoming ops against history from OTHER clients only. Since our pending ops are from
-      // us (same client), the server won't have transformed this remote op against them.
-
-      // Transform the remote operation against our pending local operations.
-      // IMPORTANT: We only transform the remote op, NOT our pending ops!
-      //
-      // Why? Because the server will also transform our pending ops when they arrive.
-      // If we transform our pending ops here AND the server transforms them again,
-      // we get double-transformation which breaks convergence.
-      //
-      // The remote op needs to be transformed against our pending ops because:
-      // - The server transformed it against acknowledged ops from other clients
-      // - But it wasn't transformed against our pending ops (they're not on server yet)
-      // - So we transform it here to account for our pending ops
-      //
-      // CRITICAL: We MUST also update our pending operations!
-      // This follows the ot.js algorithm (AwaitingConfirm.applyServer):
-      //   var pair = transform(outstanding, operation);
-      //   client.applyOperation(pair[1]);
-      //   return new AwaitingConfirm(pair[0]);  // Updated outstanding!
-      //
-      // Why update pending ops? Because they will be ACKed based on the server state
-      // AFTER the remote op is applied. Our pending op needs to be transformed to
-      // correctly apply on top of the remote op.
-
+      // Transform remote op against pending local ops, and update pending ops accordingly.
+      // This follows the OT algorithm: both sides must be transformed for convergence.
       let transformedOp = operation;
       const newPendingOps: PendingOperation[] = [];
 
       for (const pending of collaboration.pendingOperations) {
-        // Transform both: pending against remote, and remote against pending
-        // transform(op1, op2) returns [op1', op2'] where:
-        // - op1' is op1 transformed to apply after op2
-        // - op2' is op2 transformed to apply after op1
         const [transformedPending, transformedRemote] = transform(pending.operation, transformedOp);
         newPendingOps.push({ operation: transformedPending, baseVersion: pending.baseVersion });
         transformedOp = transformedRemote;

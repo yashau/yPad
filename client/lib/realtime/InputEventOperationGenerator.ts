@@ -1,68 +1,27 @@
-// Generate operations from browser InputEvent for accurate position tracking
-// This avoids the issues with fast-diff which doesn't know cursor position
-//
-// Complete list of InputEvent.inputType values (from W3C Input Events Level 2):
-// https://www.w3.org/TR/input-events-2/
-//
-// INSERTION TYPES:
-// - insertText: insert typed plain text
-// - insertReplacementText: insert via spell checker, auto-correct, or writing suggestions
-// - insertLineBreak: insert a line break (Shift+Enter)
-// - insertParagraph: insert a paragraph break (Enter)
-// - insertOrderedList: insert a numbered list
-// - insertUnorderedList: insert a bulleted list
-// - insertHorizontalRule: insert a horizontal rule
-// - insertFromYank: replace selection with kill buffer content
-// - insertFromDrop: insert content by means of drop
-// - insertFromPaste: paste content from clipboard
-// - insertFromPasteAsQuotation: paste content from clipboard as quotation
-// - insertTranspose: transpose the last two grapheme clusters
-// - insertCompositionText: replace the current composition string (IME)
-// - insertLink: insert a link
-//
-// DELETION TYPES:
-// - deleteWordBackward: delete word before caret (Ctrl+Backspace)
-// - deleteWordForward: delete word after caret (Ctrl+Delete)
-// - deleteSoftLineBackward: delete to nearest visual line break before caret
-// - deleteSoftLineForward: delete to nearest visual line break after caret
-// - deleteEntireSoftLine: delete entire visual line
-// - deleteHardLineBackward: delete to nearest block/br element before caret
-// - deleteHardLineForward: delete to nearest block/br element after caret
-// - deleteByDrag: remove content from the DOM by means of drag
-// - deleteByCut: remove the current selection as part of a cut (Ctrl+X)
-// - deleteContent: delete selection without specifying direction
-// - deleteContentBackward: delete content before caret (Backspace)
-// - deleteContentForward: delete content after caret (Delete key)
-//
-// HISTORY TYPES:
-// - historyUndo: undo the last editing action (Ctrl+Z)
-// - historyRedo: redo the last undone editing action (Ctrl+Y / Ctrl+Shift+Z)
-//
-// FORMAT TYPES (not applicable for plain text editor):
-// - formatBold, formatItalic, formatUnderline, formatStrikeThrough,
-// - formatSuperscript, formatSubscript, formatJustify*, formatIndent,
-// - formatOutdent, formatRemove, formatSetBlockTextDirection,
-// - formatSetInlineTextDirection, formatBackColor, formatFontColor, formatFontName
-//
-// NON-INPUT OPERATIONS (do not trigger input events):
-// - Arrow keys, Home, End, PageUp, PageDown (navigation only)
-// - Mouse clicks and selections (cursor/selection change only)
-// - Tab key: handled via keydown event in App.svelte, inserts spaces as insertText
+/**
+ * @fileoverview Generate OT operations from browser InputEvent.
+ *
+ * Uses browser's native input data for accurate cursor position tracking,
+ * avoiding issues with fast-diff which doesn't know cursor position.
+ *
+ * Handles all W3C Input Events Level 2 types:
+ * - Insertion: insertText, insertParagraph, insertFromPaste, insertCompositionText, etc.
+ * - Deletion: deleteContentBackward, deleteContentForward, deleteWordBackward, etc.
+ * - History: historyUndo, historyRedo
+ *
+ * @see https://www.w3.org/TR/input-events-2/
+ */
 
 import type { Operation, InsertOperation, DeleteOperation } from '../../../src/ot/types';
 
 /**
- * Generate operations from an InputEvent
- * Uses the browser's native input data to get exact cursor position and changes
- *
- * CRITICAL: selectionStart must be the PRE-EDIT selection start (captured in beforeinput),
- * not the post-edit position! This is essential for accurate OT position calculations.
+ * Generate operations from an InputEvent.
  *
  * @param event - The InputEvent from the browser
  * @param baseContent - Content before the edit
  * @param newContent - Content after the edit
- * @param selectionStart - PRE-EDIT selection start position
- * @param selectionEnd - PRE-EDIT selection end position (null if no selection, just a cursor)
+ * @param selectionStart - PRE-EDIT selection start (must be captured in beforeinput)
+ * @param selectionEnd - PRE-EDIT selection end (null if no selection)
  * @param clientId - Client identifier
  * @param version - Operation version
  */

@@ -1,6 +1,8 @@
 /**
- * Security and encryption state management hook
- * Handles password protection and encryption state
+ * @fileoverview Password and encryption state management.
+ *
+ * Manages client-side password state for E2E encrypted notes.
+ * Passwords are used for AES-GCM encryption/decryption and never sent to server.
  */
 
 export function useSecurity() {

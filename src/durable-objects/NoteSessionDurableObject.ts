@@ -1,35 +1,17 @@
 /**
- * Durable Object for coordinating real-time WebSocket connections per note
+ * @fileoverview Durable Object for real-time collaborative editing via WebSocket.
  *
- * ARCHITECTURE OVERVIEW:
- * This server implements a dual-tracking system for collaborative editing:
+ * Each note gets one NoteSessionDurableObject instance that coordinates all
+ * connected clients. Implements server-authoritative OT with:
  *
- * 1. OPERATION VERSION TRACKING (Operational Transform - OT):
- *    - Stored as `operationVersion` in Durable Object state and database
- *    - Incremented with each operation, persisted to database
- *    - Used for OT conflict resolution and ensuring correct transform order
- *    - Required for ALL notes (encrypted and unencrypted)
- *    - Enables conflict detection when users save without real-time connection
+ * - operationVersion: Persistent version for OT transforms (stored in DB)
+ * - globalSeqNum: Transient sequence for WebSocket message ordering
  *
- * 2. GLOBAL SEQUENCE NUMBER TRACKING (WebSocket Message Ordering):
- *    - Stored as `globalSeqNum` in Durable Object (NOT persisted to database)
- *    - Incremented for each broadcast (operations, cursor updates, presence events)
- *    - Ensures clients receive ALL messages in exact broadcast order
- *    - Only relevant during active WebSocket sessions
- *    - Resets when Durable Object hibernates/restarts (clients resync on reconnect)
- *
- * WHY BOTH EXIST:
- * - operationVersion: Persistent state for OT transforms and conflict detection
- * - globalSeqNum: Transient session state for real-time message ordering
- * - E2E encrypted notes use version-only (WebSocket disabled to preserve encryption)
- * - Unencrypted notes use both (version for DB, sequence for WebSocket ordering)
- *
- * MESSAGE FLOW:
- * 1. Client sends operation → enqueued for sequential processing
- * 2. Server transforms operation against history using operationVersion
- * 3. Server broadcasts to other clients with next globalSeqNum
- * 4. Server sends ACK to sender with the globalSeqNum used
- * 5. Sender updates their sequence counter to stay in sync
+ * Message flow:
+ * 1. Client sends operation → queued for sequential processing
+ * 2. Server transforms against history, increments version
+ * 3. Server broadcasts to other clients with sequence number
+ * 4. Server ACKs sender with transformed operation
  */
 
 import { transform } from '../ot/transform';
@@ -54,15 +36,23 @@ import type {
   ReplayResponseMessage,
 } from '../ot/types';
 
-// Message queue item for sequential processing
+/** Queued WebSocket message for sequential processing. */
 interface QueuedMessage {
   ws: WebSocket;
   message: WSMessage;
 }
 
+/** Database row structure for note queries. */
+interface NoteRecord {
+  content: string;
+  version: number;
+  is_encrypted: number;
+  syntax_highlight: string;
+}
+
 export class NoteSessionDurableObject implements DurableObject {
   private state: DurableObjectState;
-  private env: any;
+  private env: Env;
   private sessions: Map<WebSocket, ClientSession>;
   private noteId: string;
   private currentContent: string;
@@ -87,7 +77,7 @@ export class NoteSessionDurableObject implements DurableObject {
   private statusBroadcastTimer: number | null = null;
   private readonly STATUS_BROADCAST_INTERVAL = 10000; // 10 seconds
 
-  constructor(state: DurableObjectState, env: any) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
     this.sessions = new Map();
@@ -425,11 +415,7 @@ export class NoteSessionDurableObject implements DurableObject {
     let operation = message.operation;
     const baseVersion = message.baseVersion;
 
-    // Transform operation against operations from OTHER clients since baseVersion
-    // CRITICAL: Do NOT transform against the same client's own operations!
-    // When a client types fast, their operations arrive with stale baseVersions
-    // but they are already sequential from the client's perspective.
-    // We only need to transform against concurrent operations from other clients.
+    // Transform against other clients' operations only - same client's ops are already sequential
     const operationsToTransform = this.operationHistory.filter(
       (op) => op.version > baseVersion && op.clientId !== operation.clientId
     );
@@ -463,11 +449,7 @@ export class NoteSessionDurableObject implements DurableObject {
     // Broadcast to all other clients and get the sequence number
     const broadcastSeqNum = this.broadcastOperation(operation, session.clientId, contentChecksum);
 
-    // Send acknowledgment to sender with the sequence number of the broadcast
-    // This allows the sender to stay in sync with the global sequence
-    // IMPORTANT: Include the transformed operation so the client can rebase its state
-    // This is crucial for convergence - the client's optimistic operation may have been
-    // transformed on the server, and the client needs to know the canonical version
+    // ACK includes transformed operation so client can rebase to server's canonical version
     const ackMessage: AckMessage = {
       type: 'ack',
       version: this.operationVersion,
@@ -563,57 +545,46 @@ export class NoteSessionDurableObject implements DurableObject {
     return ++this.globalSeqNum;
   }
 
+  /**
+   * Broadcast a message to connected clients with optional exclusion.
+   */
+  private broadcast(
+    message: WSMessage | Record<string, unknown>,
+    options?: { excludeClientId?: string; excludeSessionId?: string }
+  ): void {
+    const messageStr = JSON.stringify(message);
+    for (const [ws, session] of this.sessions) {
+      if (options?.excludeClientId && session.clientId === options.excludeClientId) continue;
+      if (options?.excludeSessionId && session.sessionId === options.excludeSessionId) continue;
+      try {
+        ws.send(messageStr);
+      } catch (error) {
+        console.error(`[DO ${this.noteId}] Broadcast error:`, error);
+      }
+    }
+  }
+
   broadcastCursorUpdate(clientId: string, position: number): number {
     const seqNum = this.getNextSeqNum();
-
     const message: CursorUpdateMessage = {
       type: 'cursor_update',
       clientId,
       position,
       seqNum,
     };
-
-    const messageStr = JSON.stringify(message);
-
-    for (const [ws, session] of this.sessions) {
-      // Don't send back to sender
-      if (session.clientId !== clientId) {
-        try {
-          ws.send(messageStr);
-        } catch (error) {
-          console.error(`[DO ${this.noteId}] Error broadcasting cursor update to client ${session.clientId}:`, error);
-        }
-      }
-    }
-
-    // Return the sequence number so the sender can stay in sync
+    this.broadcast(message, { excludeClientId: clientId });
     return seqNum;
   }
 
   broadcastSyntaxChange(clientId: string, syntax: string): number {
     const seqNum = this.getNextSeqNum();
-
     const message: SyntaxChangeMessage = {
       type: 'syntax_change',
       clientId,
       syntax,
       seqNum,
     };
-
-    const messageStr = JSON.stringify(message);
-
-    for (const [ws, session] of this.sessions) {
-      // Don't send back to sender
-      if (session.clientId !== clientId) {
-        try {
-          ws.send(messageStr);
-        } catch (error) {
-          console.error(`[DO ${this.noteId}] Error broadcasting syntax change to client ${session.clientId}:`, error);
-        }
-      }
-    }
-
-    // Return the sequence number so the sender can stay in sync
+    this.broadcast(message, { excludeClientId: clientId });
     return seqNum;
   }
 
@@ -629,31 +600,16 @@ export class NoteSessionDurableObject implements DurableObject {
 
   broadcastOperation(operation: Operation, senderClientId: string, contentChecksum: number): number {
     const seqNum = this.getNextSeqNum();
-
     const message: OperationMessage = {
       type: 'operation',
       operation,
       baseVersion: operation.version - 1,
       clientId: operation.clientId,
-      sessionId: '', // Not needed for broadcast
-      seqNum, // Global sequence number for ordering all events
-      contentChecksum, // Server content checksum for client verification
+      sessionId: '',
+      seqNum,
+      contentChecksum,
     };
-
-    const messageStr = JSON.stringify(message);
-
-    for (const [ws, session] of this.sessions) {
-      // Don't send back to sender
-      if (session.clientId !== senderClientId) {
-        try {
-          ws.send(messageStr);
-        } catch (error) {
-          console.error(`[DO ${this.noteId}] Error broadcasting to client ${session.clientId}:`, error);
-        }
-      }
-    }
-
-    // Return the sequence number so the sender can stay in sync
+    this.broadcast(message, { excludeClientId: senderClientId });
     return seqNum;
   }
 
@@ -691,7 +647,7 @@ export class NoteSessionDurableObject implements DurableObject {
     try {
       const note = await this.env.DB.prepare(
         'SELECT content, version, is_encrypted, syntax_highlight FROM notes WHERE id = ?'
-      ).bind(this.noteId).first();
+      ).bind(this.noteId).first<NoteRecord>();
 
       if (note) {
         this.currentContent = note.content || '';
@@ -759,26 +715,9 @@ export class NoteSessionDurableObject implements DurableObject {
   }
 
   broadcastEncryptionChange(is_encrypted: boolean, excludeSessionId?: string): void {
-    // Update internal encryption state
     this.isEncrypted = is_encrypted;
-
-    const message = {
-      type: 'encryption_changed' as const,
-      is_encrypted,
-    };
-
-    // Broadcast to all clients except the one who made the change
-    for (const [ws, session] of this.sessions) {
-      if (excludeSessionId && session.sessionId === excludeSessionId) {
-        continue;
-      }
-
-      try {
-        ws.send(JSON.stringify(message));
-      } catch (error) {
-        console.error(`[DO ${this.noteId}] Error broadcasting encryption change to session ${session.sessionId}:`, error);
-      }
-    }
+    const message = { type: 'encryption_changed' as const, is_encrypted };
+    this.broadcast(message, { excludeSessionId });
   }
 
   broadcastVersionUpdate(version: number, excludeSessionId?: string): void {
@@ -787,65 +726,31 @@ export class NoteSessionDurableObject implements DurableObject {
       version,
       message: 'Note was updated by another user'
     };
-
-    // Broadcast to all clients except the one who made the change
-    for (const [ws, session] of this.sessions) {
-      if (excludeSessionId && session.sessionId === excludeSessionId) {
-        continue;
-      }
-
-      try {
-        ws.send(JSON.stringify(message));
-      } catch (error) {
-        console.error(`[DO ${this.noteId}] Error broadcasting version update to session ${session.sessionId}:`, error);
-      }
-    }
+    this.broadcast(message, { excludeSessionId });
   }
 
   broadcastUserJoined(joinedClientId: string): void {
     const seqNum = this.getNextSeqNum();
     const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
-
     const message: UserJoinedMessage = {
       type: 'user_joined',
       clientId: joinedClientId,
       connectedUsers,
       seqNum,
     };
-
-    const messageStr = JSON.stringify(message);
-
-    // Broadcast to all clients (including the one who just joined)
-    for (const [ws] of this.sessions) {
-      try {
-        ws.send(messageStr);
-      } catch (error) {
-        console.error(`[DO ${this.noteId}] Error broadcasting user joined:`, error);
-      }
-    }
+    this.broadcast(message);
   }
 
   broadcastUserLeft(leftClientId: string): void {
     const seqNum = this.getNextSeqNum();
     const connectedUsers = Array.from(this.sessions.values()).map(s => s.clientId);
-
     const message: UserLeftMessage = {
       type: 'user_left',
       clientId: leftClientId,
       connectedUsers,
       seqNum,
     };
-
-    const messageStr = JSON.stringify(message);
-
-    // Broadcast to remaining clients
-    for (const [ws] of this.sessions) {
-      try {
-        ws.send(messageStr);
-      } catch (error) {
-        console.error(`[DO ${this.noteId}] Error broadcasting user left:`, error);
-      }
-    }
+    this.broadcast(message);
   }
 
   resetState(deletedBySessionId?: string): void {
@@ -929,16 +834,7 @@ export class NoteSessionDurableObject implements DurableObject {
         max_views: note.max_views !== null ? Number(note.max_views) : null,
         expires_at: note.expires_at !== null ? Number(note.expires_at) : null,
       };
-
-      const messageStr = JSON.stringify(message);
-
-      for (const [ws] of this.sessions) {
-        try {
-          ws.send(messageStr);
-        } catch (error) {
-          console.error(`[DO ${this.noteId}] Error broadcasting note status:`, error);
-        }
-      }
+      this.broadcast(message);
     } catch (error) {
       console.error(`[DO ${this.noteId}] Error fetching note status:`, error);
     }

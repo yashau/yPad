@@ -1,4 +1,14 @@
-// Operational Transform - Transformation algorithm for concurrent operations
+/**
+ * @fileoverview Operational Transform (OT) algorithm for concurrent editing.
+ *
+ * Implements transformation functions that enable multiple users to edit the same
+ * document simultaneously while maintaining consistency. The core invariant:
+ *
+ *   apply(apply(doc, op1), transform(op2, op1)) = apply(apply(doc, op2), transform(op1, op2))
+ *
+ * This means applying op1 then transformed-op2 yields the same result as
+ * applying op2 then transformed-op1.
+ */
 
 import type { Operation, InsertOperation, DeleteOperation } from './types';
 
