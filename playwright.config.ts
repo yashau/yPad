@@ -15,7 +15,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    command: 'npm run build && npm run dev',
     url: 'http://127.0.0.1:8787',
     reuseExistingServer: true,
     timeout: 120000,

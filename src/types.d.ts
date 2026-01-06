@@ -17,6 +17,8 @@ declare global {
     NOTE_SESSIONS: DurableObjectNamespace;
     /** Durable Object namespace for rate limiting */
     RATE_LIMITER: DurableObjectNamespace;
+    /** Disable rate limiting for local development/testing */
+    DISABLE_RATE_LIMITS?: string;
   }
 }
 

@@ -1,21 +1,28 @@
 /**
- * @fileoverview WebSocket client for real-time collaborative editing.
+ * @fileoverview WebSocket client for real-time collaborative editing with Yjs CRDT.
  *
- * Implements dual-tracking for collaborative editing:
- *
- * VERSION TRACKING (OT):
- * - Used for all notes, tracked at DB level and in App.svelte
- * - Ensures correct operation ordering for OT transforms
- * - Enables conflict detection for encrypted notes (no WebSocket)
- *
- * SEQUENCE TRACKING (WebSocket):
- * - Only for active WebSocket connections (unencrypted notes)
- * - Server assigns monotonic seqNum to broadcasts
- * - Ensures ordering of ops, cursors, presence events
- * - Out-of-order messages buffered until gaps filled
+ * Implements Yjs-based synchronization:
+ * - Initial sync receives full Yjs state from server
+ * - Incremental updates are small binary diffs
+ * - Awareness protocol handles cursor/presence sync
+ * - Sequence numbers ensure message ordering
  */
 
-import type { Operation, WSMessage, SyncMessage, OperationMessage, AckMessage, CursorUpdateMessage, CursorAckMessage, UserJoinedMessage, UserLeftMessage, SyntaxChangeMessage, SyntaxAckMessage, NoteStatusMessage, ReplayResponseMessage, RequestEditResponseMessage, EditorCountUpdateMessage } from '../../../src/ot/types';
+import type {
+  WSMessage,
+  YjsSyncMessage,
+  YjsUpdateMessage,
+  YjsAckMessage,
+  AwarenessUpdateMessage,
+  UserJoinedMessage,
+  UserLeftMessage,
+  SyntaxChangeMessage,
+  SyntaxAckMessage,
+  NoteStatusMessage,
+  RequestEditResponseMessage,
+  EditorCountUpdateMessage,
+  YjsStateResponseMessage,
+} from '../../../src/types/messages';
 
 /**
  * Configuration options for the WebSocket client.
@@ -27,24 +34,24 @@ export interface WebSocketClientOptions {
   sessionId: string;
   /** Called when WebSocket connection is established */
   onOpen?: () => void;
-  /** Called when a remote operation is received */
-  onOperation?: (operation: Operation, contentChecksum?: number) => void;
+  /** Called when initial Yjs sync message is received from server */
+  onYjsSync?: (state: Uint8Array, clientId: string, syntax?: string) => void;
+  /** Called when a remote Yjs update is received */
+  onYjsUpdate?: (update: Uint8Array, clientId: string) => void;
+  /** Called when a remote awareness update is received */
+  onAwarenessUpdate?: (update: Uint8Array, clientId: string) => void;
+  /** Called when server acknowledges a sent Yjs update */
+  onYjsAck?: (seqNum: number) => void;
   /** Called when WebSocket connection is closed */
   onClose?: () => void;
   /** Called on WebSocket or server errors */
   onError?: (error: Error) => void;
-  /** Called when initial sync message is received from server */
-  onSync?: (content: string, version: number, operations: Operation[], clientId: string, syntax?: string) => void;
-  /** Called when server acknowledges a sent operation */
-  onAck?: (version: number, contentChecksum?: number, transformedOperation?: Operation) => void;
   /** Called when note is deleted (param indicates if deleted by current user) */
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
   /** Called when note encryption status changes */
   onEncryptionChanged?: (is_encrypted: boolean) => void;
   /** Called when note version is updated by another user (encrypted notes) */
   onVersionUpdate?: (version: number, message: string) => void;
-  /** Called when a remote cursor position update is received */
-  onCursorUpdate?: (clientId: string, position: number) => void;
   /** Called when a user joins the session */
   onUserJoined?: (clientId: string, connectedUsers: string[], activeEditorCount: number, viewerCount: number) => void;
   /** Called when a user leaves the session */
@@ -53,14 +60,14 @@ export interface WebSocketClientOptions {
   onSyntaxChange?: (syntax: string) => void;
   /** Called when note status (view count, expiration) is received */
   onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
-  /** Called when server responds to a replay request for state recovery */
-  onReplayResponse?: (baseContent: string, baseVersion: number, operations: Operation[], currentVersion: number, contentChecksum: number) => void;
   /** Called when server responds to an edit permission request */
   onRequestEditResponse?: (canEdit: boolean, activeEditorCount: number, viewerCount: number) => void;
-  /** Called when editor limit is reached and operation is rejected */
+  /** Called when editor limit is reached and update is rejected */
   onEditorLimitReached?: () => void;
   /** Called when editor/viewer counts change (e.g., viewer becomes editor) */
   onEditorCountUpdate?: (activeEditorCount: number, viewerCount: number) => void;
+  /** Called when full Yjs state is received (for recovery) */
+  onYjsStateResponse?: (state: Uint8Array) => void;
   /** Whether to automatically reconnect on connection loss (default: true) */
   autoReconnect?: boolean;
 }
@@ -69,9 +76,27 @@ interface QueuedInboundMessage {
   message: WSMessage;
 }
 
-interface QueuedOutboundOperation {
-  operation: Operation;
-  baseVersion: number;
+/**
+ * Encode Uint8Array to base64 string for JSON transport
+ */
+function encodeBase64(data: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < data.length; i++) {
+    binary += String.fromCharCode(data[i]);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Decode base64 string to Uint8Array
+ */
+function decodeBase64(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 export class WebSocketClient {
@@ -83,20 +108,17 @@ export class WebSocketClient {
   private reconnectTimeout: number | null = null;
   private isIntentionallyClosed = false;
 
+  // Client ID assigned by server during sync
+  private clientId: string = '';
+
   // Inbound message queue for sequential processing
   private inboundQueue: QueuedInboundMessage[] = [];
   private isProcessingInbound = false;
 
-  // Outbound operation queue for pipelined sending
-  private outboundQueue: QueuedOutboundOperation[] = [];
-  private isProcessingOutbound = false;
-  private operationsInFlight = 0; // Number of operations waiting for ACK
-  private maxOperationsInFlight = 20; // Allow up to 20 operations to be sent before backpressure
-
-  // Global sequence ordering for ALL broadcast messages (operations, cursors, presence)
+  // Global sequence ordering for broadcast messages
   private nextExpectedSeq: number = 1;
   private pendingMessages: Map<number, WSMessage> = new Map();
-  private maxPendingMessages = 20; // Max buffered out-of-order messages
+  private maxPendingMessages = 20;
   private gapTimer: number | null = null;
   private gapTimeout = 5000; // 5 seconds
 
@@ -122,8 +144,6 @@ export class WebSocketClient {
         this.reconnectAttempts = 0;
         // Clear pending messages - they're stale now, sync will provide current state
         this.pendingMessages.clear();
-        // Reset in-flight counter on new connection
-        this.operationsInFlight = 0;
         if (this.options.onOpen) {
           this.options.onOpen();
         }
@@ -138,7 +158,7 @@ export class WebSocketClient {
         }
       };
 
-      this.ws.onclose = (event) => {
+      this.ws.onclose = () => {
         this.ws = null;
 
         if (!this.isIntentionallyClosed && this.options.autoReconnect !== false) {
@@ -201,7 +221,6 @@ export class WebSocketClient {
           await this.handleMessage(queuedMessage.message);
         } catch (error) {
           console.error('[WebSocket] Error processing queued message:', error);
-          // Continue processing other messages even if one fails
         }
       }
     } finally {
@@ -210,47 +229,40 @@ export class WebSocketClient {
   }
 
   private async handleMessage(message: WSMessage): Promise<void> {
-    // Process sync immediately - it sets up sequence tracking, so it can't be sequenced
-    if (message.type === 'sync') {
-      await this.handleSync(message as SyncMessage);
+    // Process Yjs sync immediately - it sets up sequence tracking
+    if (message.type === 'yjs_sync') {
+      await this.handleYjsSync(message as YjsSyncMessage);
       return;
     }
 
-    // Process ACK immediately - even though it has seqNum, it's not a broadcast message
-    if (message.type === 'ack') {
-      await this.handleAck(message as AckMessage);
+    // Process ACK immediately - not a broadcast message
+    if (message.type === 'yjs_ack') {
+      await this.handleYjsAck(message as YjsAckMessage);
       return;
     }
 
-    // Process cursor ACK immediately - it tells us what sequence number was used
-    if (message.type === 'cursor_ack') {
-      await this.handleCursorAck(message as CursorAckMessage);
-      return;
-    }
-
-    // Process syntax ACK immediately - it tells us what sequence number was used
+    // Process syntax ACK immediately
     if (message.type === 'syntax_ack') {
       await this.handleSyntaxAck(message as SyntaxAckMessage);
       return;
     }
 
-    // Process replay response immediately - it's a response to our replay request
-    if (message.type === 'replay_response') {
-      await this.handleReplayResponse(message as ReplayResponseMessage);
+    // Process Yjs state response immediately (recovery)
+    if (message.type === 'yjs_state_response') {
+      await this.handleYjsStateResponse(message as YjsStateResponseMessage);
       return;
     }
 
-    // Check if this message has a global sequence number (operations, cursor updates, user presence)
-    const seqNum = (message as any).seqNum;
+    // Check if this message has a global sequence number
+    const seqNum = (message as { seqNum?: number }).seqNum;
 
     if (seqNum !== undefined) {
       // This message has a sequence number - enforce ordering
       return this.handleSequencedMessage(message, seqNum);
     }
 
-    // Messages without sequence numbers (error, etc.) process immediately
+    // Messages without sequence numbers process immediately
     switch (message.type) {
-
       case 'error':
         console.error('[WebSocket] Server error:', message.message);
         // Handle editor limit reached error specially
@@ -265,14 +277,12 @@ export class WebSocketClient {
 
       case 'reload':
         console.warn('[WebSocket] Reload requested:', message.reason);
-        // Could trigger a page reload or show a message to the user
         break;
 
       case 'note_expired':
       case 'note_deleted':
         console.warn('[WebSocket] Note no longer available');
         if (this.options.onNoteDeleted) {
-          // Check if the current user deleted the note by comparing session IDs
           const deletedByCurrentUser = message.type === 'note_deleted' &&
                                         message.sessionId === this.options.sessionId;
           this.options.onNoteDeleted(deletedByCurrentUser);
@@ -305,13 +315,18 @@ export class WebSocketClient {
         await this.handleRequestEditResponse(message as RequestEditResponseMessage);
         break;
 
+      case 'awareness_update':
+        // Awareness updates don't use sequence numbers (cursor positions are ephemeral)
+        await this.handleAwarenessUpdate(message as AwarenessUpdateMessage);
+        break;
+
       default:
         console.warn('[WebSocket] Unknown message type:', message);
     }
   }
 
   /**
-   * Handle messages with global sequence numbers (operations, cursor updates, presence)
+   * Handle messages with global sequence numbers
    * Ensures these messages are processed in the exact order the server sent them
    */
   private async handleSequencedMessage(message: WSMessage, seqNum: number): Promise<void> {
@@ -331,7 +346,6 @@ export class WebSocketClient {
       }
     } else if (seqNum > this.nextExpectedSeq) {
       // Future message - buffer it
-      // Check buffer size limit
       if (this.pendingMessages.size >= this.maxPendingMessages) {
         console.error(`[WebSocket] Pending messages buffer full (${this.maxPendingMessages}), requesting resync`);
         this.requestResync();
@@ -349,16 +363,13 @@ export class WebSocketClient {
   }
 
   /**
-   * Process a sequenced message (operation, cursor update, presence, or syntax change)
+   * Process a sequenced message (Yjs update, presence, or syntax change)
+   * Note: awareness_update is NOT sequenced - it's processed immediately
    */
   private async processSequencedMessage(message: WSMessage): Promise<void> {
     switch (message.type) {
-      case 'operation':
-        await this.handleOperation(message as OperationMessage);
-        break;
-
-      case 'cursor_update':
-        await this.handleCursorUpdate(message as CursorUpdateMessage);
+      case 'yjs_update':
+        await this.handleYjsUpdate(message as YjsUpdateMessage);
         break;
 
       case 'user_joined':
@@ -400,13 +411,6 @@ export class WebSocketClient {
 
   /**
    * Update sequence tracking when receiving an ACK for our own message.
-   *
-   * When a client sends an operation or cursor update, the server broadcasts it
-   * to all OTHER clients (excluding the sender to avoid processing own changes twice).
-   * The sender receives an ACK with the sequence number used for that broadcast.
-   *
-   * Since the sender is excluded from the broadcast, they need to advance their
-   * sequence counter to account for the broadcast they skipped.
    */
   private updateSequenceFromAck(seqNum: number | undefined): void {
     if (seqNum !== undefined && seqNum >= this.nextExpectedSeq) {
@@ -416,10 +420,8 @@ export class WebSocketClient {
 
   /**
    * Start gap detection timer
-   * Defensive: clears any existing timer first to prevent memory leaks
    */
   private startGapTimer(): void {
-    // Clear any existing timer first
     if (this.gapTimer !== null) {
       clearTimeout(this.gapTimer);
     }
@@ -436,11 +438,11 @@ export class WebSocketClient {
     }, this.gapTimeout) as unknown as number;
   }
 
-  private async handleSync(message: SyncMessage): Promise<void> {
+  private async handleYjsSync(message: YjsSyncMessage): Promise<void> {
     // Initialize global sequence tracking from sync message
-    // Next expected message will be current + 1
     this.nextExpectedSeq = message.seqNum + 1;
     this.pendingMessages.clear();
+    this.clientId = message.clientId;
 
     // Clear gap detection timer
     if (this.gapTimer !== null) {
@@ -448,67 +450,39 @@ export class WebSocketClient {
       this.gapTimer = null;
     }
 
-    if (this.options.onSync) {
-      this.options.onSync(message.content, message.version, message.operations, message.clientId, message.syntax);
+    if (this.options.onYjsSync) {
+      const state = decodeBase64(message.state);
+      this.options.onYjsSync(state, message.clientId, message.syntax);
     }
   }
 
-  private async handleOperation(message: OperationMessage): Promise<void> {
-    // Apply operation immediately - sequencing is handled by global seqNum
-    // Version tracking for OT transforms happens in App.svelte
-    if (this.options.onOperation) {
-      this.options.onOperation(message.operation, message.contentChecksum);
+  private async handleYjsUpdate(message: YjsUpdateMessage): Promise<void> {
+    if (this.options.onYjsUpdate) {
+      const update = decodeBase64(message.update);
+      this.options.onYjsUpdate(update, message.clientId);
     }
   }
 
-  /**
-   * Request a full resync from the server
-   */
-  private requestResync(): void {
-    console.warn('[WebSocket] Requesting full resync due to gap');
-
-    // Clear gap detection timer
-    if (this.gapTimer !== null) {
-      clearTimeout(this.gapTimer);
-      this.gapTimer = null;
-    }
-
-    // Clear pending messages
-    this.pendingMessages.clear();
-
-    // Close and reconnect to trigger sync
-    if (this.ws) {
-      this.ws.close();
+  private async handleAwarenessUpdate(message: AwarenessUpdateMessage): Promise<void> {
+    if (this.options.onAwarenessUpdate) {
+      const update = decodeBase64(message.update);
+      this.options.onAwarenessUpdate(update, message.clientId);
     }
   }
 
-  private async handleAck(message: AckMessage): Promise<void> {
-    if (this.options.onAck) {
-      this.options.onAck(message.version, message.contentChecksum, message.transformedOperation);
-    }
-
+  private async handleYjsAck(message: YjsAckMessage): Promise<void> {
     // Update sequence tracking based on the broadcast we didn't receive
     this.updateSequenceFromAck(message.seqNum);
 
-    // Decrement in-flight counter - we got an ACK
-    if (this.operationsInFlight > 0) {
-      this.operationsInFlight--;
-    }
-
-    // Continue processing outbound queue if there are more operations to send
-    if (this.outboundQueue.length > 0 && !this.isProcessingOutbound) {
-      this.processOutboundQueue();
+    if (this.options.onYjsAck && message.seqNum !== undefined) {
+      this.options.onYjsAck(message.seqNum);
     }
   }
 
-  private async handleCursorAck(message: CursorAckMessage): Promise<void> {
-    // Update sequence tracking based on the cursor broadcast we didn't receive
-    this.updateSequenceFromAck(message.seqNum);
-  }
-
-  private async handleCursorUpdate(message: CursorUpdateMessage): Promise<void> {
-    if (this.options.onCursorUpdate) {
-      this.options.onCursorUpdate(message.clientId, message.position);
+  private async handleYjsStateResponse(message: YjsStateResponseMessage): Promise<void> {
+    if (this.options.onYjsStateResponse) {
+      const state = decodeBase64(message.state);
+      this.options.onYjsStateResponse(state);
     }
   }
 
@@ -541,18 +515,6 @@ export class WebSocketClient {
     this.updateSequenceFromAck(message.seqNum);
   }
 
-  private async handleReplayResponse(message: ReplayResponseMessage): Promise<void> {
-    if (this.options.onReplayResponse) {
-      this.options.onReplayResponse(
-        message.baseContent,
-        message.baseVersion,
-        message.operations,
-        message.currentVersion,
-        message.contentChecksum
-      );
-    }
-  }
-
   private async handleRequestEditResponse(message: RequestEditResponseMessage): Promise<void> {
     if (this.options.onRequestEditResponse) {
       this.options.onRequestEditResponse(message.canEdit, message.activeEditorCount, message.viewerCount);
@@ -560,10 +522,31 @@ export class WebSocketClient {
   }
 
   /**
+   * Request a full resync from the server
+   */
+  private requestResync(): void {
+    console.warn('[WebSocket] Requesting full resync due to gap');
+
+    // Clear gap detection timer
+    if (this.gapTimer !== null) {
+      clearTimeout(this.gapTimer);
+      this.gapTimer = null;
+    }
+
+    // Clear pending messages
+    this.pendingMessages.clear();
+
+    // Close and reconnect to trigger sync
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+
+  /**
    * Request permission to edit the note.
    * Server will respond with whether editing is allowed based on active editor limit.
    */
-  sendRequestEdit(clientId: string): void {
+  sendRequestEdit(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn('[WebSocket] Cannot send request_edit - not connected');
       return;
@@ -571,7 +554,7 @@ export class WebSocketClient {
 
     const message = {
       type: 'request_edit',
-      clientId,
+      clientId: this.clientId,
       sessionId: this.options.sessionId,
     };
 
@@ -579,19 +562,18 @@ export class WebSocketClient {
   }
 
   /**
-   * Request a replay of operations from a specific version.
-   * Used when checksum mismatch is detected to rebuild state from server.
+   * Send a Yjs update to the server
    */
-  sendReplayRequest(fromVersion: number, clientId: string): void {
+  sendYjsUpdate(update: Uint8Array): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[WebSocket] Cannot send replay request - not connected');
+      console.warn('[WebSocket] Cannot send Yjs update - not connected');
       return;
     }
 
-    const message = {
-      type: 'replay_request',
-      fromVersion,
-      clientId,
+    const message: YjsUpdateMessage = {
+      type: 'yjs_update',
+      update: encodeBase64(update),
+      clientId: this.clientId,
       sessionId: this.options.sessionId,
     };
 
@@ -599,101 +581,54 @@ export class WebSocketClient {
   }
 
   /**
-   * Process outbound operations with pipelining
-   * Allows multiple operations in flight before applying backpressure
+   * Send an awareness update to the server (cursor/presence)
    */
-  private processOutboundQueue(): void {
-    // Prevent concurrent processing
-    if (this.isProcessingOutbound) {
-      return;
-    }
-
-    // Check connection
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[WebSocket] Cannot process outbound queue - not connected');
-      return;
-    }
-
-    this.isProcessingOutbound = true;
-
-    try {
-      // Send as many operations as we can without exceeding max in-flight limit
-      while (
-        this.outboundQueue.length > 0 &&
-        this.operationsInFlight < this.maxOperationsInFlight
-      ) {
-        const queuedOp = this.outboundQueue.shift();
-
-        if (!queuedOp) {
-          break;
-        }
-
-        const message: OperationMessage = {
-          type: 'operation',
-          operation: queuedOp.operation,
-          baseVersion: queuedOp.baseVersion,
-          clientId: queuedOp.operation.clientId,
-          sessionId: this.options.sessionId,
-        };
-
-        this.ws.send(JSON.stringify(message));
-        this.operationsInFlight++;
-      }
-    } catch (error) {
-      console.error('[WebSocket] Error processing outbound operation:', error);
-    } finally {
-      this.isProcessingOutbound = false;
-    }
-  }
-
-  sendOperation(operation: Operation, baseVersion: number): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      // Don't queue operations if not connected - they'll be stale
-      console.warn('[WebSocket] Cannot send operation - not connected');
-      return;
-    }
-
-    // Enqueue operation for pipelined sending
-    this.outboundQueue.push({
-      operation,
-      baseVersion,
-    });
-
-    // Start processing if not already processing
-    if (!this.isProcessingOutbound) {
-      this.processOutboundQueue();
-    }
-  }
-
-  sendCursorUpdate(position: number, clientId: string): void {
+  sendAwarenessUpdate(update: Uint8Array): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
 
-    const message: CursorUpdateMessage = {
-      type: 'cursor_update',
-      clientId,
-      position,
-      sessionId: this.options.sessionId,
+    const message: AwarenessUpdateMessage = {
+      type: 'awareness_update',
+      update: encodeBase64(update),
+      clientId: this.clientId,
     };
 
     this.ws.send(JSON.stringify(message));
   }
 
-  sendSyntaxChange(syntax: string, clientId: string): void {
+  /**
+   * Send a syntax change to the server
+   */
+  sendSyntaxChange(syntax: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
     }
 
     const message: SyntaxChangeMessage = {
       type: 'syntax_change',
-      clientId,
+      clientId: this.clientId,
       syntax,
     };
 
     this.ws.send(JSON.stringify(message));
   }
 
+  /**
+   * Request full Yjs state from server (for recovery)
+   */
+  sendYjsStateRequest(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const message = {
+      type: 'yjs_state_request',
+      clientId: this.clientId,
+    };
+
+    this.ws.send(JSON.stringify(message));
+  }
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -734,6 +669,13 @@ export class WebSocketClient {
 
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Get the client ID assigned by the server
+   */
+  getClientId(): string {
+    return this.clientId;
   }
 
   /**

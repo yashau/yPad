@@ -16,6 +16,7 @@
     remoteCursors: Map<string, RemoteCursorData>;
     isRealtimeEnabled: boolean;
     isEncrypted: boolean;
+    isUpdating: boolean;
     onInput: (getContent: () => string, event?: InputEvent) => void;
     onScroll: (event: Event) => void;
   }
@@ -32,6 +33,7 @@
     remoteCursors,
     isRealtimeEnabled,
     isEncrypted,
+    isUpdating,
     onInput,
     onScroll
   }: Props = $props();
@@ -107,13 +109,17 @@
   // Sync textarea value when content changes from parent (e.g., server updates)
   $effect(() => {
     if (textareaScrollRef && textareaScrollRef.value !== content) {
-      const cursorPos = textareaScrollRef.selectionStart;
       const scrollTop = textareaScrollRef.scrollTop;
       textareaScrollRef.value = content;
-      // Restore cursor position if reasonable
-      if (cursorPos <= content.length) {
-        textareaScrollRef.selectionStart = cursorPos;
-        textareaScrollRef.selectionEnd = cursorPos;
+      // Only restore cursor if NOT in the middle of applying a remote operation.
+      // When isUpdating is true, applyRemoteOperation will handle cursor restoration
+      // with the correctly transformed position.
+      if (!isUpdating) {
+        const cursorPos = textareaScrollRef.selectionStart;
+        if (cursorPos <= content.length) {
+          textareaScrollRef.selectionStart = cursorPos;
+          textareaScrollRef.selectionEnd = cursorPos;
+        }
       }
       textareaScrollRef.scrollTop = scrollTop;
     }

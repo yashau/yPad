@@ -1,74 +1,25 @@
 /**
- * @fileoverview Type definitions for Operational Transform (OT) and WebSocket messaging.
+ * @fileoverview Type definitions for Yjs CRDT-based WebSocket messaging.
  *
  * This module defines the data structures used for:
- * - OT operations (insert/delete)
+ * - Yjs document synchronization
+ * - Awareness (cursor/presence) updates
  * - WebSocket protocol messages between client and server
  * - Client session and rate limiting state
  */
 
-/**
- * Insert operation that adds text at a position.
- */
-export type InsertOperation = {
-  type: 'insert';
-  /** 0-based character index where text is inserted */
-  position: number;
-  /** Text content to insert */
-  text: string;
-  /** Unique identifier for the client that created this operation */
-  clientId: string;
-  /** Server-assigned version after this operation is applied */
-  version: number;
-};
+// =============================================================================
+// Yjs Sync Protocol Messages
+// =============================================================================
 
 /**
- * Delete operation that removes characters starting at a position.
+ * Initial sync message from server when client connects.
+ * Contains the full Yjs document state.
  */
-export type DeleteOperation = {
-  type: 'delete';
-  /** 0-based character index where deletion starts */
-  position: number;
-  /** Number of characters to delete */
-  length: number;
-  /** Unique identifier for the client that created this operation */
-  clientId: string;
-  /** Server-assigned version after this operation is applied */
-  version: number;
-};
-
-/**
- * Union type for all OT operations.
- */
-export type Operation = InsertOperation | DeleteOperation;
-
-/**
- * Client sends an operation to the server for processing.
- */
-export type OperationMessage = {
-  type: 'operation';
-  operation: Operation;
-  /** Server version the client had when creating this operation */
-  baseVersion: number;
-  clientId: string;
-  sessionId: string;
-  /** Server-assigned sequence number for ordering (set on broadcast) */
-  seqNum?: number;
-  /** Checksum for verifying content consistency */
-  contentChecksum?: number;
-};
-
-/**
- * Server sends initial state when client connects.
- */
-export type SyncMessage = {
-  type: 'sync';
-  /** Current document content */
-  content: string;
-  /** Current server version */
-  version: number;
-  /** Recent operation history for conflict resolution */
-  operations: Operation[];
+export type YjsSyncMessage = {
+  type: 'yjs_sync';
+  /** Base64-encoded full Yjs document state */
+  state: string;
   /** Server-assigned client ID for this connection */
   clientId: string;
   /** Current sequence number for message ordering */
@@ -78,19 +29,65 @@ export type SyncMessage = {
 };
 
 /**
- * Server acknowledges a client's operation.
+ * Client sends a Yjs update to the server.
  */
-export type AckMessage = {
-  type: 'ack';
-  /** New server version after applying the operation */
-  version: number;
-  /** Sequence number of the broadcast triggered by this operation */
+export type YjsUpdateMessage = {
+  type: 'yjs_update';
+  /** Base64-encoded Yjs update */
+  update: string;
+  /** Client that originated this update */
+  clientId: string;
+  /** Session ID for validation */
+  sessionId?: string;
+  /** Server-assigned sequence number (set on broadcast) */
   seqNum?: number;
-  /** Checksum for verifying content consistency */
-  contentChecksum?: number;
-  /** Server's canonical transformed version of the operation */
-  transformedOperation?: Operation;
 };
+
+/**
+ * Server acknowledges a Yjs update from client.
+ */
+export type YjsAckMessage = {
+  type: 'yjs_ack';
+  /** Sequence number of the broadcast */
+  seqNum?: number;
+};
+
+/**
+ * Awareness update for cursor positions and presence.
+ */
+export type AwarenessUpdateMessage = {
+  type: 'awareness_update';
+  /** Base64-encoded awareness protocol update */
+  update: string;
+  /** Client that sent this update */
+  clientId: string;
+  /** Server-assigned sequence number (set on broadcast) */
+  seqNum?: number;
+};
+
+/**
+ * Request full Yjs state (for recovery after disconnect).
+ */
+export type YjsStateRequestMessage = {
+  type: 'yjs_state_request';
+  clientId: string;
+  sessionId: string;
+};
+
+/**
+ * Server responds with full Yjs state.
+ */
+export type YjsStateResponseMessage = {
+  type: 'yjs_state_response';
+  /** Base64-encoded full Yjs document state */
+  state: string;
+  /** Base64-encoded awareness states */
+  awarenessState?: string;
+};
+
+// =============================================================================
+// Session & Presence Messages (Unchanged from OT)
+// =============================================================================
 
 /**
  * Server reports an error to the client.
@@ -139,26 +136,6 @@ export type VersionUpdateMessage = {
   type: 'version_update';
   version: number;
   message: string;
-};
-
-/**
- * Broadcast cursor position to other clients.
- */
-export type CursorUpdateMessage = {
-  type: 'cursor_update';
-  clientId: string;
-  /** 0-based character position of the cursor */
-  position: number;
-  sessionId?: string;
-  seqNum?: number;
-};
-
-/**
- * Server acknowledges a cursor update.
- */
-export type CursorAckMessage = {
-  type: 'cursor_ack';
-  seqNum: number;
 };
 
 /**
@@ -244,7 +221,7 @@ export type RequestEditResponseMessage = {
 
 /**
  * Server broadcasts updated editor/viewer counts.
- * Sent when a viewer becomes an active editor (sends their first operation).
+ * Sent when a viewer becomes an active editor.
  */
 export type EditorCountUpdateMessage = {
   type: 'editor_count_update';
@@ -255,60 +232,44 @@ export type EditorCountUpdateMessage = {
   seqNum?: number;
 };
 
-/**
- * Client requests replay of operations from a specific version.
- * Used for recovery when client state diverges from server.
- */
-export type ReplayRequestMessage = {
-  type: 'replay_request';
-  /** Client wants operations from this version onwards */
-  fromVersion: number;
-  clientId: string;
-  sessionId: string;
-};
-
-/**
- * Server responds with content and operations for replay recovery.
- */
-export type ReplayResponseMessage = {
-  type: 'replay_response';
-  /** Content at the base version */
-  baseContent: string;
-  /** Version of the base content */
-  baseVersion: number;
-  /** Operations to apply on top of base content */
-  operations: Operation[];
-  /** Current server version after all operations */
-  currentVersion: number;
-  /** Checksum for verifying final content */
-  contentChecksum: number;
-};
+// =============================================================================
+// Union Type for All Messages
+// =============================================================================
 
 /**
  * Union type for all WebSocket messages.
  */
 export type WSMessage =
-  | OperationMessage
-  | SyncMessage
-  | AckMessage
+  // Yjs sync messages
+  | YjsSyncMessage
+  | YjsUpdateMessage
+  | YjsAckMessage
+  | AwarenessUpdateMessage
+  | YjsStateRequestMessage
+  | YjsStateResponseMessage
+  // Session/error messages
   | ErrorMessage
   | ReloadMessage
   | NoteExpiredMessage
   | NoteDeletedMessage
   | EncryptionChangedMessage
   | VersionUpdateMessage
-  | CursorUpdateMessage
-  | CursorAckMessage
+  // Presence messages
   | UserJoinedMessage
   | UserLeftMessage
+  // Syntax messages
   | SyntaxChangeMessage
   | SyntaxAckMessage
+  // Status messages
   | NoteStatusMessage
+  // Editor permission messages
   | RequestEditMessage
   | RequestEditResponseMessage
-  | EditorCountUpdateMessage
-  | ReplayRequestMessage
-  | ReplayResponseMessage;
+  | EditorCountUpdateMessage;
+
+// =============================================================================
+// Session State Types
+// =============================================================================
 
 /**
  * Token bucket rate limiting state for WebSocket connections.
@@ -330,14 +291,26 @@ export interface ClientSession {
   clientId: string;
   /** Session identifier (unique per connection) */
   sessionId: string;
-  /** Version of the last acknowledged operation */
-  lastAckOperation: number;
   /** Whether the client has completed authentication */
   isAuthenticated: boolean;
   /** WebSocket connection */
   ws: WebSocket;
   /** Rate limiting state */
   rateLimit: RateLimitState;
-  /** Timestamp of last operation sent by this client (null = viewer, never sent an operation) */
-  lastOperationAt: number | null;
+  /** Timestamp of last edit by this client (null = viewer) */
+  lastEditAt: number | null;
+}
+
+// =============================================================================
+// Utility Types
+// =============================================================================
+
+/**
+ * Yjs state stored in the database
+ */
+export interface YjsPersistedState {
+  /** Binary Yjs document state */
+  state: Uint8Array;
+  /** Plain text content (for backward compatibility and search) */
+  content: string;
 }

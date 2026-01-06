@@ -1,74 +1,49 @@
 # yPad
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Unit Tests](https://img.shields.io/badge/unit_tests-660_passed-brightgreen)
-![E2E Tests](https://img.shields.io/badge/e2e_tests-57_passed-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)
+![Unit Tests](https://img.shields.io/badge/unit_tests-386_passed-brightgreen)
+![E2E Tests](https://img.shields.io/badge/e2e_tests-78_passed-brightgreen)
+![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Yjs](https://img.shields.io/badge/Yjs_CRDT-6B46C1?style=for-the-badge&logoColor=white)](https://yjs.dev/)
 [![Hono](https://img.shields.io/badge/Hono-E36002?style=for-the-badge&logo=hono&logoColor=white)](https://hono.dev/)
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
 
-A real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network.
+A real-time collaborative notepad with end-to-end encryption, built on Cloudflare's edge network using Yjs CRDT for conflict-free synchronization.
 
 **Live: [https://yp.pe](https://yp.pe)**
 
 ## Table of Contents
 
 - [Features](#features)
-  - [Real-Time Collaboration](#real-time-collaboration)
-  - [Security & Privacy](#security--privacy)
-  - [Note Management](#note-management)
-  - [Editor](#editor)
 - [Tech Stack](#tech-stack)
 - [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Development](#development)
-  - [Development Scripts](#development-scripts)
-  - [Database Commands](#database-commands)
-  - [Testing](#testing)
-  - [Project Structure](#project-structure)
 - [Deployment](#deployment)
 - [Usage](#usage)
-  - [Creating a Note](#creating-a-note)
-  - [Setting a Custom URL](#setting-a-custom-url)
-  - [Adding Password Protection](#adding-password-protection)
-  - [Removing Password Protection](#removing-password-protection)
-  - [Configuring Note Options](#configuring-note-options)
-  - [Real-Time Collaboration](#real-time-collaboration-1)
-  - [Viewing a Protected Note](#viewing-a-protected-note)
-  - [Final View Handling](#final-view-handling)
 - [API Reference](#api-reference)
-  - [REST Endpoints](#rest-endpoints)
-  - [WebSocket Protocol](#websocket-protocol)
 - [Key Features Explained](#key-features-explained)
-  - [Operational Transform (OT)](#operational-transform-ot)
-  - [Content Integrity & Self-Healing](#content-integrity--self-healing)
-  - [Client-Side Encryption](#client-side-encryption)
-  - [Editor Limits](#editor-limits)
-  - [Max Views & Expiration](#max-views--expiration)
-  - [Automatic Cleanup](#automatic-cleanup)
-  - [Rate Limiting](#rate-limiting)
 - [Contributing](#contributing)
 - [License](#license)
-- [Acknowledgments](#acknowledgments)
 
 ## Features
 
 ### Real-Time Collaboration
-- **Multi-User Editing**: Multiple users can edit simultaneously
-- **Operational Transform**: Character-level conflict resolution
-- **Remote Cursors**: See other users' cursor positions
-- **User Presence**: Live count of connected collaborators
+- **Multi-User Editing**: Multiple users can edit simultaneously with Yjs CRDT
+- **Conflict-Free Sync**: CRDTs guarantee eventual consistency without conflicts
+- **Remote Cursors**: See other users' cursor positions via Yjs Awareness protocol
+- **User Presence**: Live count of connected collaborators (editors vs viewers)
 - **Editor Limits**: Maximum 10 concurrent editors per note with real-time status
 
 ### Security & Privacy
 - **True End-to-End Encryption**: AES-GCM 256-bit client-side encryption for password-protected notes
-- **Password Never Leaves Browser**: Passwords are used locally for encryption/decryption only - never transmitted to the server
+- **Password Never Leaves Browser**: Passwords are used locally for encryption/decryption only
 - **Password Protection**: PBKDF2 key derivation (100,000 iterations)
 - **Zero-Knowledge**: Server only stores encrypted blobs, never sees plaintext or passwords
 
@@ -80,7 +55,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 - **Automatic Cleanup**: Expired and inactive notes are deleted
 
 ### Editor
-- **Syntax Highlighting**: 150+ languages via highlight.js
+- **Syntax Highlighting**: 190+ languages via highlight.js (lazy-loaded)
 - **Line Numbers**: Synchronized with scroll
 - **Dark/Light Theme**: Persistent theme toggle
 
@@ -106,24 +81,24 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 | Vite | Build tool and dev server |
 | TypeScript | Type safety |
 
+### Real-Time Collaboration
+| Technology | Purpose |
+|------------|---------|
+| Yjs | CRDT framework for conflict-free collaborative editing |
+| y-protocols | Yjs sync and awareness protocols |
+
 ### Styling & UI
 | Technology | Purpose |
 |------------|---------|
 | Tailwind CSS | Utility-first CSS framework |
-| @tailwindcss/postcss | Tailwind v4 PostCSS plugin |
-| @tailwindcss/typography | Beautiful prose styling |
 | shadcn-svelte | High-quality component library |
 | bits-ui | Headless UI primitives |
-| @lucide/svelte | Beautiful icon library |
-| clsx | Conditional classnames utility |
-| tailwind-merge | Smart Tailwind class merging |
-| tailwind-variants | Component variant system |
+| @lucide/svelte | Icon library |
 
 ### Specialized Libraries
 | Technology | Purpose |
 |------------|---------|
-| highlight.js | Syntax highlighting for 150+ languages |
-| fast-diff | Efficient text diffing for OT operations |
+| highlight.js | Syntax highlighting for 190+ languages |
 | @internationalized/date | Internationalized date handling |
 
 ### Security & Cryptography
@@ -140,6 +115,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 ┌─────────────────┐
 │   Client App    │
 │   (Svelte 5)    │
+│   + Yjs CRDT    │
 └────────┬────────┘
          │
          │ HTTPS/WSS
@@ -154,20 +130,21 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 │             │              │                │
 │   ┌─────────▼─────┐   ┌───▼──────────────┐ │
 │   │  D1 Database  │   │ Durable Objects  │ │
-│   │   (SQLite)    │   │  (Per-Note WS)   │ │
+│   │   (SQLite)    │   │  (Yjs Server)    │ │
 │   └───────────────┘   └──────────────────┘ │
 └─────────────────────────────────────────────┘
 ```
 
-### Real-Time Collaboration Flow
+### Real-Time Collaboration Flow (Yjs CRDT)
 
 1. **Client** connects via WebSocket to Cloudflare Worker
-2. **Worker** validates password and upgrades connection to Durable Object
-3. **Durable Object** manages session state and broadcasts operations
-4. **Operations** are transformed using OT algorithm and applied in-memory
-5. **Persistence** occurs periodically (debounced 5s or every 50 operations)
-6. **Broadcasts** to all connected clients with transformed operations
-7. **Status Updates** broadcast every 10 seconds with view count and expiration info
+2. **Worker** validates session and upgrades connection to Durable Object
+3. **Durable Object** sends initial Yjs state to the client
+4. **Yjs CRDT** handles all text operations locally with immediate UI updates
+5. **Updates** are encoded as binary Yjs updates and sent to server
+6. **Server** broadcasts updates to all connected clients
+7. **Awareness** protocol syncs cursor positions and user presence
+8. **Persistence** occurs periodically (debounced 5s or every 50 operations)
 
 ### Database Schema
 
@@ -175,6 +152,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 CREATE TABLE notes (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,              -- Plaintext or encrypted blob
+    yjs_state BLOB,                     -- Yjs document state for fast restore
     syntax_highlight TEXT DEFAULT 'plaintext',
     view_count INTEGER DEFAULT 0,
     max_views INTEGER,
@@ -183,7 +161,7 @@ CREATE TABLE notes (
     updated_at INTEGER NOT NULL,
     version INTEGER DEFAULT 1,
     last_session_id TEXT,
-    is_encrypted INTEGER DEFAULT 0,     -- True E2E encryption flag
+    is_encrypted INTEGER DEFAULT 0,     -- E2E encryption flag
     last_accessed_at INTEGER            -- Tracks when note was last viewed
 );
 
@@ -260,6 +238,7 @@ The dev server runs with:
 - Persistent state in `.wrangler/state` (`--persist-to`)
 - Hot module replacement
 - Automatic Svelte compilation
+- Rate limiting disabled (via `DISABLE_RATE_LIMITS` in `wrangler.toml`)
 
 ### Database Commands
 
@@ -291,11 +270,11 @@ npm run test:coverage
 
 Unit test suites cover:
 - API validation and constants
-- Operational Transform (OT) algorithms
 - WebSocket client behavior
 - Cryptography utilities
+- Message handlers
 - Editor and collaboration hooks
-- Rate limiting (token bucket, sliding window, configuration)
+- Rate limiting (token bucket, sliding window)
 
 #### E2E Tests (Playwright)
 
@@ -307,43 +286,15 @@ npm run e2e
 npx playwright test --ui
 
 # Run specific test suite
-npx playwright test e2e/comprehensive-ot.spec.ts
+npx playwright test e2e/comprehensive-sync.spec.ts
 ```
 
-E2E test suites cover:
+E2E test suites:
 
-**Alert Banners** (`alert-banners.spec.ts`)
-- Encryption enabled/disabled banners
-- Note deleted banner
-- Password dialog errors
-- Final view banner (max views reached)
-- Reload banner (encrypted note updated by another user)
-- Baseline screenshots (no banners)
-
-**Syntax Highlighting** (`syntax-highlighting.spec.ts`)
-- JavaScript, JSON, Python, TypeScript, YAML, SQL highlighting
-- Plain text mode (no highlighting)
-- Theme permutations (light/dark modes)
-- Screenshots for visual regression testing
-
-**E2E Encryption Security** (`e2e-encryption.spec.ts`)
-- Verifies passwords are NEVER sent to the server
-- Verifies plaintext content never leaves the browser
-- WebSocket messages never contain password or plaintext
-- Password hash is not sent (true E2E encryption)
-- Multiple password attempts don't leak to server
-
-**Real-Time OT** (`realtime-ot.spec.ts`)
-- Fast typing with network latency
-- Two users typing concurrently
-- Rapid insertions and deletions
-- Content persistence after fast typing
-- Typing during WebSocket reconnection
-
-**Comprehensive OT** (`comprehensive-ot.spec.ts`) - 13 tests
+**Comprehensive Sync** (`comprehensive-sync.spec.ts`) - 13 tests
 - Race conditions with high latency (client types while PUT in flight)
 - Concurrent insertions at different positions
-- Concurrent insertions at SAME position (conflict resolution)
+- Concurrent insertions at same position (CRDT resolution)
 - Backspace and Delete key operations
 - Word deletion (Ctrl+Backspace) with concurrent edits
 - Selection replacement (typing over selection)
@@ -355,147 +306,153 @@ E2E test suites cover:
 - Stress test: 50 rapid operations from 3 clients
 - Extreme latency difference (50ms vs 300ms clients)
 
+**Real-time Sync** (`realtime-sync.spec.ts`) - 5 tests
+- Basic two-client synchronization
+- Fast typing with network latency
+- Content persistence after fast typing
+- Typing during WebSocket reconnection
+
+**Remote Cursors** (`remote-cursors.spec.ts`) - 8 tests
+- Cursor visibility for remote users
+- Cursor position updates in real-time
+- Cursor color consistency
+- Cursor cleanup on user disconnect
+
+**Cursor Preservation** (`cursor-preservation.spec.ts`) - 13 tests
+- Local cursor stays in place when remote user types after cursor
+- Cursor shifts correctly when remote user types before cursor
+- Selection preserved during remote edits elsewhere
+- Rapid typing from remote users doesn't disrupt local cursor
+- Multi-client simultaneous editing with stable cursors
+- Edge cases: cursor at position 0, end of document, multi-line
+
+**E2E Encryption Security** (`e2e-encryption.spec.ts`) - 9 tests
+- Passwords are NEVER sent to the server
+- Plaintext content never leaves the browser
+- WebSocket messages never contain password or plaintext
+- Multiple password attempts don't leak to server
+
 **Editor Limits** (`editor-limits.spec.ts`) - 16 tests
 - First user edit permission and typing capability
 - Connection status shows client ID and editor count
-- Second user joining updates connection count
 - Viewer count shown separately from editor count
-- Encrypted notes bypass editor limit (always editable)
+- Encrypted notes bypass editor limit
 - Editor limit banner when 11th user tries to edit
 - Retry button allows editing after an editor leaves
-- Non-encrypted notes start in viewMode until server responds
-- Multiple editors see consistent content after concurrent edits
-- User leaving frees up editor slot
-- Editor limit banner styling (yellow warning)
-- Lock icon shown for encrypted notes
-- Ten concurrent editors at limit all can edit
-- Editor count display shows +N/M format with real-time updates
-- Multiple users blocked at limit can retry after slot opens
-- Rapid user joins and leaves maintain consistency
+
+**Rate Limiting** (`rate-limiting.spec.ts`) - 7 tests
+- REST API rate limits per endpoint
+- WebSocket operation rate limits
+- Token bucket refill behavior
+
+**Status Indicator** (`status-indicator.spec.ts`) - 7 tests
+- Connection status display
+- Save status indicators
+- Sync state visualization
 
 ### Project Structure
 
 ```
 yPad/
-├── client/                       # Frontend Svelte application
-│   ├── components/              # Feature components
-│   │   ├── Banners/            # Notification banners
+├── client/                          # Frontend Svelte application
+│   ├── components/                  # Feature components
+│   │   ├── Banners/                # Notification banners
+│   │   │   ├── EditorLimitBanner.svelte
 │   │   │   ├── EncryptionDisabledBanner.svelte
 │   │   │   ├── EncryptionEnabledBanner.svelte
-│   │   │   ├── FinalViewBanner.svelte      # Max views reached warning
+│   │   │   ├── FinalViewBanner.svelte
 │   │   │   ├── NoteDeletedBanner.svelte
 │   │   │   └── ReloadBanner.svelte
-│   │   ├── Dialogs/            # Modal dialogs
+│   │   ├── Dialogs/                # Modal dialogs
 │   │   │   ├── ConflictDialog.svelte
 │   │   │   ├── InfoDialog.svelte
 │   │   │   ├── PasswordDialog.svelte
 │   │   │   └── RemovePasswordDialog.svelte
-│   │   ├── Editor/             # Editor components
+│   │   ├── Editor/                 # Editor components
 │   │   │   ├── EditorView.svelte
 │   │   │   └── LineNumbers.svelte
-│   │   ├── Header/             # Header components
+│   │   ├── Header/                 # Header components
 │   │   │   ├── AppHeader.svelte
-│   │   │   ├── ConnectionStatus.svelte  # WebSocket status indicator
-│   │   │   ├── StatusIndicator.svelte   # Save/sync status indicators
-│   │   │   └── UrlDisplay.svelte        # Inline URL editor with copy and navigation
-│   │   └── Toolbar/            # Toolbar components
-│   │       ├── LanguageSelector.svelte
-│   │       ├── MaxViewsInput.svelte     # Max views input with submit
-│   │       ├── OptionsPanel.svelte      # Options with live status display
+│   │   │   ├── ConnectionStatus.svelte
+│   │   │   ├── StatusIndicator.svelte
+│   │   │   └── UrlDisplay.svelte
+│   │   └── Toolbar/                # Toolbar components
+│   │       ├── LanguageSelector.svelte  # Lazy-loaded language list
+│   │       ├── MaxViewsInput.svelte
+│   │       ├── OptionsPanel.svelte
 │   │       └── PasswordInput.svelte
 │   ├── lib/
 │   │   ├── components/
-│   │   │   ├── RemoteCursor.svelte      # Remote user cursor display
-│   │   │   └── ui/              # shadcn-svelte components
-│   │   │       ├── alert/       # Alert component (banners)
-│   │   │       ├── button/      # Button component
-│   │   │       ├── command/     # Command palette for syntax selection
-│   │   │       ├── dialog/      # Dialog/modal component
-│   │   │       ├── input/       # Input component
-│   │   │       ├── popover/     # Popover component
-│   │   │       ├── select/      # Select dropdown
-│   │   │       ├── separator/   # Separator component
-│   │   │       ├── textarea/    # Textarea component
-│   │   │       └── ThemeToggle.svelte   # Dark/light theme toggle
-│   │   ├── hooks/              # Svelte 5 hooks with state management
-│   │   │   ├── useCollaboration.svelte.ts  # Real-time collab logic
-│   │   │   ├── useEditor.svelte.ts         # Editor state & operations
-│   │   │   ├── useNoteOperations.svelte.ts # Note CRUD operations
-│   │   │   ├── useNoteState.svelte.ts      # Note state management
-│   │   │   ├── useSecurity.svelte.ts       # Security & encryption
-│   │   │   └── useWebSocketConnection.svelte.ts # WebSocket management
-│   │   ├── realtime/            # WebSocket & OT client logic
-│   │   │   ├── InputEventOperationGenerator.ts  # Cursor-aware OT from InputEvent
-│   │   │   ├── OperationGenerator.ts            # fast-diff based OT (for sync)
-│   │   │   └── WebSocketClient.ts               # WebSocket client with OT
-│   │   ├── stores/              # Svelte stores
-│   │   │   └── theme.svelte.ts  # Theme state management
-│   │   ├── utils/               # Utility functions
-│   │   │   └── cn.ts            # Class name utility
-│   │   ├── crypto.ts            # Client-side encryption (AES-GCM)
-│   │   └── utils.ts             # General utilities
-│   ├── App.svelte               # Main app component (refactored, modular)
-│   ├── app.css                  # Global styles and CSS variables
-│   ├── index.html               # HTML entry point with favicons
-│   └── main.ts                  # JS entry point
-├── public/                      # Static assets (copied to dist)
-│   ├── icons/                   # Favicon icons
-│   │   ├── android-chrome-192x192.png
-│   │   ├── android-chrome-512x512.png
-│   │   ├── apple-touch-icon.png
-│   │   ├── favicon-16x16.png
-│   │   └── favicon-32x32.png
-│   ├── favicon.ico              # Root favicon
-│   └── site.webmanifest         # PWA manifest
-├── src/                         # Backend Cloudflare Workers
+│   │   │   ├── RemoteCursor.svelte
+│   │   │   └── ui/                 # shadcn-svelte components
+│   │   ├── hooks/                  # Svelte 5 hooks
+│   │   │   ├── useCollaboration.svelte.ts
+│   │   │   ├── useEditor.svelte.ts
+│   │   │   ├── useNoteOperations.svelte.ts
+│   │   │   ├── useNoteState.svelte.ts
+│   │   │   ├── useSecurity.svelte.ts
+│   │   │   └── useWebSocketConnection.svelte.ts
+│   │   ├── realtime/
+│   │   │   └── WebSocketClient.ts  # WebSocket client with Yjs sync
+│   │   ├── yjs/
+│   │   │   └── YjsManager.ts       # Yjs document & awareness manager
+│   │   ├── stores/
+│   │   │   └── theme.svelte.ts
+│   │   ├── utils/
+│   │   │   └── cn.ts
+│   │   └── crypto.ts               # Client-side encryption (AES-GCM)
+│   ├── App.svelte                  # Main app component
+│   ├── app.css                     # Global styles
+│   ├── index.html                  # HTML entry point
+│   └── main.ts                     # JS entry point
+├── src/                            # Backend Cloudflare Workers
 │   ├── durable-objects/
-│   │   ├── handlers/            # Message handler modules
-│   │   │   ├── messageHandlers.ts  # OT operation & broadcast handlers
+│   │   ├── handlers/
+│   │   │   ├── messageHandlers.ts  # Yjs update & broadcast handlers
 │   │   │   ├── types.ts            # Handler context types
-│   │   │   └── index.ts            # Re-exports
-│   │   ├── NoteSessionDurableObject.ts  # WebSocket coordinator with OT & status broadcasts
-│   │   └── RateLimiterDurableObject.ts  # Per-session REST API rate limiting
-│   ├── ot/                      # Operational Transform
-│   │   ├── types.ts             # OT type definitions & WebSocket messages
-│   │   ├── transform.ts         # OT algorithm implementation
-│   │   ├── apply.ts             # Operation application
-│   │   └── checksum.ts          # Content integrity verification
-│   ├── types.d.ts               # TypeScript type definitions
-│   └── index.ts                 # Hono API server & routes
-├── tests/                       # Vitest unit tests
-│   ├── api/                    # API route tests
-│   ├── client/                 # Client-side tests (crypto, WebSocket)
-│   ├── config/                 # Configuration tests
-│   ├── handlers/               # Message handler unit tests
-│   ├── hooks/                  # Svelte hook tests
-│   ├── ot/                     # Operational Transform tests
-│   └── rate-limiting/          # Rate limiting tests
-├── e2e/                         # Playwright e2e tests (57 tests)
-│   ├── alert-banners.spec.ts   # Alert banner tests
-│   ├── comprehensive-ot.spec.ts # Comprehensive OT tests (13 tests)
-│   ├── e2e-encryption.spec.ts  # E2E encryption security tests
-│   ├── editor-limits.spec.ts   # Editor limit & concurrent user tests (16 tests)
-│   ├── realtime-ot.spec.ts     # Real-time OT collaboration tests
-│   ├── syntax-highlighting.spec.ts  # Syntax highlighting tests
-│   └── screenshots/            # Generated test screenshots
-├── docs/                        # Technical documentation
-│   └── OT_IMPLEMENTATION.md    # Detailed OT implementation docs
-├── dist/                        # Build output (gitignored)
-├── scripts/                     # Automation scripts
-│   ├── dev.ps1                  # Windows dev server script
-│   ├── dev.sh                   # Mac/Linux dev server script
-│   ├── prod.ps1                 # Windows production deployment
-│   └── prod.sh                  # Mac/Linux production deployment
-├── migrations/                  # D1 database migrations
-│   └── 0001_initial_schema.sql  # Consolidated schema
-├── config/                      # Configuration files
-│   └── constants.ts            # Application constants & validation
-├── .env.example                 # Example environment config
-├── .env                         # Local environment config (gitignored)
-├── wrangler.toml                # Cloudflare Workers config
-├── vite.config.ts               # Vite build config with publicDir
-├── playwright.config.ts         # Playwright e2e test config
-└── package.json                 # Dependencies & scripts
+│   │   │   └── index.ts
+│   │   ├── NoteSessionDurableObject.ts  # WebSocket coordinator with Yjs
+│   │   └── RateLimiterDurableObject.ts  # Per-session rate limiting
+│   ├── types/
+│   │   └── messages.ts             # WebSocket message type definitions
+│   ├── types.d.ts                  # TypeScript type definitions
+│   └── index.ts                    # Hono API server & routes
+├── config/                         # Configuration files
+│   ├── constants.ts                # Application constants & limits
+│   └── languages.ts                # Language options (lazy-loaded)
+├── tests/                          # Vitest unit tests
+│   ├── api/                        # API route tests
+│   ├── client/                     # Client-side tests (crypto, WebSocket)
+│   ├── config/                     # Configuration tests
+│   ├── handlers/                   # Message handler tests
+│   ├── hooks/                      # Svelte hook tests
+│   └── rate-limiting/              # Rate limiting tests
+├── e2e/                            # Playwright e2e tests (78 tests)
+│   ├── comprehensive-sync.spec.ts  # CRDT sync with latency (13 tests)
+│   ├── cursor-preservation.spec.ts # Local cursor stability (13 tests)
+│   ├── e2e-encryption.spec.ts      # E2E encryption security (9 tests)
+│   ├── editor-limits.spec.ts       # Editor limit tests (16 tests)
+│   ├── rate-limiting.spec.ts       # Rate limiting tests (7 tests)
+│   ├── realtime-sync.spec.ts       # Basic sync tests (5 tests)
+│   ├── remote-cursors.spec.ts      # Remote cursor sync tests (8 tests)
+│   └── status-indicator.spec.ts    # Status display tests (7 tests)
+├── public/                         # Static assets
+│   ├── icons/                      # Favicon icons
+│   ├── favicon.ico
+│   └── site.webmanifest
+├── scripts/                        # Automation scripts
+│   ├── dev.ps1                     # Windows dev server script
+│   ├── dev.sh                      # Mac/Linux dev server script
+│   ├── prod.ps1                    # Windows production deployment
+│   └── prod.sh                     # Mac/Linux production deployment
+├── migrations/                     # D1 database migrations
+│   ├── 0001_initial_schema.sql
+│   └── 0002_add_yjs_state.sql
+├── wrangler.toml                   # Cloudflare Workers config
+├── vite.config.ts                  # Vite build config
+├── vitest.config.ts                # Vitest test config
+├── playwright.config.ts            # Playwright e2e test config
+└── package.json                    # Dependencies & scripts
 ```
 
 ## Deployment
@@ -637,7 +594,7 @@ Click **Options** to set:
 
 1. Share your note URL with others
 2. Multiple users can edit simultaneously (for non-encrypted notes, max 10 concurrent editors)
-3. Changes appear in real-time with operational transform
+3. Changes sync in real-time using Yjs CRDT
 4. Conflicts are automatically resolved
 5. See other users' cursors with color-coded position indicators
 6. Visual status indicators in the header:
@@ -778,40 +735,42 @@ ws://localhost:8787/api/notes/:id/ws
 
 #### Message Types
 
-**Sync** (server → client):
+**Yjs Sync** (server → client):
 ```json
 {
-  "type": "sync",
-  "content": "Current note content",
-  "version": 42,
+  "type": "yjs_sync",
+  "state": "<base64-encoded Yjs state>",
   "seqNum": 0,
   "clientId": "unique-client-id",
   "syntax": "javascript"
 }
 ```
 
-**Operation** (client ↔ server):
+**Yjs Update** (client ↔ server):
 ```json
 {
-  "type": "operation",
-  "operation": {
-    "type": "insert",
-    "position": 10,
-    "text": "hello",
-    "clientId": "client-id",
-    "version": 42
-  },
-  "version": 42,
+  "type": "yjs_update",
+  "update": "<base64-encoded Yjs update>",
+  "clientId": "client-id",
   "seqNum": 1
 }
 ```
 
-**Acknowledgment** (server → client):
+**Yjs Acknowledgment** (server → client):
 ```json
 {
-  "type": "ack",
-  "version": 43,
-  "contentChecksum": 12345
+  "type": "yjs_ack",
+  "seqNum": 2
+}
+```
+
+**Awareness Update** (client ↔ server):
+```json
+{
+  "type": "awareness_update",
+  "update": "<base64-encoded awareness state>",
+  "clientId": "abc123",
+  "seqNum": 3
 }
 ```
 
@@ -822,16 +781,6 @@ ws://localhost:8787/api/notes/:id/ws
   "view_count": 5,
   "max_views": 10,
   "expires_at": 1704067200000
-}
-```
-
-**Cursor Update** (client ↔ server):
-```json
-{
-  "type": "cursor_update",
-  "clientId": "abc123",
-  "position": 42,
-  "seqNum": 5
 }
 ```
 
@@ -925,80 +874,73 @@ ws://localhost:8787/api/notes/:id/ws
 
 ## Key Features Explained
 
-### Operational Transform (OT)
+### Yjs CRDT
 
-yPad uses Operational Transform (OT) for real-time collaborative editing, enabling multiple users to edit the same document simultaneously with automatic conflict resolution.
+yPad uses [Yjs](https://yjs.dev/), a high-performance CRDT (Conflict-free Replicated Data Type) implementation for real-time collaborative editing. CRDTs mathematically guarantee that all users converge to the same document state, regardless of network conditions or edit ordering.
 
 #### How It Works
 
-When multiple users edit a document at the same time, their changes may conflict. OT resolves these conflicts by mathematically transforming operations so that all users converge to the same final result, regardless of the order in which changes arrive.
+Unlike traditional Operational Transform (OT), CRDTs don't require a central server to resolve conflicts. Each character in the document has a unique identifier, and Yjs uses these identifiers to merge concurrent edits deterministically.
 
-**Example**: If User A inserts "hello" at position 5 while User B simultaneously deletes characters 3-7, OT transforms both operations so that:
-- User A's insert is adjusted to account for B's deletion
-- User B's delete is adjusted to account for A's insert
-- Both users end up with identical documents
+**Example**: If User A inserts "hello" at position 5 while User B simultaneously deletes characters 3-7:
+- Each edit is applied independently using Yjs's merge algorithm
+- No transformation needed - CRDT guarantees convergence
+- Both users automatically end up with identical documents
 
-#### Key Capabilities
+#### Key Advantages
 
-- **Character-level precision**: Each keystroke is tracked as an individual operation
-- **Deterministic conflict resolution**: All clients arrive at the same result
-- **Cursor synchronization**: See other users' cursor positions in real-time
-- **Bandwidth efficient**: Only operations (not full content) are transmitted
-- **Self-healing**: Content checksums detect and automatically recover from any state drift
+- **Guaranteed Convergence**: Mathematical proof that all clients reach the same state
+- **No Central Arbitration**: Conflicts resolved locally without server coordination
+- **Offline Support Ready**: Changes can be synced after reconnection
+- **Cursor Awareness**: Real-time cursor positions via Yjs Awareness protocol
+- **Efficient Updates**: Only deltas (changes) are transmitted, not full content
 
 #### Architecture
 
-The system uses a **server-authoritative** model with **optimistic updates**:
+The system uses Yjs with a **server-relay** model:
 
-1. **Optimistic**: When you type, changes appear immediately (no waiting for server)
-2. **Server-authoritative**: The server maintains the canonical document state
-3. **Transform on conflict**: If your changes conflict with another user's, the server transforms both operations to preserve everyone's intent
+1. **Local First**: When you type, Yjs updates the local document immediately
+2. **Binary Updates**: Changes are encoded as compact binary updates
+3. **Server Relay**: Server receives updates and broadcasts to other clients
+4. **State Persistence**: Server maintains authoritative Yjs state in the database
 
-#### Dual Tracking System
+#### Sync Protocol
 
-yPad uses two separate numbering systems for robust synchronization:
+yPad uses the [y-protocols](https://github.com/yjs/y-protocols) library for synchronization:
 
-- **Operation Version** (persistent): Tracks document revisions, survives reconnections, enables offline conflict detection
-- **Sequence Number** (transient): Ensures real-time message ordering for 3+ concurrent users
+- **Initial Sync**: New clients receive the full Yjs state on connection
+- **Incremental Updates**: Subsequent changes sent as binary update messages
+- **Awareness Protocol**: Cursor positions and user presence synced separately
+- **Gap Detection**: Out-of-order messages buffered; persistent gaps trigger resync
 
-#### Recovery Mechanisms
-
-- **Checksum verification**: Server sends content checksums with every operation; clients verify their local state matches
-- **Replay recovery**: If a client detects divergence, it requests the server's authoritative state and rebuilds locally
-- **Gap detection**: Out-of-order messages are buffered; persistent gaps trigger automatic resync
-
-#### Operation Types
+#### Yjs Document Structure
 
 ```typescript
-type Operation =
-  | { type: 'insert', position: number, text: string, clientId: string, version: number }
-  | { type: 'delete', position: number, length: number, clientId: string, version: number }
+// Server-side Yjs document
+const yjsDoc = new Y.Doc();
+const yjsText = yjsDoc.getText('content');
+
+// Client receives state as base64-encoded binary
+const state = Y.encodeStateAsUpdate(yjsDoc);
 ```
 
-#### Inspiration
+#### Why Yjs Over OT?
 
-The implementation was inspired by [ot.js](https://github.com/Operational-Transformation/ot.js), but extended significantly to handle:
-- WebSocket message ordering for 3+ users (sequence numbers)
-- State drift detection and recovery (checksums + replay)
-- E2E encryption compatibility (disabling real-time for encrypted notes)
-- Deterministic same-position conflict resolution (clientId tie-breaking)
+| Aspect | OT | Yjs CRDT |
+|--------|-----|----------|
+| Conflict Resolution | Server transforms operations | Automatic via unique IDs |
+| Complexity | O(n²) transform pairs | O(1) merge |
+| Offline Support | Difficult | Built-in |
+| Convergence | Requires careful implementation | Mathematically guaranteed |
 
-> **Technical Deep Dive**: For comprehensive implementation details including transform algorithms, message protocols, and edge case handling, see [docs/OT_IMPLEMENTATION.md](docs/OT_IMPLEMENTATION.md).
+### Awareness Protocol
 
-### Content Integrity & Self-Healing
+yPad uses the Yjs Awareness protocol for cursor synchronization and user presence:
 
-yPad includes automatic content verification and recovery:
-- **Checksum Verification**: Simple checksum algorithm verifies content integrity after each operation
-- **Automatic Detection**: Mismatches detected during sync and operation acknowledgments
-- **Graceful Handling**: Silent tracking of mismatches without disrupting user experience
-- **Server-Authoritative**: Server content is always considered the source of truth
-- **Real-Time Monitoring**: Checksum validation occurs on every operation ACK from server
-
-The checksum system helps detect:
-- Network transmission errors
-- OT transformation inconsistencies
-- State synchronization issues
-- Client-server content divergence
+- **Cursor Positions**: Each user's cursor position synced in real-time
+- **User Colors**: Unique colors assigned per client for visual distinction
+- **Presence Detection**: Automatic tracking of connected/disconnected users
+- **Low Overhead**: Awareness updates are lightweight and don't affect document state
 
 ### Client-Side Encryption
 
@@ -1025,7 +967,7 @@ yPad limits concurrent editors to prevent resource exhaustion and ensure a smoot
 #### How It Works
 
 - **Maximum 10 active editors** per note at any time
-- **Active editor**: A user who has sent an operation (typed/edited) within the last 60 seconds
+- **Active editor**: A user who has sent a Yjs update (typed/edited) within the last 60 seconds
 - **Viewer**: A connected user who hasn't edited recently (can view in real-time)
 - **Encrypted notes bypass the limit**: Since real-time collaboration is disabled for encrypted notes, they're always editable
 
@@ -1136,28 +1078,32 @@ The `Retry-After` header indicates how many seconds to wait before retrying.
 
 #### WebSocket Rate Limits
 
-Token bucket algorithm for real-time operations:
+Token bucket algorithm for real-time messages:
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| Operations per second | 30 | Sustained rate limit |
-| Burst allowance | 5,000 | Tokens for paste operations |
-| Max message size | 64 KB | Maximum WebSocket message size |
+| Messages per second | 25 | Sustained rate limit |
+| Burst allowance | 100 | Tokens for paste operations |
+| Max message size | 128 KB | Maximum WebSocket message size |
 
 **How it works**:
-- Each connection starts with 5,000 tokens (burst allowance)
-- Tokens refill at 30 per second
-- Each operation consumes 1 token
+- Each connection starts with 100 tokens (burst allowance)
+- Tokens refill at 25 per second
+- Each message consumes 1 token
 - Normal typing (5-10 chars/sec) never hits the limit
 - Large pastes consume burst tokens but recover quickly
 
 **Violation Handling**:
 1. First violations: Warning message sent via WebSocket
-2. After 5 violations: Connection closed with code 1008
+2. After 10 violations: Connection closed with code 1008
 
 ```json
 {"type": "error", "message": "Rate limit exceeded. Please slow down."}
 ```
+
+#### Local Development
+
+Rate limiting is **disabled by default** in local development via `DISABLE_RATE_LIMITS=true` in `wrangler.toml`. This allows E2E tests to run without hitting rate limits. In production, this variable is not set, so rate limiting is enforced.
 
 #### Configuration
 
@@ -1173,12 +1119,12 @@ export const RATE_LIMITS = {
     WS_UPGRADE_PER_MINUTE: 30,
   },
   WEBSOCKET: {
-    OPS_PER_SECOND: 30,
-    BURST_ALLOWANCE: 5000,
-    MAX_MESSAGE_SIZE: 65536,
+    OPS_PER_SECOND: 25,
+    BURST_ALLOWANCE: 100,
+    MAX_MESSAGE_SIZE: 131072,  // 128 KB
   },
   PENALTY: {
-    DISCONNECT_THRESHOLD: 5,
+    DISCONNECT_THRESHOLD: 10,
     WARNING_MESSAGE: 'Rate limit exceeded. Please slow down.',
   },
 } as const;

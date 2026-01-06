@@ -11,8 +11,6 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: [
-        // Core OT logic
-        'src/ot/**/*.ts',
         // Durable Object handlers
         'src/durable-objects/handlers/**/*.ts',
         // Client-side realtime and crypto (testable without Svelte)
@@ -28,16 +26,16 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.d.ts',
         // Type definitions only
-        'src/ot/types.ts',
         'src/durable-objects/handlers/types.ts',
+        'src/types/**/*.ts',
         // Re-export barrels
         'src/durable-objects/handlers/index.ts',
       ],
       thresholds: {
-        lines: 90,
-        functions: 90,
-        branches: 85,
-        statements: 90
+        lines: 95,
+        functions: 100,
+        branches: 90,
+        statements: 95
       }
     },
     setupFiles: ['./tests/setup.ts'],

@@ -43,32 +43,35 @@ describe('RATE_LIMITS configuration', () => {
 
   describe('WebSocket limits', () => {
     it('should have OPS_PER_SECOND limit', () => {
-      expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBe(30);
+      // With Yjs batching (50ms), max updates are ~20/sec
+      expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBe(25);
       expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBeGreaterThan(0);
     });
 
-    it('should have reasonable OPS_PER_SECOND for normal typing', () => {
-      // Average typing speed is 5-10 characters per second
-      // Fast typing with deletions might be 20-30 ops/sec
+    it('should have reasonable OPS_PER_SECOND for batched Yjs updates', () => {
+      // With 50ms batching, theoretical max is 20 updates/sec
+      // 25 allows some headroom for network timing variations
       expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBeGreaterThanOrEqual(20);
     });
 
-    it('should have BURST_ALLOWANCE for paste operations', () => {
-      expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBe(5000);
+    it('should have BURST_ALLOWANCE for rapid editing', () => {
+      // With Yjs batching, we don't need as many tokens
+      expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBe(100);
       expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBeGreaterThan(0);
     });
 
-    it('should have sufficient BURST_ALLOWANCE for large pastes', () => {
-      // 5000 tokens allows pasting ~5KB of text in one go
-      expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBeGreaterThanOrEqual(1000);
+    it('should have sufficient BURST_ALLOWANCE for normal usage', () => {
+      // 100 tokens at 25/sec refill = 4 seconds of continuous editing allowed
+      expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBeGreaterThanOrEqual(50);
     });
 
     it('should have MAX_MESSAGE_SIZE limit', () => {
-      expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBe(65536); // 64KB
+      // Yjs updates can be larger than OT ops, so we use 128KB
+      expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBe(131072); // 128KB
     });
 
     it('should have reasonable MAX_MESSAGE_SIZE', () => {
-      // Should be large enough for reasonable operations but not excessive
+      // Should be large enough for Yjs updates but not excessive
       expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBeGreaterThanOrEqual(1024); // At least 1KB
       expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBeLessThanOrEqual(1024 * 1024); // At most 1MB
     });
@@ -76,14 +79,14 @@ describe('RATE_LIMITS configuration', () => {
 
   describe('Penalty settings', () => {
     it('should have DISCONNECT_THRESHOLD', () => {
-      expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBe(5);
+      expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBe(10);
       expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeGreaterThan(0);
     });
 
     it('should have reasonable DISCONNECT_THRESHOLD', () => {
-      // Should give users a few warnings before disconnecting
-      expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeGreaterThanOrEqual(3);
-      expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeLessThanOrEqual(10);
+      // Should give users several warnings before disconnecting
+      expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeGreaterThanOrEqual(5);
+      expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeLessThanOrEqual(15);
     });
 
     it('should have WARNING_MESSAGE', () => {

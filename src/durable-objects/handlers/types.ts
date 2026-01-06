@@ -7,7 +7,7 @@
  * access to the necessary state.
  */
 
-import type { Operation, ClientSession } from '../../ot/types';
+import type { ClientSession } from '../../types/messages';
 
 /**
  * Context object passed to message handlers.
@@ -17,20 +17,17 @@ export interface NoteSessionContext {
   /** Unique identifier for this note */
   noteId: string;
 
-  /** Current document content */
+  /** Current document content (plain text derived from Yjs) */
   currentContent: string;
 
-  /** Server-authoritative operation version */
-  operationVersion: number;
+  /** Binary Yjs document state */
+  yjsState: Uint8Array | null;
 
-  /** Recent operation history for OT transforms */
-  operationHistory: Operation[];
+  /** Number of updates since last database persist */
+  updatesSincePersist: number;
 
-  /** Number of operations since last database persist */
-  operationsSincePersist: number;
-
-  /** Session ID of the last operation (for persistence tracking) */
-  lastOperationSessionId: string | null;
+  /** Session ID of the last edit (for persistence tracking) */
+  lastEditSessionId: string | null;
 
   /** Whether the note is currently encrypted */
   isEncrypted: boolean;
@@ -52,4 +49,13 @@ export interface NoteSessionContext {
 
   /** Persist syntax change to database */
   persistSyntaxToDB(syntax: string): void;
+
+  /** Apply a Yjs update to the document */
+  applyYjsUpdate(update: Uint8Array): void;
+
+  /** Get the full Yjs state */
+  getYjsState(): Uint8Array;
+
+  /** Get the current content from Yjs */
+  getContent(): string;
 }

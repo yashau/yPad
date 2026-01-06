@@ -9,6 +9,8 @@
   interface Props {
     noteId: string;
     connectionStatus: 'connected' | 'disconnected' | 'connecting';
+    isRealtimeEnabled: boolean;
+    isEncrypted: boolean;
     saveStatus: string;
     isSyncing: boolean;
     isNoteDeleted: boolean;
@@ -18,6 +20,8 @@
   let {
     noteId,
     connectionStatus,
+    isRealtimeEnabled,
+    isEncrypted,
     saveStatus,
     isSyncing,
     isNoteDeleted,
@@ -25,71 +29,104 @@
   }: Props = $props();
 
   let isSlowSync = $state(false);
-  let slowSyncTimer: number | null = null;
   let showSpinner = $state(false);
   let spinnerStartTime: number | null = null;
-  let minDisplayTimer: number | null = null;
   let isConnectionLost = $state(false);
+  let showCheckBriefly = $state(false);
+
+  // Timers
+  let slowSyncTimer: number | null = null;
   let connectionLostTimer: number | null = null;
-  let pendingStartTime: number | null = null;
+  let checkTimer: number | null = null;
+  let minDisplayTimer: number | null = null;
+
+  // Track if we had slow sync (to show check briefly after completion)
+  let hadSlowSync = false;
+
+  function clearAllTimers() {
+    if (slowSyncTimer !== null) {
+      clearTimeout(slowSyncTimer);
+      slowSyncTimer = null;
+    }
+    if (connectionLostTimer !== null) {
+      clearTimeout(connectionLostTimer);
+      connectionLostTimer = null;
+    }
+    if (checkTimer !== null) {
+      clearTimeout(checkTimer);
+      checkTimer = null;
+    }
+    if (minDisplayTimer !== null) {
+      clearTimeout(minDisplayTimer);
+      minDisplayTimer = null;
+    }
+  }
 
   $effect(() => {
     const isPending = saveStatus === 'Saving...' || isSyncing;
+    const isWebSocketConnected = isRealtimeEnabled && connectionStatus === 'connected';
 
-    // If reconnected successfully, clear all states
-    if (connectionStatus === 'connected' && !isPending) {
-      isConnectionLost = false;
-      isSlowSync = false;
-      pendingStartTime = null;
+    // Cleanup function
+    return () => {
+      clearAllTimers();
+    };
+  });
 
-      if (slowSyncTimer !== null) {
-        clearTimeout(slowSyncTimer);
-        slowSyncTimer = null;
-      }
-      if (connectionLostTimer !== null) {
-        clearTimeout(connectionLostTimer);
-        connectionLostTimer = null;
-      }
-    }
-
-    // Once connection is lost, keep showing error until truly reconnected
-    if (isConnectionLost) {
-      showSpinner = false;
-      return;
-    }
+  // Effect for handling pending state changes
+  $effect(() => {
+    const isPending = saveStatus === 'Saving...' || isSyncing;
+    // Encrypted notes don't use real-time sync even if WebSocket is connected
+    const isWebSocketConnected = isRealtimeEnabled && connectionStatus === 'connected' && !isEncrypted;
 
     if (isPending) {
-      // Track when pending operations started (persist across disconnection)
-      if (pendingStartTime === null) {
-        pendingStartTime = Date.now();
-      }
+      // Starting a pending operation
+      if (isWebSocketConnected) {
+        // For WebSocket: start timer for slow sync (2 seconds)
+        if (slowSyncTimer === null && !isSlowSync && !isConnectionLost) {
+          slowSyncTimer = setTimeout(() => {
+            isSlowSync = true;
+            hadSlowSync = true;
+            showSpinner = true;
+            spinnerStartTime = Date.now();
+            slowSyncTimer = null;
+          }, 2000) as unknown as number;
+        }
 
-      // Show spinner immediately if not already showing
-      if (!showSpinner) {
-        showSpinner = true;
-        spinnerStartTime = Date.now();
-      }
+        // Start timer for connection lost (5 seconds)
+        if (connectionLostTimer === null && !isConnectionLost) {
+          connectionLostTimer = setTimeout(() => {
+            isConnectionLost = true;
+            showSpinner = false;
+            connectionLostTimer = null;
+          }, 5000) as unknown as number;
+        }
+      } else {
+        // For non-WebSocket: show spinner immediately
+        if (!showSpinner) {
+          showSpinner = true;
+          spinnerStartTime = Date.now();
+        }
 
-      // Calculate elapsed time since pending started
-      const elapsed = Date.now() - pendingStartTime;
+        // Start timer for slow sync warning (2 seconds)
+        if (slowSyncTimer === null && !isSlowSync) {
+          slowSyncTimer = setTimeout(() => {
+            isSlowSync = true;
+            slowSyncTimer = null;
+          }, 2000) as unknown as number;
+        }
 
-      // Show slow sync warning after 2 seconds
-      if (elapsed >= 2000 && !isSlowSync) {
-        isSlowSync = true;
-      }
-
-      // Show connection lost error after 5 seconds
-      if (elapsed >= 5000 && !isConnectionLost) {
-        isConnectionLost = true;
-        showSpinner = false;
+        // Start timer for connection lost (5 seconds)
+        if (connectionLostTimer === null && !isConnectionLost) {
+          connectionLostTimer = setTimeout(() => {
+            isConnectionLost = true;
+            showSpinner = false;
+            connectionLostTimer = null;
+          }, 5000) as unknown as number;
+        }
       }
     } else {
-      // Only clear pending start time if connected (not during brief disconnection gaps)
-      if (connectionStatus === 'connected') {
-        pendingStartTime = null;
-      }
-
-      // Clear timers
+      // Pending operation completed
+      // Clear pending-related timers
       if (slowSyncTimer !== null) {
         clearTimeout(slowSyncTimer);
         slowSyncTimer = null;
@@ -99,36 +136,61 @@
         connectionLostTimer = null;
       }
 
-      isSlowSync = false;
+      if (isWebSocketConnected) {
+        // For WebSocket: if we had slow sync, show check briefly then hide
+        if (hadSlowSync || isSlowSync) {
+          hadSlowSync = false;
+          isSlowSync = false;
+          showSpinner = false;
+          showCheckBriefly = true;
 
-      // Operations are done, ensure spinner shows for at least 1 second
-      if (showSpinner && spinnerStartTime !== null) {
-        const elapsed = Date.now() - spinnerStartTime;
-        const remaining = Math.max(0, 1000 - elapsed);
-
-        if (minDisplayTimer !== null) {
-          clearTimeout(minDisplayTimer);
+          if (checkTimer !== null) {
+            clearTimeout(checkTimer);
+          }
+          checkTimer = setTimeout(() => {
+            showCheckBriefly = false;
+            checkTimer = null;
+          }, 1500) as unknown as number;
+        } else {
+          // Normal completion (no slow sync) - just hide spinner
+          showSpinner = false;
         }
 
-        minDisplayTimer = setTimeout(() => {
-          showSpinner = false;
-          spinnerStartTime = null;
-          minDisplayTimer = null;
-        }, remaining) as unknown as number;
+        // Clear connection lost state if we successfully completed
+        if (connectionStatus === 'connected') {
+          isConnectionLost = false;
+        }
+      } else {
+        // For non-WebSocket: ensure spinner shows for at least 1 second
+        isSlowSync = false;
+
+        if (showSpinner && spinnerStartTime !== null) {
+          const elapsed = Date.now() - spinnerStartTime;
+          const remaining = Math.max(0, 1000 - elapsed);
+
+          if (minDisplayTimer !== null) {
+            clearTimeout(minDisplayTimer);
+          }
+
+          minDisplayTimer = setTimeout(() => {
+            showSpinner = false;
+            spinnerStartTime = null;
+            minDisplayTimer = null;
+          }, remaining) as unknown as number;
+        }
       }
     }
+  });
 
-    return () => {
-      if (slowSyncTimer !== null) {
-        clearTimeout(slowSyncTimer);
+  // Effect for handling connection status changes
+  $effect(() => {
+    // When connection is restored, clear connection lost state
+    if (connectionStatus === 'connected' && isConnectionLost) {
+      const isPending = saveStatus === 'Saving...' || isSyncing;
+      if (!isPending) {
+        isConnectionLost = false;
       }
-      if (minDisplayTimer !== null) {
-        clearTimeout(minDisplayTimer);
-      }
-      if (connectionLostTimer !== null) {
-        clearTimeout(connectionLostTimer);
-      }
-    };
+    }
   });
 </script>
 
@@ -168,7 +230,11 @@
   <span class="inline-flex items-center leading-none" title="Connecting to real-time sync...">
     <Loader2 class="w-4 h-4 animate-spin text-muted-foreground" />
   </span>
-{:else if noteId && (saveStatus === 'Saved' || saveStatus === 'Real-time sync active' || !saveStatus)}
+{:else if showCheckBriefly}
+  <span class="inline-flex items-center leading-none" title="All changes saved">
+    <Check class="w-4 h-4 text-muted-foreground" />
+  </span>
+{:else if noteId && (!isRealtimeEnabled || isEncrypted) && (saveStatus === 'Saved' || saveStatus === 'Real-time sync active' || !saveStatus)}
   <span class="inline-flex items-center leading-none" title="All changes saved">
     <Check class="w-4 h-4 text-muted-foreground" />
   </span>

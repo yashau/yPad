@@ -2,37 +2,38 @@
  * @fileoverview Durable Object for real-time collaborative editing via WebSocket.
  *
  * Each note gets one NoteSessionDurableObject instance that coordinates all
- * connected clients. Implements server-authoritative OT with:
+ * connected clients. Uses Yjs CRDT for conflict-free collaborative editing:
  *
- * - operationVersion: Persistent version for OT transforms (stored in DB)
+ * - yjsDoc: Y.Doc instance for the note content
+ * - yjsText: Y.Text for the main text content
  * - globalSeqNum: Transient sequence for WebSocket message ordering
  *
  * Message flow:
- * 1. Client sends operation → queued for sequential processing
- * 2. Server transforms against history, increments version
- * 3. Server broadcasts to other clients with sequence number
- * 4. Server ACKs sender with transformed operation
+ * 1. Client sends Yjs update → queued for sequential processing
+ * 2. Server applies update to local Yjs doc
+ * 3. Server broadcasts update to other clients with sequence number
+ * 4. Server ACKs sender
  *
  * Message handlers are extracted to handlers/messageHandlers.ts for organization.
  */
 
+import * as Y from 'yjs';
 import { RATE_LIMITS } from '../../config/constants';
 import type {
-  Operation,
   WSMessage,
   ClientSession,
-  OperationMessage,
-  SyncMessage,
-  CursorUpdateMessage,
+  YjsUpdateMessage,
+  YjsSyncMessage,
+  AwarenessUpdateMessage,
   SyntaxChangeMessage,
-  ReplayRequestMessage,
+  YjsStateRequestMessage,
   RequestEditMessage,
-} from '../ot/types';
+} from '../types/messages';
 import {
-  handleOperation as handleOperationImpl,
-  handleCursorUpdate as handleCursorUpdateImpl,
+  handleYjsUpdate as handleYjsUpdateImpl,
+  handleAwarenessUpdate as handleAwarenessUpdateImpl,
+  handleYjsStateRequest as handleYjsStateRequestImpl,
   handleSyntaxChange as handleSyntaxChangeImpl,
-  handleReplayRequest as handleReplayRequestImpl,
   handleRequestEdit as handleRequestEditImpl,
   broadcastEncryptionChange as broadcastEncryptionChangeImpl,
   broadcastVersionUpdate as broadcastVersionUpdateImpl,
@@ -51,22 +52,36 @@ interface QueuedMessage {
 /** Database row structure for note queries. */
 interface NoteRecord {
   content: string;
+  yjs_state: ArrayBuffer | null;
   version: number;
   is_encrypted: number;
   syntax_highlight: string;
+}
+
+/**
+ * Encode Uint8Array to base64 string
+ */
+function encodeBase64(data: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < data.length; i++) {
+    binary += String.fromCharCode(data[i]);
+  }
+  return btoa(binary);
 }
 
 export class NoteSessionDurableObject implements DurableObject {
   private env: Env;
   private sessions: Map<WebSocket, ClientSession>;
   private noteId: string;
-  private currentContent: string;
-  private operationVersion: number;
-  private operationHistory: Operation[];
+
+  // Yjs document state
+  private yjsDoc: Y.Doc;
+  private yjsText: Y.Text;
+
   private persistenceTimer: number | null;
-  private operationsSincePersist: number;
+  private updatesSincePersist: number;
   private isInitialized: boolean;
-  private lastOperationSessionId: string | null = null;
+  private lastEditSessionId: string | null = null;
   private isEncrypted: boolean = false;
   private currentSyntax: string = 'plaintext';
 
@@ -81,17 +96,22 @@ export class NoteSessionDurableObject implements DurableObject {
   private statusBroadcastTimer: number | null = null;
   private readonly STATUS_BROADCAST_INTERVAL = 10000; // 10 seconds
 
+  // Test-only: artificial latency for E2E testing
+  private testLatencyMs: number = 0;
+
   constructor(_state: DurableObjectState, env: Env) {
     this.env = env;
     this.sessions = new Map();
     this.noteId = '';
-    this.currentContent = '';
-    this.operationVersion = 0;
-    this.operationHistory = [];
+
+    // Initialize Yjs document
+    this.yjsDoc = new Y.Doc();
+    this.yjsText = this.yjsDoc.getText('content');
+
     this.persistenceTimer = null;
-    this.operationsSincePersist = 0;
+    this.updatesSincePersist = 0;
     this.isInitialized = false;
-    this.lastOperationSessionId = null;
+    this.lastEditSessionId = null;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -115,6 +135,17 @@ export class NoteSessionDurableObject implements DurableObject {
       this.isInitialized = false;
       await this.initializeFromDatabase();
       return new Response('Refreshed from database', { status: 200 });
+    }
+
+    // Handle test latency setting (for E2E testing only)
+    if (request.method === 'POST' && url.pathname === '/test-latency') {
+      try {
+        const body = await request.json() as { latencyMs: number };
+        this.testLatencyMs = body.latencyMs || 0;
+        return new Response(JSON.stringify({ latencyMs: this.testLatencyMs }), { status: 200 });
+      } catch {
+        return new Response('Invalid request', { status: 400 });
+      }
     }
 
     // Handle encryption change notification
@@ -143,12 +174,16 @@ export class NoteSessionDurableObject implements DurableObject {
 
         // Update cached content if provided (for encrypted notes updated via HTTP PUT)
         if (body.content !== undefined) {
-          this.currentContent = body.content;
+          this.yjsDoc.transact(() => {
+            if (this.yjsText.length > 0) {
+              this.yjsText.delete(0, this.yjsText.length);
+            }
+            this.yjsText.insert(0, body.content!);
+          });
         }
         if (body.syntax_highlight !== undefined) {
           this.currentSyntax = body.syntax_highlight;
         }
-        this.operationVersion = body.version;
 
         this.broadcastVersionUpdate(body.version, body.exclude_session_id);
         return new Response('OK', { status: 200 });
@@ -179,8 +214,8 @@ export class NoteSessionDurableObject implements DurableObject {
 
         // Return cached note data
         return Response.json({
-          content: this.currentContent,
-          version: this.operationVersion,
+          content: this.yjsText.toString(),
+          version: 1, // Version not used with Yjs
           syntax_highlight: this.currentSyntax,
           is_encrypted: this.isEncrypted,
         });
@@ -228,7 +263,6 @@ export class NoteSessionDurableObject implements DurableObject {
     const session: ClientSession = {
       clientId,
       sessionId,
-      lastAckOperation: this.operationVersion,
       isAuthenticated,
       ws,
       rateLimit: {
@@ -236,16 +270,14 @@ export class NoteSessionDurableObject implements DurableObject {
         lastRefill: Date.now(),
         violations: 0,
       },
-      lastOperationAt: null, // Starts as viewer until first operation
+      lastEditAt: null, // Starts as viewer until first edit
     };
 
-    // Send initial sync message BEFORE adding to sessions
-    // This ensures the new client gets sync first, with the current globalSeqNum
-    const syncMessage: SyncMessage = {
-      type: 'sync',
-      content: this.currentContent,
-      version: this.operationVersion,
-      operations: this.operationHistory.slice(-50), // Last 50 operations
+    // Send initial sync message with full Yjs state
+    const yjsState = Y.encodeStateAsUpdate(this.yjsDoc);
+    const syncMessage: YjsSyncMessage = {
+      type: 'yjs_sync',
+      state: encodeBase64(yjsState),
       clientId, // Send the server-assigned clientId to the client
       seqNum: this.globalSeqNum, // Current global sequence before any broadcasts
       syntax: this.currentSyntax, // Current syntax highlighting mode
@@ -339,6 +371,11 @@ export class NoteSessionDurableObject implements DurableObject {
           break;
         }
 
+        // Apply test latency if configured (for E2E testing)
+        if (this.testLatencyMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, this.testLatencyMs));
+        }
+
         try {
           await this.handleMessage(queuedMessage.ws, queuedMessage.message);
         } catch (error) {
@@ -359,14 +396,14 @@ export class NoteSessionDurableObject implements DurableObject {
 
     const ctx = this.getContext();
 
-    if (message.type === 'operation') {
-      await handleOperationImpl(ctx, ws, message as OperationMessage);
-    } else if (message.type === 'cursor_update') {
-      await handleCursorUpdateImpl(ctx, ws, message as CursorUpdateMessage);
+    if (message.type === 'yjs_update') {
+      await handleYjsUpdateImpl(ctx, ws, message as YjsUpdateMessage);
+    } else if (message.type === 'awareness_update') {
+      await handleAwarenessUpdateImpl(ctx, ws, message as AwarenessUpdateMessage);
+    } else if (message.type === 'yjs_state_request') {
+      await handleYjsStateRequestImpl(ctx, ws, message as YjsStateRequestMessage);
     } else if (message.type === 'syntax_change') {
       await handleSyntaxChangeImpl(ctx, ws, message as SyntaxChangeMessage);
-    } else if (message.type === 'replay_request') {
-      await handleReplayRequestImpl(ctx, ws, message as ReplayRequestMessage);
     } else if (message.type === 'request_edit') {
       await handleRequestEditImpl(ctx, ws, message as RequestEditMessage);
     }
@@ -382,11 +419,10 @@ export class NoteSessionDurableObject implements DurableObject {
   private getContext(): NoteSessionContext {
     return {
       noteId: this.noteId,
-      currentContent: this.currentContent,
-      operationVersion: this.operationVersion,
-      operationHistory: this.operationHistory,
-      operationsSincePersist: this.operationsSincePersist,
-      lastOperationSessionId: this.lastOperationSessionId,
+      currentContent: this.yjsText.toString(),
+      yjsState: Y.encodeStateAsUpdate(this.yjsDoc),
+      updatesSincePersist: this.updatesSincePersist,
+      lastEditSessionId: this.lastEditSessionId,
       isEncrypted: this.isEncrypted,
       currentSyntax: this.currentSyntax,
       globalSeqNum: this.globalSeqNum,
@@ -394,7 +430,17 @@ export class NoteSessionDurableObject implements DurableObject {
       sendError: this.sendError.bind(this),
       schedulePersistence: this.schedulePersistence.bind(this),
       persistSyntaxToDB: this.persistSyntaxToDB.bind(this),
+      applyYjsUpdate: this.applyYjsUpdate.bind(this),
+      getYjsState: () => Y.encodeStateAsUpdate(this.yjsDoc),
+      getContent: () => this.yjsText.toString(),
     };
+  }
+
+  /**
+   * Apply a Yjs update to the document
+   */
+  private applyYjsUpdate(update: Uint8Array): void {
+    Y.applyUpdate(this.yjsDoc, update);
   }
 
   /**
@@ -402,11 +448,8 @@ export class NoteSessionDurableObject implements DurableObject {
    * Call this after handler execution to persist mutable state changes.
    */
   private syncFromContext(ctx: NoteSessionContext): void {
-    this.currentContent = ctx.currentContent;
-    this.operationVersion = ctx.operationVersion;
-    this.operationHistory = ctx.operationHistory;
-    this.operationsSincePersist = ctx.operationsSincePersist;
-    this.lastOperationSessionId = ctx.lastOperationSessionId;
+    this.updatesSincePersist = ctx.updatesSincePersist;
+    this.lastEditSessionId = ctx.lastEditSessionId;
     this.isEncrypted = ctx.isEncrypted;
     this.currentSyntax = ctx.currentSyntax;
     this.globalSeqNum = ctx.globalSeqNum;
@@ -425,8 +468,8 @@ export class NoteSessionDurableObject implements DurableObject {
   schedulePersistence(immediate: boolean): void {
     const shouldPersist =
       immediate ||
-      this.operationsSincePersist >= 100 || // Batch up to 100 operations
-      (this.persistenceTimer === null && this.operationsSincePersist > 0);
+      this.updatesSincePersist >= 100 || // Batch up to 100 updates
+      (this.persistenceTimer === null && this.updatesSincePersist > 0);
 
     if (!shouldPersist) {
       return;
@@ -438,7 +481,7 @@ export class NoteSessionDurableObject implements DurableObject {
     }
 
     // immediate=true when last client disconnects (ensures data is saved when user leaves)
-    // Otherwise, debounce for 2 seconds to batch rapid operations
+    // Otherwise, debounce for 2 seconds to batch rapid updates
     const delay = immediate ? 0 : 2000;
 
     this.persistenceTimer = setTimeout(() => {
@@ -455,17 +498,29 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       const note = await this.env.DB.prepare(
-        'SELECT content, version, is_encrypted, syntax_highlight FROM notes WHERE id = ?'
+        'SELECT content, yjs_state, version, is_encrypted, syntax_highlight FROM notes WHERE id = ?'
       ).bind(this.noteId).first<NoteRecord>();
 
       if (note) {
-        this.currentContent = note.content || '';
-        this.operationVersion = note.version || 1;
+        // Create fresh Yjs doc
+        this.yjsDoc = new Y.Doc();
+        this.yjsText = this.yjsDoc.getText('content');
+
+        if (note.yjs_state) {
+          // Restore from Yjs state if available
+          const yjsState = new Uint8Array(note.yjs_state);
+          Y.applyUpdate(this.yjsDoc, yjsState);
+        } else if (note.content) {
+          // Migrate from plain content (legacy notes without Yjs state)
+          this.yjsText.insert(0, note.content);
+        }
+
         this.isEncrypted = !!note.is_encrypted;
         this.currentSyntax = note.syntax_highlight || 'plaintext';
       } else {
-        this.currentContent = '';
-        this.operationVersion = 1;
+        // New note - start with empty Yjs doc
+        this.yjsDoc = new Y.Doc();
+        this.yjsText = this.yjsDoc.getText('content');
         this.isEncrypted = false;
         this.currentSyntax = 'plaintext';
       }
@@ -474,43 +529,43 @@ export class NoteSessionDurableObject implements DurableObject {
     } catch (error) {
       console.error(`[DO ${this.noteId}] Failed to initialize from database:`, error);
       // Start with empty content if database fails
-      this.currentContent = '';
-      this.operationVersion = 1;
+      this.yjsDoc = new Y.Doc();
+      this.yjsText = this.yjsDoc.getText('content');
       this.isInitialized = true;
     }
   }
 
   async persistToDB(): Promise<void> {
-    if (this.operationsSincePersist === 0) {
+    if (this.updatesSincePersist === 0) {
       return;
     }
 
     // Capture current state for persistence
-    const contentToSave = this.currentContent;
-    const versionToSave = this.operationVersion;
-    const sessionIdToSave = this.lastOperationSessionId;
-    const countToSave = this.operationsSincePersist;
+    const contentToSave = this.yjsText.toString();
+    const yjsStateToSave = Y.encodeStateAsUpdate(this.yjsDoc);
+    const sessionIdToSave = this.lastEditSessionId;
+    const countToSave = this.updatesSincePersist;
 
     // Reset counter immediately - we're committing to persist this state
-    this.operationsSincePersist = 0;
+    this.updatesSincePersist = 0;
     this.persistenceTimer = null;
 
     // Persist asynchronously without blocking
     // Fire and forget - DO memory is source of truth for real-time collaboration
     this.env.DB.prepare(
       `UPDATE notes
-       SET content = ?, version = ?, updated_at = ?, last_session_id = ?
+       SET content = ?, yjs_state = ?, updated_at = ?, last_session_id = ?
        WHERE id = ?`
     ).bind(
       contentToSave,
-      versionToSave,
+      yjsStateToSave,
       Date.now(),
       sessionIdToSave,
       this.noteId
-    ).run().catch((error: any) => {
+    ).run().catch((error: unknown) => {
       console.error(`[DO ${this.noteId}] persistToDB ERROR:`, error);
       // On error, increment counter to retry on next persistence
-      this.operationsSincePersist += countToSave;
+      this.updatesSincePersist += countToSave;
     });
   }
 
@@ -564,12 +619,11 @@ export class NoteSessionDurableObject implements DurableObject {
 
     // Clear all state
     this.sessions.clear();
-    this.currentContent = '';
-    this.operationVersion = 0;
-    this.operationHistory = [];
-    this.operationsSincePersist = 0;
+    this.yjsDoc = new Y.Doc();
+    this.yjsText = this.yjsDoc.getText('content');
+    this.updatesSincePersist = 0;
     this.isInitialized = false;
-    this.lastOperationSessionId = null;
+    this.lastEditSessionId = null;
 
     // Clear any pending persistence timer
     if (this.persistenceTimer !== null) {

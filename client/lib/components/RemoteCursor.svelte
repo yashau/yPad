@@ -18,31 +18,35 @@
   let cursorStyle = $state('');
   let visible = $state(true);
 
-  // Generate cursor color variants - pastel theme
-  const cursorBgClasses = {
+  // 10 pastel cursor colors - matches CURSOR_COLORS in useCollaboration
+  const cursorBgClasses: Record<string, string> = {
     blue: 'bg-blue-400',
     green: 'bg-emerald-400',
-    red: 'bg-rose-400',
+    rose: 'bg-rose-400',
     amber: 'bg-amber-400',
     purple: 'bg-purple-400',
     pink: 'bg-pink-400',
     orange: 'bg-orange-400',
     cyan: 'bg-cyan-400',
+    teal: 'bg-teal-400',
+    indigo: 'bg-indigo-400',
   };
 
-  const cursorTextClasses = {
+  const cursorTextClasses: Record<string, string> = {
     blue: 'text-blue-400',
     green: 'text-emerald-400',
-    red: 'text-rose-400',
+    rose: 'text-rose-400',
     amber: 'text-amber-400',
     purple: 'text-purple-400',
     pink: 'text-pink-400',
     orange: 'text-orange-400',
     cyan: 'text-cyan-400',
+    teal: 'text-teal-400',
+    indigo: 'text-indigo-400',
   };
 
-  const cursorBgClass = $derived(cursorBgClasses[color as keyof typeof cursorBgClasses] || cursorBgClasses.blue);
-  const cursorTextClass = $derived(cursorTextClasses[color as keyof typeof cursorTextClasses] || cursorTextClasses.blue);
+  const cursorBgClass = $derived(cursorBgClasses[color] || cursorBgClasses.blue);
+  const cursorTextClass = $derived(cursorTextClasses[color] || cursorTextClasses.blue);
 
   // Calculate cursor position based on character offset
   function calculatePosition() {

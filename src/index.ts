@@ -8,14 +8,15 @@
  * - DELETE /api/notes/:id - Delete note
  * - GET /api/notes/:id/ws - WebSocket connection for real-time editing
  * - POST /api/notes/:id/view - Increment view count
- * - GET /api/check-id/:id - Check if custom ID is available
+ * - GET /api/check/:id - Check if custom ID is available
  *
  * Uses Cloudflare Workers with D1 database and Durable Objects.
  */
 
 import { Hono, Context, Next } from 'hono';
 import { cors } from 'hono/cors';
-import { LIMITS, ALLOWED_SYNTAX_MODES, CUSTOM_ID_PATTERN, SECURITY_HEADERS, RATE_LIMITS } from '../config/constants';
+import { LIMITS, CUSTOM_ID_PATTERN, SECURITY_HEADERS, RATE_LIMITS } from '../config/constants';
+import { ALLOWED_SYNTAX_MODES } from '../config/languages';
 
 /** Request body for creating a new note. */
 interface CreateNotePayload {
@@ -59,6 +60,12 @@ app.use('*', async (c, next) => {
  */
 function rateLimit(limit: number, windowMs: number = 60000) {
   return async (c: Context<{ Bindings: Env }>, next: Next) => {
+    // Skip rate limiting if disabled (for local development/testing)
+    if (c.env.DISABLE_RATE_LIMITS === 'true') {
+      await next();
+      return;
+    }
+
     const sessionId = c.req.query('session_id') ||
                       c.req.header('X-Session-ID') ||
                       'anonymous';
@@ -490,6 +497,31 @@ app.post('/api/notes/:id/refresh', async (c) => {
   } catch (error) {
     console.error('Failed to refresh Durable Object:', error);
     return c.json({ success: false, error: 'Failed to refresh' }, 500);
+  }
+});
+
+// Test endpoint: Set artificial latency for WebSocket message processing (E2E testing only)
+app.post('/api/notes/:id/test-latency', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json() as { latencyMs: number };
+
+  try {
+    const doId = c.env.NOTE_SESSIONS.idFromName(id);
+    const stub = c.env.NOTE_SESSIONS.get(doId);
+
+    const response = await stub.fetch(new Request(`http://internal/test-latency`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ latencyMs: body.latencyMs || 0 })
+    }));
+
+    if (response.ok) {
+      return c.json({ success: true, latencyMs: body.latencyMs || 0 });
+    }
+    return c.json({ success: false, error: 'Failed to set latency' }, 500);
+  } catch (error) {
+    console.error('Failed to set test latency:', error);
+    return c.json({ success: false, error: 'Failed to set latency' }, 500);
   }
 });
 

@@ -4,7 +4,7 @@
   import * as Popover from '../../lib/components/ui/popover/index.js';
   import Check from '@lucide/svelte/icons/check';
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
-  import { LANGUAGE_OPTIONS } from '../../../config/constants';
+  import type { LanguageOption } from '../../../config/languages';
 
   interface Props {
     selected: string;
@@ -16,10 +16,29 @@
 
   let comboboxOpen = $state(false);
   let comboboxTriggerRef = $state<HTMLButtonElement | null>(null);
+  let languages = $state<readonly LanguageOption[]>([]);
+  let isLoading = $state(false);
 
+  // Find label from loaded languages, or show the value if not yet loaded
   const syntaxHighlightLabel = $derived(
-    LANGUAGE_OPTIONS.find((opt) => opt.value === selected)?.label ?? "Select language"
+    languages.find((opt) => opt.value === selected)?.label ?? selected ?? "Select language"
   );
+
+  // Lazy load languages when popover opens
+  async function loadLanguages() {
+    if (languages.length > 0) return;
+    isLoading = true;
+    const { LANGUAGE_OPTIONS } = await import('../../../config/languages');
+    languages = LANGUAGE_OPTIONS;
+    isLoading = false;
+  }
+
+  function handleOpenChange(open: boolean) {
+    comboboxOpen = open;
+    if (open) {
+      loadLanguages();
+    }
+  }
 
   function closeAndFocusTrigger() {
     comboboxOpen = false;
@@ -27,7 +46,7 @@
   }
 </script>
 
-<Popover.Root bind:open={comboboxOpen}>
+<Popover.Root bind:open={comboboxOpen} onOpenChange={handleOpenChange}>
   <Popover.Trigger
     bind:ref={comboboxTriggerRef}
     class="flex h-9 w-full items-center justify-between bg-transparent hover:bg-accent rounded-md border border-input px-3 py-2 text-sm shadow-xs transition-colors outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -41,22 +60,26 @@
     <Command.Root shouldFilter={true}>
       <Command.Input placeholder="Search language..." />
       <Command.List>
-        <Command.Empty>No language found.</Command.Empty>
-        <Command.Group>
-          {#each LANGUAGE_OPTIONS as lang}
-            <Command.Item
-              value={lang.label}
-              keywords={[lang.value, lang.label]}
-              onSelect={() => {
-                onChange(lang.value);
-                closeAndFocusTrigger();
-              }}
-            >
-              <Check class={selected === lang.value ? "mr-2 h-4 w-4 opacity-100" : "mr-2 h-4 w-4 opacity-0"} />
-              {lang.label}
-            </Command.Item>
-          {/each}
-        </Command.Group>
+        {#if isLoading}
+          <Command.Empty>Loading languages...</Command.Empty>
+        {:else}
+          <Command.Empty>No language found.</Command.Empty>
+          <Command.Group>
+            {#each languages as lang}
+              <Command.Item
+                value={lang.label}
+                keywords={[lang.value, lang.label]}
+                onSelect={() => {
+                  onChange(lang.value);
+                  closeAndFocusTrigger();
+                }}
+              >
+                <Check class={selected === lang.value ? "mr-2 h-4 w-4 opacity-100" : "mr-2 h-4 w-4 opacity-0"} />
+                {lang.label}
+              </Command.Item>
+            {/each}
+          </Command.Group>
+        {/if}
       </Command.List>
     </Command.Root>
   </Popover.Content>

@@ -9,9 +9,13 @@
     clientId: string;
     activeEditorCount: number;
     viewerCount: number;
+    isCurrentUserEditor: boolean;
   }
 
-  let { noteId, connectionStatus, isEncrypted, isRealtimeEnabled, clientId, activeEditorCount, viewerCount }: Props = $props();
+  let { noteId, connectionStatus, isEncrypted, isRealtimeEnabled, clientId, activeEditorCount, viewerCount, isCurrentUserEditor }: Props = $props();
+
+  // Calculate the number of OTHER editors (excluding current user if they're an editor)
+  const otherEditorCount = $derived(isCurrentUserEditor ? activeEditorCount - 1 : activeEditorCount);
 </script>
 
 {#if noteId && connectionStatus === 'connected'}
@@ -23,7 +27,7 @@
     <div class="inline-flex items-center gap-2">
       <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Real-time sync active - Your changes are synced instantly"></div>
       <span class="inline-block text-xs text-muted-foreground leading-none">
-        {clientId.substring(0, 4)}{#if activeEditorCount + viewerCount > 1}{#if activeEditorCount > 0} +{activeEditorCount - 1}{:else} +0{/if}{#if viewerCount > 0}<span class="text-muted-foreground/50">/{viewerCount}</span>{/if}{/if}
+        {clientId.substring(0, 4)}{#if otherEditorCount + viewerCount > 0} +{otherEditorCount}{#if viewerCount > 0}<span class="text-muted-foreground/50">/{viewerCount}</span>{/if}{/if}
       </span>
     </div>
   {/if}

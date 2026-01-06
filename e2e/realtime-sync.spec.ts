@@ -1,15 +1,18 @@
-import { test, expect, Page, CDPSession } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 
 /**
- * Real-time Operational Transform (OT) tests
+ * Real-time Yjs CRDT sync tests
  *
- * These tests verify that collaborative editing works correctly,
- * especially under network latency conditions where operations
- * may arrive at the server with stale base versions.
+ * Basic collaborative editing tests without artificial latency. These tests verify that
+ * Yjs CRDT synchronization works correctly under normal network conditions.
+ *
+ * For latency-specific tests, see comprehensive-sync.spec.ts which uses
+ * server-side latency injection to stress test the Yjs synchronization.
  */
 
 /**
  * Helper to create a note and wait for it to be saved
+ * Returns the URL
  */
 async function createNote(page: Page, content: string): Promise<string> {
   await page.goto('/');
@@ -29,21 +32,6 @@ async function createNote(page: Page, content: string): Promise<string> {
 }
 
 /**
- * Helper to add network latency using Chrome DevTools Protocol
- */
-async function addNetworkLatency(page: Page, latencyMs: number): Promise<CDPSession> {
-  const client = await page.context().newCDPSession(page);
-  await client.send('Network.enable');
-  await client.send('Network.emulateNetworkConditions', {
-    offline: false,
-    downloadThroughput: 10 * 1024 * 1024, // 10 Mbps
-    uploadThroughput: 10 * 1024 * 1024,   // 10 Mbps
-    latency: latencyMs,
-  });
-  return client;
-}
-
-/**
  * Helper to get the current content from the editor
  */
 async function getEditorContent(page: Page): Promise<string> {
@@ -59,9 +47,9 @@ async function getEditorContent(page: Page): Promise<string> {
 }
 
 
-test.describe('Real-time OT Tests', () => {
+test.describe('Real-time Sync Tests', () => {
 
-  test('Fast typing with network latency should not corrupt content', async ({ page }) => {
+  test('Fast typing should not corrupt content', async ({ page }) => {
     // Create initial note with "hello\nworld"
     const noteUrl = await createNote(page, 'hello\nworld');
 
@@ -71,9 +59,6 @@ test.describe('Real-time OT Tests', () => {
 
     // Wait for WebSocket to connect
     await page.waitForTimeout(1000);
-
-    // Add network latency to simulate production conditions
-    const cdpSession = await addNetworkLatency(page, 100);
 
     // Get the textarea and position cursor at end of "hello" (position 5)
     const textarea = page.locator('textarea');
@@ -98,9 +83,6 @@ test.describe('Real-time OT Tests', () => {
     const expectedContent = 'hello\nthe quick brown\nworld';
     const actualContent = await getEditorContent(page);
 
-    // Clean up CDP session
-    await cdpSession.detach();
-
     expect(actualContent).toBe(expectedContent);
   });
 
@@ -124,10 +106,6 @@ test.describe('Real-time OT Tests', () => {
       await page1.waitForTimeout(1000);
       await page2.waitForTimeout(1000);
 
-      // Add latency to both pages
-      const cdp1 = await addNetworkLatency(page1, 50);
-      const cdp2 = await addNetworkLatency(page2, 50);
-
       // User 1: Position at end of line1 and type
       const textarea1 = page1.locator('textarea');
       await textarea1.click();
@@ -148,10 +126,6 @@ test.describe('Real-time OT Tests', () => {
       // Get content from both pages
       const content1 = await getEditorContent(page1);
       const content2 = await getEditorContent(page2);
-
-      // Clean up
-      await cdp1.detach();
-      await cdp2.detach();
 
       // Both users should see the same content
       expect(content1).toBe(content2);
@@ -175,9 +149,6 @@ test.describe('Real-time OT Tests', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(1000);
 
-    // Add network latency
-    const cdpSession = await addNetworkLatency(page, 75);
-
     const textarea = page.locator('textarea');
     await textarea.click();
 
@@ -198,7 +169,6 @@ test.describe('Real-time OT Tests', () => {
     await page.waitForTimeout(2000);
 
     const content = await getEditorContent(page);
-    await cdpSession.detach();
 
     expect(content).toBe('tests content here');
   });
@@ -214,11 +184,8 @@ test.describe('Real-time OT Tests', () => {
 
     // Wait for note to be created
     await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
-    const noteId = page.url().split('/').pop();
+    const noteId = page.url().split('/').pop()!;
     await page.waitForTimeout(500);
-
-    // Add latency
-    const cdpSession = await addNetworkLatency(page, 100);
 
     // Type fast
     await textarea.click();
@@ -227,8 +194,6 @@ test.describe('Real-time OT Tests', () => {
 
     // Wait for persistence (server debounces for 2 seconds, then persists)
     await page.waitForTimeout(4000);
-
-    await cdpSession.detach();
 
     // Fetch the note directly from the API to verify database content
     const response = await request.get(`/api/notes/${noteId}`);

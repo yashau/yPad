@@ -272,7 +272,7 @@
         role={isEditing ? undefined : 'button'}
         title={isEditing ? '' : 'Click to copy full URL'}
       >
-        <span class="text-foreground/50">{domain}/</span>
+        <span class="text-foreground/50 hidden sm:inline">{domain}/</span>
         {#if isEditing}
           <input
             bind:this={inputElement}

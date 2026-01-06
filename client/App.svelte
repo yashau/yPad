@@ -2,14 +2,11 @@
   @fileoverview Main application component.
 
   Orchestrates note state, editor, encryption, and real-time collaboration.
-  Handles URL routing, auto-save, and OT operation generation.
+  Handles URL routing, auto-save, and Yjs CRDT synchronization.
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import hljs from 'highlight.js';
-  import { generateOperationsFromInputEvent } from './lib/realtime/InputEventOperationGenerator';
-  import { transform } from '../src/ot/transform';
-  import { applyOperation } from '../src/ot/apply';
 
   // Hooks
   import { useNoteState } from './lib/hooks/useNoteState.svelte';
@@ -86,6 +83,10 @@
         collaboration.wsClient.close();
         collaboration.wsClient = null;
       }
+      if (collaboration.yjsManager) {
+        collaboration.yjsManager.destroy();
+        collaboration.yjsManager = null;
+      }
       collaboration.isRealtimeEnabled = false;
       collaboration.connectionStatus = 'disconnected';
       security.password = '';
@@ -100,6 +101,10 @@
       if (collaboration.wsClient) {
         collaboration.wsClient.close();
         collaboration.wsClient = null;
+      }
+      if (collaboration.yjsManager) {
+        collaboration.yjsManager.destroy();
+        collaboration.yjsManager = null;
       }
       collaboration.isRealtimeEnabled = false;
       collaboration.connectionStatus = 'disconnected';
@@ -208,8 +213,7 @@
     }
   });
 
-  // Track cursor position changes only on deliberate user actions
-  // Uses beforeinput event which fires for all intentional user edits
+  // Track cursor position changes for awareness
   $effect(() => {
     if (!editor.editorRef && !editor.textareaScrollRef) return;
 
@@ -217,15 +221,7 @@
     if (!editorElement) return;
 
     const handleBeforeInput = () => {
-      // Capture state before DOM changes for accurate OT position calculations
-      const selectionRange = wsConnection.getCurrentSelectionRange();
-      editor.preEditCursorPosition = selectionRange.start;
-      editor.preEditSelectionEnd = selectionRange.end !== selectionRange.start ? selectionRange.end : null;
-      editor.preEditContent = editor.content;
-      collaboration.recentRemoteOps = [];
-
-      // Cursor update will be sent after the input is processed
-      // This captures typing, backspace, delete, enter, paste, etc.
+      // Send cursor update after the input is processed
       setTimeout(() => wsConnection.sendCursorUpdate(), 0);
     };
 
@@ -240,13 +236,6 @@
       // Handle Tab key - insert spaces instead of changing focus
       if (keyEvent.key === 'Tab' && !keyEvent.ctrlKey && !keyEvent.altKey && !keyEvent.metaKey) {
         e.preventDefault();
-
-        // Capture selection and content before modification
-        const selectionRange = wsConnection.getCurrentSelectionRange();
-        editor.preEditCursorPosition = selectionRange.start;
-        editor.preEditSelectionEnd = selectionRange.end !== selectionRange.start ? selectionRange.end : null;
-        editor.preEditContent = editor.content;
-        collaboration.recentRemoteOps = [];
 
         // Insert 2 spaces (common convention for code editors)
         const tabSpaces = '  ';
@@ -265,9 +254,8 @@
           textarea.selectionStart = newPos;
           textarea.selectionEnd = newPos;
 
-          // Trigger input handler to send OT operation
-          const inputEvent = new InputEvent('input', { inputType: 'insertText', data: tabSpaces });
-          handleEditorInput(() => textarea.value, inputEvent);
+          // Trigger input handler
+          handleEditorInput(() => textarea.value);
         } else if (editor.editorRef) {
           // For contenteditable, use execCommand or manual insertion
           document.execCommand('insertText', false, tabSpaces);
@@ -309,92 +297,20 @@
   });
 
 
-  // Input handler - sends operations immediately without debouncing
-  // The WebSocket client handles queuing and backpressure
-  function handleEditorInput(getContent: () => string, event?: InputEvent) {
+  // Input handler - with Yjs, we just update the content and let Yjs handle sync
+  function handleEditorInput(getContent: () => string) {
     if (editor.isUpdating) {
       return;
     }
 
     const newContent = getContent();
 
-    if (collaboration.isSyncing) {
-      collaboration.pending = { ...collaboration.pending, content: newContent };
+    if (collaboration.yjsManager && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
+      // For realtime mode with Yjs, apply the change through YjsManager
+      // This will automatically generate and send the Yjs update
+      wsConnection.applyLocalChange(newContent);
       editor.content = newContent;
-      return;
-    }
-
-    // Use pre-edit state captured in beforeinput for accurate OT position calculations
-    const oldContent = editor.preEditContent ?? editor.content;
-    const preEditPos = editor.preEditCursorPosition;
-    const preEditSelEnd = editor.preEditSelectionEnd;
-    const postEditRange = wsConnection.getCurrentSelectionRange();
-    const selectionStart = preEditPos ?? postEditRange.start;
-    const selectionEnd = preEditSelEnd ?? (preEditPos !== null ? null :
-      (postEditRange.end !== postEditRange.start ? postEditRange.end : null));
-    // Clear the pre-edit state after using it
-    editor.preEditCursorPosition = null;
-    editor.preEditSelectionEnd = null;
-    editor.preEditContent = null;
-
-    if (collaboration.wsClient && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
-      // For realtime mode, update editor.content optimistically
-      // This allows checksum verification to work correctly
-      const baseVersion = noteState.currentVersion;
-
-      // Generate operations from the actual DOM change (oldContent → newContent)
-      const operations = generateOperationsFromInputEvent(
-        event,
-        oldContent,
-        newContent,
-        selectionStart,
-        selectionEnd,
-        collaboration.clientId,
-        baseVersion
-      );
-
-      if (operations.length > 0) {
-        // If this is the first pending operation, capture the base version
-        if (collaboration.pending.content === null) {
-          collaboration.pending = { ...collaboration.pending, baseVersion: noteState.currentVersion };
-        }
-
-        // Send each operation with correct incremental version
-        // The version in each operation must increment because each operation
-        // builds on the previous one in the same batch
-        operations.forEach((op, index) => {
-          // Update operation version to be baseVersion + index
-          op.version = baseVersion + index;
-          wsConnection.sendOperation(op);
-        });
-
-        collaboration.pending = { ...collaboration.pending, content: newContent };
-
-        // Apply operations to editor content, transforming against any remote ops
-        // that arrived between beforeinput and input events
-        const recentRemoteOps = collaboration.recentRemoteOps;
-        if (recentRemoteOps.length === 0) {
-          editor.content = newContent;
-        } else {
-          // Transform local ops against concurrent remote ops before applying
-          let currentContent = editor.content;
-          for (let op of operations) {
-            for (const remoteOp of recentRemoteOps) {
-              const [transformedLocal] = transform(op, remoteOp);
-              op = transformedLocal;
-            }
-            currentContent = applyOperation(currentContent, op);
-          }
-          editor.content = currentContent;
-        }
-        // Clear recent remote ops - they've been accounted for
-        collaboration.recentRemoteOps = [];
-      } else {
-        // No operations generated, but still update content to match DOM
-        editor.content = newContent;
-        // Clear recent remote ops even if no operations generated
-        collaboration.recentRemoteOps = [];
-      }
+      editor.lastLocalContent = newContent;
     } else {
       // For non-realtime modes (encrypted notes, no WebSocket), update content immediately
       editor.content = newContent;
@@ -463,6 +379,12 @@
       collaboration.wsClient = null;
     }
 
+    // Clean up Yjs manager
+    if (collaboration.yjsManager) {
+      collaboration.yjsManager.destroy();
+      collaboration.yjsManager = null;
+    }
+
     // Clear any pending save timeout
     noteState.clearSaveTimeout();
   });
@@ -475,6 +397,7 @@
     clientId={collaboration.clientId}
     activeEditorCount={noteState.activeEditorCount}
     viewerCount={noteState.viewerCount}
+    isCurrentUserEditor={noteState.isCurrentUserEditor}
     isRealtimeEnabled={collaboration.isRealtimeEnabled}
     isEncrypted={security.isEncrypted}
     saveStatus={noteState.saveStatus}
@@ -580,6 +503,7 @@
     remoteCursors={collaboration.remoteCursors}
     isRealtimeEnabled={collaboration.isRealtimeEnabled}
     isEncrypted={security.isEncrypted}
+    isUpdating={editor.isUpdating}
     onInput={handleEditorInput}
     onScroll={(e) => {
       const target = e.target as HTMLElement;

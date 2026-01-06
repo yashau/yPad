@@ -27,6 +27,7 @@ export function useNoteState() {
   let editorLimitReached = $state(false);
   let activeEditorCount = $state(0);
   let viewerCount = $state(0);
+  let isCurrentUserEditor = $state(false);
 
   function initializeSession() {
     const existingSessionId = sessionStorage.getItem('paste-session-id');
@@ -62,6 +63,7 @@ export function useNoteState() {
     editorLimitReached = false;
     activeEditorCount = 0;
     viewerCount = 0;
+    isCurrentUserEditor = false;
   }
 
   return {
@@ -112,6 +114,9 @@ export function useNoteState() {
 
     get viewerCount() { return viewerCount; },
     set viewerCount(value: number) { viewerCount = value; },
+
+    get isCurrentUserEditor() { return isCurrentUserEditor; },
+    set isCurrentUserEditor(value: boolean) { isCurrentUserEditor = value; },
 
     initializeSession,
     clearSaveTimeout,

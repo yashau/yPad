@@ -7,13 +7,12 @@ import { describe, it, expect } from 'vitest';
 import {
   TIMINGS,
   LIMITS,
-  LANGUAGE_OPTIONS,
-  ALLOWED_SYNTAX_MODES,
   EXPIRATION_OPTIONS,
   CUSTOM_ID_PATTERN,
   CONTACT,
   SECURITY_HEADERS
 } from '../../config/constants';
+import { LANGUAGE_OPTIONS, ALLOWED_SYNTAX_MODES } from '../../config/languages';
 
 describe('TIMINGS', () => {
   it('should have reasonable INITIAL_LOAD_DELAY', () => {

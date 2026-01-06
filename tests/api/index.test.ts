@@ -5,7 +5,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
-import { LIMITS, CUSTOM_ID_PATTERN, ALLOWED_SYNTAX_MODES } from '../../config/constants';
+import { LIMITS, CUSTOM_ID_PATTERN } from '../../config/constants';
+import { ALLOWED_SYNTAX_MODES } from '../../config/languages';
 
 // Mock D1 database
 function createMockDB() {

@@ -14,6 +14,7 @@
     clientId: string;
     activeEditorCount: number;
     viewerCount: number;
+    isCurrentUserEditor: boolean;
     saveStatus: string;
     isSyncing: boolean;
     viewMode: boolean;
@@ -40,6 +41,7 @@
     clientId,
     activeEditorCount,
     viewerCount,
+    isCurrentUserEditor,
     saveStatus,
     isSyncing,
     viewMode,
@@ -78,6 +80,8 @@
         <StatusIndicator
           {noteId}
           {connectionStatus}
+          {isRealtimeEnabled}
+          {isEncrypted}
           {saveStatus}
           {isSyncing}
           {isNoteDeleted}
@@ -91,6 +95,7 @@
           {clientId}
           {activeEditorCount}
           {viewerCount}
+          {isCurrentUserEditor}
         />
         {#if !isFinalView}
           <UrlDisplay {noteId} {content} {syntaxHighlight} {password} {maxViews} {expiresIn} {viewMode} {onCustomUrlSet} />

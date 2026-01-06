@@ -2,40 +2,57 @@
  * @fileoverview WebSocket message handlers for NoteSessionDurableObject.
  *
  * These handlers process incoming WebSocket messages and coordinate
- * the OT operations, cursor updates, syntax changes, and state recovery.
+ * Yjs CRDT synchronization, awareness updates, and syntax changes.
  * Extracted from the main Durable Object for better code organization.
  */
 
-import { transform } from '../../ot/transform';
-import { applyOperation } from '../../ot/apply';
-import { simpleChecksum } from '../../ot/checksum';
 import { RATE_LIMITS, EDITOR_LIMITS } from '../../../config/constants';
 import type {
-  Operation,
   ClientSession,
-  OperationMessage,
-  CursorUpdateMessage,
+  YjsUpdateMessage,
+  AwarenessUpdateMessage,
   SyntaxChangeMessage,
   SyntaxAckMessage,
-  CursorAckMessage,
-  AckMessage,
-  ReplayRequestMessage,
-  ReplayResponseMessage,
+  YjsAckMessage,
   RequestEditMessage,
   RequestEditResponseMessage,
-} from '../../ot/types';
+  YjsStateRequestMessage,
+} from '../../types/messages';
 import type { NoteSessionContext } from './types';
 
 /**
- * Check if a session is currently an active editor (sent an operation recently).
+ * Encode Uint8Array to base64 string
  */
-function isSessionActiveEditor(session: ClientSession): boolean {
-  if (session.lastOperationAt === null) return false;
-  return Date.now() - session.lastOperationAt < EDITOR_LIMITS.ACTIVE_TIMEOUT_MS;
+function encodeBase64(data: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < data.length; i++) {
+    binary += String.fromCharCode(data[i]);
+  }
+  return btoa(binary);
 }
 
 /**
- * Count the number of active editors (sessions that sent an operation recently).
+ * Decode base64 string to Uint8Array
+ */
+function decodeBase64(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * Check if a session is currently an active editor (sent an edit recently).
+ */
+function isSessionActiveEditor(session: ClientSession): boolean {
+  if (session.lastEditAt === null) return false;
+  return Date.now() - session.lastEditAt < EDITOR_LIMITS.ACTIVE_TIMEOUT_MS;
+}
+
+/**
+ * Count the number of active editors (sessions that sent an edit recently).
  */
 function countActiveEditors(sessions: Map<WebSocket, ClientSession>): number {
   let count = 0;
@@ -90,13 +107,13 @@ export async function handleRequestEdit(
 }
 
 /**
- * Handle an incoming OT operation from a client.
- * Transforms the operation against history, applies it, and broadcasts to other clients.
+ * Handle an incoming Yjs update from a client.
+ * Applies the update to the document and broadcasts to other clients.
  */
-export async function handleOperation(
+export async function handleYjsUpdate(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  message: OperationMessage
+  message: YjsUpdateMessage
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
@@ -104,7 +121,7 @@ export async function handleOperation(
     return;
   }
 
-  // Check editor limit before allowing operation
+  // Check editor limit before allowing update
   const isAlreadyActive = isSessionActiveEditor(session);
   if (!isAlreadyActive) {
     const activeCount = countActiveEditors(ctx.sessions);
@@ -129,57 +146,28 @@ export async function handleOperation(
   const wasViewer = !isAlreadyActive;
 
   // Mark session as active editor
-  session.lastOperationAt = Date.now();
+  session.lastEditAt = Date.now();
 
   // Broadcast count update if a viewer just became an active editor
   if (wasViewer) {
     broadcastEditorCountUpdate(ctx);
   }
 
-  let operation = message.operation;
-  const baseVersion = message.baseVersion;
+  // Decode and apply the Yjs update
+  const update = decodeBase64(message.update);
+  ctx.applyYjsUpdate(update);
 
-  // Transform against other clients' operations only - same client's ops are already sequential
-  const operationsToTransform = ctx.operationHistory.filter(
-    (op) => op.version > baseVersion && op.clientId !== operation.clientId
-  );
+  // Track updates since last persist and session ID
+  ctx.updatesSincePersist++;
+  ctx.lastEditSessionId = session.sessionId;
 
-  for (const historicalOp of operationsToTransform) {
-    [operation] = transform(operation, historicalOp);
-  }
+  // Broadcast to all other clients
+  const broadcastSeqNum = broadcastYjsUpdate(ctx, message.update, session.clientId);
 
-  // Increment version and update operation
-  ctx.operationVersion++;
-  operation.version = ctx.operationVersion;
-
-  // Apply operation to current content
-  ctx.currentContent = applyOperation(ctx.currentContent, operation);
-
-  // Add to history
-  ctx.operationHistory.push(operation);
-
-  // Compact history if needed (keep last 100 operations)
-  if (ctx.operationHistory.length > 100) {
-    ctx.operationHistory = ctx.operationHistory.slice(-100);
-  }
-
-  // Track operations since last persist and session ID
-  ctx.operationsSincePersist++;
-  ctx.lastOperationSessionId = session.sessionId;
-
-  // Calculate checksum of server content after applying operation
-  const contentChecksum = simpleChecksum(ctx.currentContent);
-
-  // Broadcast to all other clients and get the sequence number
-  const broadcastSeqNum = broadcastOperation(ctx, operation, session.clientId, contentChecksum);
-
-  // ACK includes transformed operation so client can rebase to server's canonical version
-  const ackMessage: AckMessage = {
-    type: 'ack',
-    version: ctx.operationVersion,
+  // Send ACK to sender
+  const ackMessage: YjsAckMessage = {
+    type: 'yjs_ack',
     seqNum: broadcastSeqNum,
-    contentChecksum,
-    transformedOperation: operation,
   };
   ws.send(JSON.stringify(ackMessage));
 
@@ -188,28 +176,42 @@ export async function handleOperation(
 }
 
 /**
- * Handle a cursor position update from a client.
- * Broadcasts the cursor position to all other connected clients.
+ * Handle an awareness update from a client.
+ * Broadcasts cursor/presence information to other clients.
  */
-export async function handleCursorUpdate(
+export async function handleAwarenessUpdate(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  message: CursorUpdateMessage
+  message: AwarenessUpdateMessage
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
     return;
   }
 
-  // Broadcast cursor position to all other clients and get the sequence number
-  const broadcastSeqNum = broadcastCursorUpdate(ctx, session.clientId, message.position);
+  // Broadcast awareness update to all other clients
+  broadcastAwarenessUpdate(ctx, message.update, session.clientId);
+}
 
-  // Send acknowledgment to sender with the sequence number of the broadcast
-  const ackMessage: CursorAckMessage = {
-    type: 'cursor_ack',
-    seqNum: broadcastSeqNum,
-  };
-  ws.send(JSON.stringify(ackMessage));
+/**
+ * Handle a request for full Yjs state (for recovery).
+ */
+export async function handleYjsStateRequest(
+  ctx: NoteSessionContext,
+  ws: WebSocket,
+  _message: YjsStateRequestMessage
+): Promise<void> {
+  const session = ctx.sessions.get(ws);
+  if (!session || !session.isAuthenticated) {
+    return;
+  }
+
+  // Send full state to the requesting client
+  const state = ctx.getYjsState();
+  ws.send(JSON.stringify({
+    type: 'yjs_state_response',
+    state: encodeBase64(state),
+  }));
 }
 
 /**
@@ -241,41 +243,6 @@ export async function handleSyntaxChange(
 
   // Persist syntax change to database
   ctx.persistSyntaxToDB(message.syntax);
-}
-
-/**
- * Handle a replay request from a client that detected state drift.
- * Sends back the current content and operation history so the client
- * can rebuild its state from a known good point.
- */
-export async function handleReplayRequest(
-  ctx: NoteSessionContext,
-  ws: WebSocket,
-  message: ReplayRequestMessage
-): Promise<void> {
-  const session = ctx.sessions.get(ws);
-  if (!session || !session.isAuthenticated) {
-    return;
-  }
-
-  // Get operations from the requested version onwards
-  const fromVersion = message.fromVersion;
-  const opsToReplay = ctx.operationHistory.filter(op => op.version > fromVersion);
-
-  // Calculate the content checksum for verification
-  const contentChecksum = simpleChecksum(ctx.currentContent);
-
-  // Send the replay response with current server state
-  const replayResponse: ReplayResponseMessage = {
-    type: 'replay_response',
-    baseContent: ctx.currentContent,
-    baseVersion: ctx.operationVersion,
-    operations: opsToReplay,
-    currentVersion: ctx.operationVersion,
-    contentChecksum,
-  };
-
-  ws.send(JSON.stringify(replayResponse));
 }
 
 /**
@@ -335,22 +302,42 @@ export function broadcast(
 }
 
 /**
- * Broadcast a cursor position update to all clients except the sender.
+ * Broadcast a Yjs update to all clients except the sender.
  */
-export function broadcastCursorUpdate(
+export function broadcastYjsUpdate(
   ctx: NoteSessionContext,
-  clientId: string,
-  position: number
+  update: string,
+  senderClientId: string
 ): number {
   const seqNum = getNextSeqNum(ctx);
-  const message: CursorUpdateMessage = {
-    type: 'cursor_update',
-    clientId,
-    position,
+  const message: YjsUpdateMessage = {
+    type: 'yjs_update',
+    update,
+    clientId: senderClientId,
     seqNum,
   };
-  broadcast(ctx, message, { excludeClientId: clientId });
+  broadcast(ctx, message, { excludeClientId: senderClientId });
   return seqNum;
+}
+
+/**
+ * Broadcast an awareness update to all clients except the sender.
+ * Note: Awareness updates do NOT use sequence numbers because:
+ * 1. Cursor positions are ephemeral and don't need strict ordering
+ * 2. The sender doesn't receive an ACK, which would cause sequence gaps
+ */
+export function broadcastAwarenessUpdate(
+  ctx: NoteSessionContext,
+  update: string,
+  senderClientId: string
+): void {
+  const message: AwarenessUpdateMessage = {
+    type: 'awareness_update',
+    update,
+    clientId: senderClientId,
+    // No seqNum - awareness updates bypass sequence ordering
+  };
+  broadcast(ctx, message, { excludeClientId: senderClientId });
 }
 
 /**
@@ -369,29 +356,6 @@ export function broadcastSyntaxChange(
     seqNum,
   };
   broadcast(ctx, message, { excludeClientId: clientId });
-  return seqNum;
-}
-
-/**
- * Broadcast an OT operation to all clients except the sender.
- */
-export function broadcastOperation(
-  ctx: NoteSessionContext,
-  operation: Operation,
-  senderClientId: string,
-  contentChecksum: number
-): number {
-  const seqNum = getNextSeqNum(ctx);
-  const message: OperationMessage = {
-    type: 'operation',
-    operation,
-    baseVersion: operation.version - 1,
-    clientId: operation.clientId,
-    sessionId: '',
-    seqNum,
-    contentChecksum,
-  };
-  broadcast(ctx, message, { excludeClientId: senderClientId });
   return seqNum;
 }
 
