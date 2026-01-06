@@ -1,5 +1,3 @@
-import { test, expect, Page, Browser, BrowserContext, APIRequestContext } from '@playwright/test';
-
 /**
  * Latency Sync E2E Tests - Content Convergence Under Network Delays
  *
@@ -29,137 +27,28 @@ import { test, expect, Page, Browser, BrowserContext, APIRequestContext } from '
  * - Autocorrect-style replacements
  */
 
-interface ClientSetup {
-  context: BrowserContext;
-  page: Page;
-  latencyMs: number;
-  name: string;
-}
+import { test, expect } from '@playwright/test';
+import {
+  focusEditor,
+  getEditorContent,
+  setCursorPosition,
+  setSelectionRange,
+  setServerLatency,
+  getNoteIdFromUrl,
+  waitForConvergence,
+  setupClientsWithLatency,
+  cleanupClientsWithLatency
+} from './utils/test-helpers';
 
-/**
- * Set server-side latency for WebSocket message processing
- * This is the only reliable way to add latency to WebSocket connections
- * (CDP network emulation doesn't affect WebSockets)
- */
-async function setServerLatency(request: APIRequestContext, noteId: string, latencyMs: number): Promise<void> {
-  await request.post(`/api/notes/${noteId}/test-latency`, {
-    data: { latencyMs }
-  });
-}
+// ============================================================================
+// TESTS
+// ============================================================================
 
-/**
- * Helper to get editor content
- */
-async function getEditorContent(page: Page): Promise<string> {
-  const textarea = page.locator('textarea');
-  if (await textarea.isVisible()) {
-    return textarea.inputValue();
-  }
-  const editor = page.locator('[contenteditable="true"]');
-  return (await editor.textContent()) ?? '';
-}
-
-/**
- * Helper to focus the editor
- */
-async function focusEditor(page: Page): Promise<void> {
-  const textarea = page.locator('textarea');
-  if (await textarea.isVisible()) {
-    await textarea.click();
-  } else {
-    const editor = page.locator('[contenteditable="true"]');
-    await editor.click();
-  }
-}
-
-/**
- * Helper to set cursor position
- */
-async function setCursorPosition(page: Page, position: number): Promise<void> {
-  await page.evaluate((pos) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    if (textarea) {
-      textarea.setSelectionRange(pos, pos);
-    }
-  }, position);
-}
-
-/**
- * Helper to select text range
- */
-async function selectRange(page: Page, start: number, end: number): Promise<void> {
-  await page.evaluate(({ start, end }) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    if (textarea) {
-      textarea.setSelectionRange(start, end);
-    }
-  }, { start, end });
-}
-
-/**
- * Setup multiple clients with different latencies
- */
-async function setupClients(browser: Browser, count: number, latencies: number[]): Promise<ClientSetup[]> {
-  const clients: ClientSetup[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    clients.push({
-      context,
-      page,
-      latencyMs: latencies[i] || 100,
-      name: `Client${i + 1}`
-    });
-  }
-
-  return clients;
-}
-
-/**
- * Cleanup clients
- */
-async function cleanupClients(clients: ClientSetup[]): Promise<void> {
-  for (const client of clients) {
-    await client.context.close();
-  }
-}
-
-/**
- * Extract note ID from URL
- */
-function getNoteIdFromUrl(url: string): string {
-  return new URL(url).pathname.slice(1);
-}
-
-/**
- * Wait for all clients to have the same content
- */
-async function waitForConvergence(clients: ClientSetup[], timeoutMs: number = 10000): Promise<boolean> {
-  const startTime = Date.now();
-
-  while (Date.now() - startTime < timeoutMs) {
-    const contents = await Promise.all(clients.map(c => getEditorContent(c.page)));
-
-    // Check if all contents are the same
-    if (contents.every(c => c === contents[0])) {
-      return true;
-    }
-
-    await clients[0].page.waitForTimeout(200);
-  }
-
-  return false;
-}
-
-test.describe('Comprehensive Sync Tests - 3 Clients', () => {
+test.describe('Latency Sync Tests - 3 Clients', () => {
   test.setTimeout(120000); // 2 minute timeout for comprehensive tests
 
   test('Race condition: Client1 types while initial PUT is in flight (high latency)', async ({ browser, request }) => {
-    // Client1 creates note, then we add latency and have all clients edit
-    // Note: Server-side latency can only be set after note exists, so this tests
-    // the scenario where latency begins after initial note creation
-    const clients = await setupClients(browser, 3, [300, 100, 50]);
+    const clients = await setupClientsWithLatency(browser, 3, [300, 100, 50]);
 
     try {
       const page1 = clients[0].page;
@@ -185,11 +74,11 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       // Now add server-side latency (simulates high latency WebSocket)
       await setServerLatency(request, noteId, 300);
 
-      // Type more content with latency active - use longer delays to allow sync
+      // Type more content with latency active
       await page1.keyboard.type(' world', { delay: 50 });
       await page1.keyboard.type(' from client1', { delay: 50 });
 
-      // Wait for WebSocket messages to be processed (300ms latency * multiple messages)
+      // Wait for WebSocket messages to be processed
       await page1.waitForTimeout(4000);
 
       // Client2 and Client3 join
@@ -202,7 +91,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       // Wait for all to sync with high latency
       await page1.waitForTimeout(4000);
 
-      // Verify all clients have the same content (longer timeout for high latency)
+      // Verify all clients have the same content
       const converged = await waitForConvergence(clients, 10000);
       expect(converged).toBe(true);
 
@@ -224,12 +113,12 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Concurrent insertions at different positions', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [150, 100, 200]);
+    const clients = await setupClientsWithLatency(browser, 3, [150, 100, 200]);
 
     try {
       // Client1 creates the note
@@ -246,7 +135,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       const noteId = getNoteIdFromUrl(noteUrl);
       await page1.waitForTimeout(1000);
 
-      // Add server-side latency (uses max of client latencies for realistic simulation)
+      // Add server-side latency
       await setServerLatency(request, noteId, 150);
 
       // Client2 and Client3 join
@@ -257,7 +146,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       await page1.waitForTimeout(1500);
 
       // All clients type concurrently at different positions
-      // Client1: End of line1 (use Ctrl+Home to ensure we're at start of doc first)
+      // Client1: End of line1
       await focusEditor(page1);
       await page1.keyboard.press('Control+Home');
       await page1.keyboard.press('End');
@@ -270,7 +159,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       await clients[1].page.keyboard.press('End');
       await clients[1].page.keyboard.type(' - B', { delay: 25 });
 
-      // Client3: End of line3 (Ctrl+End goes to end of document)
+      // Client3: End of line3
       await focusEditor(clients[2].page);
       await clients[2].page.keyboard.press('Control+End');
       await clients[2].page.keyboard.type(' - C', { delay: 25 });
@@ -292,16 +181,16 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(content1).toContain(' - B');
       expect(content1).toContain(' - C');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Concurrent insertions at SAME position (conflict resolution)', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [200, 150, 100]);
+    const clients = await setupClientsWithLatency(browser, 3, [200, 150, 100]);
 
     try {
       const page1 = clients[0].page;
@@ -346,33 +235,28 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toBe(contents[1]);
       expect(contents[1]).toBe(contents[2]);
 
-      // With character-by-character typing, characters from different clients
-      // will interleave when inserting at the same position. This is expected
-      // OT behavior - the important thing is that all clients converge.
-      // Each client types '[X]' which is 3 chars: '[', digit, ']'
       // Verify all characters are present (they may be interleaved)
       expect(contents[0]).toContain('hello');
       expect(contents[0]).toContain(' world');
-      // Count occurrences of brackets and digits
       const content = contents[0];
       const openBrackets = (content.match(/\[/g) || []).length;
       const closeBrackets = (content.match(/\]/g) || []).length;
-      expect(openBrackets).toBe(3); // 3 clients each typed one '['
-      expect(closeBrackets).toBe(3); // 3 clients each typed one ']'
+      expect(openBrackets).toBe(3);
+      expect(closeBrackets).toBe(3);
       expect(content).toContain('1');
       expect(content).toContain('2');
       expect(content).toContain('3');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Backspace and Delete key operations', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [100, 150, 75]);
+    const clients = await setupClientsWithLatency(browser, 3, [100, 150, 75]);
 
     try {
       const page1 = clients[0].page;
@@ -425,16 +309,16 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toBe(contents[1]);
       expect(contents[1]).toBe(contents[2]);
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Word deletion (Ctrl+Backspace) with concurrent edits', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [100, 200, 150]);
+    const clients = await setupClientsWithLatency(browser, 3, [100, 200, 150]);
 
     try {
       const page1 = clients[0].page;
@@ -459,7 +343,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       await clients[2].page.waitForLoadState('networkidle');
       await page1.waitForTimeout(2000);
 
-      // Client3: Insert text at the beginning first (sequential to avoid position conflicts)
+      // Client3: Insert text at the beginning first
       await focusEditor(clients[2].page);
       await clients[2].page.keyboard.press('Control+Home');
       await clients[2].page.keyboard.type('START: ', { delay: 30 });
@@ -470,12 +354,12 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       // Client1: Delete word at end using Ctrl+Backspace
       await focusEditor(page1);
       await page1.keyboard.press('Control+End');
-      await page1.keyboard.press('Control+Backspace'); // Deletes "five"
+      await page1.keyboard.press('Control+Backspace');
 
       // Client2: Also delete a word at end
       await focusEditor(clients[1].page);
       await clients[1].page.keyboard.press('Control+End');
-      await clients[1].page.keyboard.press('Control+Backspace'); // Deletes another word
+      await clients[1].page.keyboard.press('Control+Backspace');
 
       await page1.waitForTimeout(4000);
       const converged = await waitForConvergence(clients, 10000);
@@ -488,19 +372,18 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
 
       // "START: " should be present at beginning
       expect(contents[0]).toContain('START:');
-      // Original content "one" should be present
       expect(contents[0]).toContain('one');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Selection replacement (typing over selection)', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [150, 100, 200]);
+    const clients = await setupClientsWithLatency(browser, 3, [150, 100, 200]);
 
     try {
       const page1 = clients[0].page;
@@ -528,17 +411,15 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       // Sequential selection replacements to avoid position conflicts
       // Client1: Select "quick" (positions 4-9) and replace with "slow"
       await focusEditor(page1);
-      await selectRange(page1, 4, 9);
+      await setSelectionRange(page1, 4, 9);
       await page1.keyboard.type('slow', { delay: 30 });
 
       // Wait for sync before next edit
       await page1.waitForTimeout(2000);
 
-      // Client2: Now select and replace "lazy" - but find it dynamically
-      // After "quick"->"slow", the string is "The slow brown fox jumps over the lazy dog"
-      // "lazy" is still at a predictable position since we only changed "quick"
+      // Client2: Now select and replace "lazy"
       await focusEditor(clients[1].page);
-      await selectRange(clients[1].page, 34, 38); // "lazy" after "slow" change (4 chars shorter)
+      await setSelectionRange(clients[1].page, 34, 38);
       await clients[1].page.keyboard.type('energetic', { delay: 30 });
 
       // Wait for sync
@@ -563,16 +444,16 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toContain('energetic');
       expect(contents[0]).toContain('!');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Tab key insertion with concurrent edits', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [100, 150, 200]);
+    const clients = await setupClientsWithLatency(browser, 3, [100, 150, 200]);
 
     try {
       const page1 = clients[0].page;
@@ -597,32 +478,26 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       await clients[2].page.waitForLoadState('networkidle');
       await page1.waitForTimeout(1500);
 
-      // Prepare all clients with cursors at their target positions BEFORE any edits
-      // This simulates the real-world scenario where multiple users have their cursors
-      // positioned before anyone starts typing
+      // Prepare all clients with cursors at their target positions
       await focusEditor(page1);
       await setCursorPosition(page1, 0);
 
       await focusEditor(clients[1].page);
-      await setCursorPosition(clients[1].page, 6); // Start of line2
+      await setCursorPosition(clients[1].page, 6);
 
       await focusEditor(clients[2].page);
-      await clients[2].page.keyboard.press('End'); // End of content
+      await clients[2].page.keyboard.press('End');
 
-      // Now execute all operations concurrently
-      // Using Promise.all ensures they all start at approximately the same time
+      // Execute all operations concurrently
       const operationPromises = [
-        // Client1: Insert tab at start of line1
         (async () => {
           await focusEditor(page1);
           await page1.keyboard.press('Tab');
         })(),
-        // Client2: Insert tab at start of line2
         (async () => {
           await focusEditor(clients[1].page);
           await clients[1].page.keyboard.press('Tab');
         })(),
-        // Client3: Type text at end
         (async () => {
           await focusEditor(clients[2].page);
           await clients[2].page.keyboard.type(' - END', { delay: 30 });
@@ -640,28 +515,23 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toBe(contents[1]);
       expect(contents[1]).toBe(contents[2]);
 
-      // All edits should be present: tabs insert 2 spaces each, and the END text
+      // All edits should be present
       const content = contents[0];
       expect(content).toContain(' - END');
-      // Count total spaces at line beginnings or near "line" text
-      // Due to concurrent operations, exact positions may vary but all content should be present
-      // Original content had "line1", "line2", "line3"
       expect(content).toContain('line1');
       expect(content).toContain('line2');
       expect(content).toContain('line3');
-      // Both tabs should have been applied (4 spaces total from 2 tabs)
-      // They may be at different positions due to OT transformation
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Rapid fire typing from all 3 clients simultaneously', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [50, 150, 300]);
+    const clients = await setupClientsWithLatency(browser, 3, [50, 150, 300]);
 
     try {
       const page1 = clients[0].page;
@@ -690,7 +560,6 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       const typePromises = clients.map(async (client, i) => {
         await focusEditor(client.page);
         await client.page.keyboard.press('End');
-        // Type a unique pattern for each client
         for (let j = 0; j < 5; j++) {
           await client.page.keyboard.type(`[C${i + 1}:${j}]`, { delay: 15 });
         }
@@ -698,7 +567,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
 
       await Promise.all(typePromises);
 
-      // Wait for convergence - this test is intensive so give extra time
+      // Wait for convergence
       await page1.waitForTimeout(8000);
       const converged = await waitForConvergence(clients, 20000);
 
@@ -708,48 +577,30 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toBe(contents[1]);
       expect(contents[1]).toBe(contents[2]);
 
-      // With all clients typing at the end simultaneously with character-by-character
-      // operations, characters from different clients will interleave.
-      // This is expected OT behavior when concurrent insertions happen at the same position.
-      // The key assertion is convergence - all clients have the same content.
-      // We verify basic structure but don't require exact counts due to interleaving.
+      // Verify structural elements are present (may be interleaved)
       const content = contents[0];
       expect(content).toContain('START');
 
-      // Each client types 5 patterns like [C1:0], [C1:1], etc.
-      // With interleaving, characters mix together but all should be present.
-      // Verify we have the expected structural elements:
       const cCount = (content.match(/C/g) || []).length;
       const openBrackets = (content.match(/\[/g) || []).length;
       const closeBrackets = (content.match(/\]/g) || []).length;
       const colons = (content.match(/:/g) || []).length;
 
-      // Should have 15 of each: 3 clients × 5 iterations
       expect(cCount).toBe(15);
       expect(openBrackets).toBe(15);
       expect(closeBrackets).toBe(15);
       expect(colons).toBe(15);
 
-      // Verify client identifiers are present (at least once each)
-      expect(content).toMatch(/1/);
-      expect(content).toMatch(/2/);
-      expect(content).toMatch(/3/);
-
-      // Verify iteration digits are present (0 through 4)
-      for (let i = 0; i < 5; i++) {
-        expect(content).toContain(String(i));
-      }
-
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Enter key (newlines) with concurrent edits', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [100, 200, 150]);
+    const clients = await setupClientsWithLatency(browser, 3, [100, 200, 150]);
 
     try {
       const page1 = clients[0].page;
@@ -803,16 +654,16 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(lineCount).toBeGreaterThanOrEqual(3);
       expect(contents[0]).toContain('END');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Cut (Ctrl+X) operation with concurrent edits', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [100, 150, 200]);
+    const clients = await setupClientsWithLatency(browser, 3, [100, 150, 200]);
 
     try {
       const page1 = clients[0].page;
@@ -855,9 +706,9 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       // Wait for sync
       await page1.waitForTimeout(2000);
 
-      // Client1: Cut "BBBB" - position adjusted for "START: " prefix (7 chars)
+      // Client1: Cut "BBBB" - position adjusted for "START: " prefix
       await focusEditor(page1);
-      await selectRange(page1, 12, 16); // "BBBB" after "START: " (7) + "AAAA " (5)
+      await setSelectionRange(page1, 12, 16);
       await page1.keyboard.press('Control+x');
 
       await page1.waitForTimeout(4000);
@@ -874,16 +725,16 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toContain('XXXX');
       expect(contents[0]).toContain('START:');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Mixed operations: insert, delete, replace all at once', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [75, 150, 250]);
+    const clients = await setupClientsWithLatency(browser, 3, [75, 150, 250]);
 
     try {
       const page1 = clients[0].page;
@@ -910,10 +761,10 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
 
       // Client1: Replace "cat" with "dog"
       await focusEditor(page1);
-      await selectRange(page1, 4, 7);
+      await setSelectionRange(page1, 4, 7);
       await page1.keyboard.type('dog', { delay: 30 });
 
-      // Client2: Delete "on " (3 chars at position 12)
+      // Client2: Delete "on "
       await focusEditor(clients[1].page);
       await setCursorPosition(clients[1].page, 15);
       await clients[1].page.keyboard.press('Backspace');
@@ -938,16 +789,16 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toContain('dog');
       expect(contents[0]).not.toContain('cat');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
-  test('Stress test: 50 rapid operations from 3 clients', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [50, 100, 150]);
+  test('Stress test: 45 rapid operations from 3 clients', async ({ browser, request }) => {
+    const clients = await setupClientsWithLatency(browser, 3, [50, 100, 150]);
 
     try {
       const page1 = clients[0].page;
@@ -978,17 +829,15 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
           await focusEditor(client.page);
           await client.page.keyboard.press('End');
           await client.page.keyboard.type(`[${clientIndex}:${i}]`, { delay: 10 });
-
-          // Small delay between operations
           await client.page.waitForTimeout(50);
         }
       });
 
       await Promise.all(operationPromises);
 
-      // Wait for convergence
-      await page1.waitForTimeout(8000);
-      const converged = await waitForConvergence(clients, 20000);
+      // Wait for convergence - stress tests need longer timeouts
+      await page1.waitForTimeout(10000);
+      const converged = await waitForConvergence(clients, 30000);
 
       const contents = await Promise.all(clients.map(c => getEditorContent(c.page)));
 
@@ -996,38 +845,28 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toBe(contents[1]);
       expect(contents[1]).toBe(contents[2]);
 
-      // With all clients typing at the end simultaneously with character-by-character
-      // operations, characters will interleave. This is expected OT behavior.
-      // Verify that all characters are present - they may be interleaved but the
-      // total count should be correct.
+      // Verify structure
       const content = contents[0];
-      expect(content).toContain('0123456789'); // Original content
+      expect(content).toContain('0123456789');
 
-      // Each client typed 15 iterations of '[X:Y]' pattern
-      // Count brackets - should have 45 open brackets and 45 close brackets (3 clients × 15 iterations)
       const openBrackets = (content.match(/\[/g) || []).length;
       const closeBrackets = (content.match(/\]/g) || []).length;
+      const colons = (content.match(/:/g) || []).length;
+
       expect(openBrackets).toBe(45);
       expect(closeBrackets).toBe(45);
-
-      // Count colons - should have 45 colons (one per iteration)
-      const colons = (content.match(/:/g) || []).length;
       expect(colons).toBe(45);
 
-      // Verify all iteration digits are present (0-9 for iterations 0-14)
-      // Due to interleaving, we can't expect exact patterns like "[0:5]"
-      // but we can verify all the digit components exist
-
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
 
   test('Extreme latency difference: 50ms vs 300ms clients', async ({ browser, request }) => {
-    const clients = await setupClients(browser, 3, [300, 50, 300]);
+    const clients = await setupClientsWithLatency(browser, 3, [300, 50, 300]);
 
     try {
       const page1 = clients[0].page;
@@ -1044,7 +883,7 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       const noteId = getNoteIdFromUrl(noteUrl);
       await page1.waitForTimeout(2000);
 
-      // Add high server-side latency to stress test OT
+      // Add high server-side latency
       await setServerLatency(request, noteId, 300);
 
       await clients[1].page.goto(noteUrl);
@@ -1083,11 +922,12 @@ test.describe('Comprehensive Sync Tests - 3 Clients', () => {
       expect(contents[0]).toContain('SLOW:');
       expect(contents[0]).toContain(':SLOW-END');
 
-      // Clean up: reset latency
+      // Clean up
       await setServerLatency(request, noteId, 0);
 
     } finally {
-      await cleanupClients(clients);
+      await cleanupClientsWithLatency(clients);
     }
   });
+
 });

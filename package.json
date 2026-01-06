@@ -1,6 +1,6 @@
 {
   "name": "ypad",
-  "version": "1.6.2",
+  "version": "1.7.1",
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --local --persist-to .wrangler/state",

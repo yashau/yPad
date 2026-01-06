@@ -29,7 +29,7 @@
     <Dialog.Overlay />
     <Dialog.Content class="sm:!max-w-4xl max-h-[80vh] overflow-y-auto">
       <Dialog.Header>
-        <Dialog.Title>About yPad</Dialog.Title>
+        <Dialog.Title>About yPad <span class="text-xs font-normal text-muted-foreground/50">v{__APP_VERSION__}</span></Dialog.Title>
       </Dialog.Header>
 
       <div class="space-y-6 py-4">

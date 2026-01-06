@@ -1,5 +1,3 @@
-import { test, expect, Page, Request } from '@playwright/test';
-
 /**
  * E2E Encryption Security Tests
  *
@@ -9,8 +7,23 @@ import { test, expect, Page, Request } from '@playwright/test';
  * - Only encrypted blobs are sent to the server
  */
 
+import { test, expect, Page, Request } from '@playwright/test';
+import {
+  createPasswordProtectedNote,
+  accessProtectedNote,
+  openOptionsPanel
+} from './utils/test-helpers';
+
+// ============================================================================
+// TEST CONSTANTS
+// ============================================================================
+
 const TEST_PASSWORD = 'MySecretPassword123!';
 const TEST_CONTENT = 'This is my super secret note content that should be encrypted';
+
+// ============================================================================
+// REQUEST CAPTURE UTILITIES (encryption-specific)
+// ============================================================================
 
 interface CapturedRequest {
   url: string;
@@ -46,15 +59,12 @@ async function setupRequestCapture(page: Page): Promise<CapturedRequest[]> {
  */
 function requestsContainString(requests: CapturedRequest[], forbidden: string): CapturedRequest | null {
   for (const req of requests) {
-    // Check POST data
     if (req.postData && req.postData.includes(forbidden)) {
       return req;
     }
-    // Check URL (query params)
     if (req.url.includes(forbidden)) {
       return req;
     }
-    // Check headers
     for (const value of Object.values(req.headers)) {
       if (value.includes(forbidden)) {
         return req;
@@ -64,61 +74,9 @@ function requestsContainString(requests: CapturedRequest[], forbidden: string): 
   return null;
 }
 
-/**
- * Helper to create a password-protected note
- */
-async function createPasswordProtectedNote(page: Page, content: string, password: string): Promise<string> {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-
-  // Type content
-  const textarea = page.locator('textarea');
-  await textarea.click();
-  await textarea.fill(content);
-
-  // Wait for note to be created
-  await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
-
-  // Open options panel
-  const optionsBtn = page.locator('button:has-text("Options")');
-  await optionsBtn.click();
-  await page.waitForTimeout(300);
-
-  // Enter password in the password input field (in Options panel)
-  const passwordInput = page.locator('input#password');
-  await passwordInput.fill(password);
-
-  // Click the lock button to set password (it's a submit button inside the form)
-  const lockButton = page.locator('form:has(input#password) button[type="submit"]');
-  await lockButton.click();
-
-  // Wait for save to complete
-  await page.waitForTimeout(1000);
-
-  return page.url();
-}
-
-/**
- * Helper to access a password-protected note
- */
-async function accessProtectedNote(page: Page, url: string, password: string) {
-  await page.goto(url);
-  await page.waitForLoadState('networkidle');
-
-  // Wait for password dialog
-  const passwordInput = page.locator('input[type="password"]');
-  await expect(passwordInput).toBeVisible({ timeout: 5000 });
-
-  // Enter password
-  await passwordInput.fill(password);
-
-  // Submit (dialog button says "Submit")
-  const submitBtn = page.locator('button:has-text("Submit")');
-  await submitBtn.click();
-
-  // Wait for content to load
-  await page.waitForTimeout(1000);
-}
+// ============================================================================
+// TESTS
+// ============================================================================
 
 test.describe('E2E Encryption Security Tests', () => {
 
@@ -131,7 +89,7 @@ test.describe('E2E Encryption Security Tests', () => {
     const leakedRequest = requestsContainString(capturedRequests, TEST_PASSWORD);
     expect(leakedRequest).toBeNull();
 
-    // Additional check: verify we actually made API requests
+    // Verify we actually made API requests
     const apiRequests = capturedRequests.filter(r => r.url.includes('/api/notes'));
     expect(apiRequests.length).toBeGreaterThan(0);
   });
@@ -155,11 +113,8 @@ test.describe('E2E Encryption Security Tests', () => {
     capturedRequests.length = 0;
 
     // Now enable password protection
-    const optionsBtn = page.locator('button:has-text("Options")');
-    await optionsBtn.click();
-    await page.waitForTimeout(300);
+    await openOptionsPanel(page);
 
-    // Enter password in the password input field and click lock button
     const passwordInput = page.locator('input#password');
     await passwordInput.fill(TEST_PASSWORD);
 
@@ -250,11 +205,9 @@ test.describe('E2E Encryption Security Tests', () => {
 
         // If is_encrypted is true, content should be base64 (encrypted)
         if (body.is_encrypted === true) {
-          // Encrypted content should NOT contain the plaintext
           expect(body.content).not.toContain(TEST_CONTENT);
 
-          // Encrypted content should look like base64 (no spaces, special chars used in our content)
-          // Base64 uses only A-Z, a-z, 0-9, +, /, and = for padding
+          // Encrypted content should look like base64
           const base64Regex = /^[A-Za-z0-9+/]+=*$/;
           expect(base64Regex.test(body.content)).toBe(true);
         }
@@ -321,9 +274,7 @@ test.describe('E2E Encryption Security Tests', () => {
     const capturedRequests = await setupRequestCapture(page);
 
     // Open options and click the lock-open button to remove password
-    const optionsBtn = page.locator('button:has-text("Options")');
-    await optionsBtn.click();
-    await page.waitForTimeout(300);
+    await openOptionsPanel(page);
 
     // Click the lock-open button (button type="button" when hasPassword is true)
     const lockOpenButton = page.locator('form:has(input#password) button[type="button"]');

@@ -1,5 +1,3 @@
-import { test, expect, Page, BrowserContext } from '@playwright/test';
-
 /**
  * Remote Cursor E2E Tests
  *
@@ -10,154 +8,21 @@ import { test, expect, Page, BrowserContext } from '@playwright/test';
  * These tests verify VISUAL cursor positions, not just content sync.
  */
 
-interface CursorPosition {
-  top: number;
-  left: number;
-  label: string;
-}
+import { test, expect } from '@playwright/test';
+import {
+  createNote,
+  waitForConnection,
+  getEditorContent,
+  focusEditor,
+  setCursorPosition,
+  getRemoteCursorPositions,
+  getRemoteCursorCount,
+  setup3Clients
+} from './utils/test-helpers';
 
-interface ClientInfo {
-  context: BrowserContext;
-  page: Page;
-  clientId: string;
-}
-
-/**
- * Helper to create a note and wait for WebSocket connection
- */
-async function createNote(page: Page, content: string): Promise<string> {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-
-  const textarea = page.locator('textarea');
-  await textarea.click();
-  await textarea.fill(content);
-
-  // Wait for auto-save and URL update
-  await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
-
-  // Wait for WebSocket connection
-  await page.waitForTimeout(500);
-
-  return page.url();
-}
-
-/**
- * Helper to wait for WebSocket connection (green dot)
- */
-async function waitForConnection(page: Page): Promise<void> {
-  await page.waitForSelector('header .bg-green-500', { timeout: 10000 });
-  await page.waitForTimeout(500);
-}
-
-/**
- * Helper to get remote cursor visual positions from the page.
- * Remote cursors are rendered with inline styles containing top/left pixel values.
- */
-async function getRemoteCursorPositions(page: Page): Promise<CursorPosition[]> {
-  return page.evaluate(() => {
-    // Remote cursors have: div.absolute.pointer-events-none.z-50 with inline style
-    const cursorContainers = document.querySelectorAll('.absolute.pointer-events-none.z-50');
-    const results: { top: number; left: number; label: string }[] = [];
-
-    cursorContainers.forEach((container) => {
-      const style = container.getAttribute('style') || '';
-      const topMatch = style.match(/top:\s*([\d.]+)px/);
-      const leftMatch = style.match(/left:\s*([\d.]+)px/);
-
-      if (topMatch && leftMatch) {
-        const labelEl = container.querySelector('.text-xs.font-medium');
-        const label = labelEl?.textContent || '';
-
-        results.push({
-          top: parseFloat(topMatch[1]),
-          left: parseFloat(leftMatch[1]),
-          label
-        });
-      }
-    });
-
-    return results;
-  });
-}
-
-/**
- * Helper to get the count of visible remote cursors
- */
-async function getRemoteCursorCount(page: Page): Promise<number> {
-  const positions = await getRemoteCursorPositions(page);
-  return positions.length;
-}
-
-/**
- * Helper to set cursor position in textarea and trigger awareness update
- */
-async function setCursorPosition(page: Page, position: number): Promise<void> {
-  const textarea = page.locator('textarea');
-  await textarea.evaluate((el, pos) => {
-    const ta = el as HTMLTextAreaElement;
-    ta.focus();
-    ta.setSelectionRange(pos, pos);
-  }, position);
-  // Trigger cursor update by pressing arrow keys
-  await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('ArrowLeft');
-}
-
-/**
- * Helper to focus the editor
- */
-async function focusEditor(page: Page): Promise<void> {
-  const textarea = page.locator('textarea');
-  await textarea.click();
-}
-
-/**
- * Helper to get editor content
- */
-async function getEditorContent(page: Page): Promise<string> {
-  const textarea = page.locator('textarea');
-  return textarea.inputValue();
-}
-
-/**
- * Setup 3 clients connected to the same note
- */
-async function setup3Clients(browser: any, initialContent: string): Promise<{
-  clients: ClientInfo[];
-  noteUrl: string;
-  cleanup: () => Promise<void>;
-}> {
-  const context1 = await browser.newContext();
-  const page1 = await context1.newPage();
-  const noteUrl = await createNote(page1, initialContent);
-
-  const context2 = await browser.newContext();
-  const page2 = await context2.newPage();
-  await page2.goto(noteUrl);
-  await waitForConnection(page2);
-
-  const context3 = await browser.newContext();
-  const page3 = await context3.newPage();
-  await page3.goto(noteUrl);
-  await waitForConnection(page3);
-
-  await page1.waitForTimeout(1000);
-
-  const clients: ClientInfo[] = [
-    { context: context1, page: page1, clientId: 'client1' },
-    { context: context2, page: page2, clientId: 'client2' },
-    { context: context3, page: page3, clientId: 'client3' }
-  ];
-
-  const cleanup = async () => {
-    await context1.close();
-    await context2.close();
-    await context3.close();
-  };
-
-  return { clients, noteUrl, cleanup };
-}
+// ============================================================================
+// TESTS
+// ============================================================================
 
 test.describe('Remote Cursor Synchronization - 3 Clients', () => {
 
@@ -170,11 +35,15 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
       // Client 2 places cursor at position 5
       await focusEditor(client2.page);
       await setCursorPosition(client2.page, 5);
+      await client2.page.keyboard.press('ArrowRight');
+      await client2.page.keyboard.press('ArrowLeft');
       await client2.page.waitForTimeout(800);
 
       // Client 3 places cursor at position 11
       await focusEditor(client3.page);
       await setCursorPosition(client3.page, 11);
+      await client3.page.keyboard.press('ArrowRight');
+      await client3.page.keyboard.press('ArrowLeft');
       await client3.page.waitForTimeout(800);
 
       // Wait for cursor sync
@@ -288,11 +157,15 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
       // Client 2 at position 3 (after "ABC")
       await focusEditor(client2.page);
       await setCursorPosition(client2.page, 3);
+      await client2.page.keyboard.press('ArrowRight');
+      await client2.page.keyboard.press('ArrowLeft');
       await client2.page.waitForTimeout(500);
 
       // Client 3 at position 7 (after "ABCDEFG")
       await focusEditor(client3.page);
       await setCursorPosition(client3.page, 7);
+      await client3.page.keyboard.press('ArrowRight');
+      await client3.page.keyboard.press('ArrowLeft');
       await client3.page.waitForTimeout(500);
 
       await client1.page.waitForTimeout(1000);
@@ -333,7 +206,6 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
   });
 
   test('Cursor moves when newline inserted before it', async ({ browser }) => {
-    // Test that cursor moves down when a newline is inserted before it
     const { clients, cleanup } = await setup3Clients(browser, 'Line1 END');
 
     try {
@@ -370,18 +242,21 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
   });
 
   test('Cursors still visible for remaining clients after one disconnects', async ({ browser }) => {
-    const { clients, cleanup } = await setup3Clients(browser, 'Test content');
+    const { clients } = await setup3Clients(browser, 'Test content');
+    const [client1, client2, client3] = clients;
 
     try {
-      const [client1, client2, client3] = clients;
-
       // Clients 2 and 3 place cursors
       await focusEditor(client2.page);
       await setCursorPosition(client2.page, 5);
+      await client2.page.keyboard.press('ArrowRight');
+      await client2.page.keyboard.press('ArrowLeft');
       await client2.page.waitForTimeout(500);
 
       await focusEditor(client3.page);
       await setCursorPosition(client3.page, 10);
+      await client3.page.keyboard.press('ArrowRight');
+      await client3.page.keyboard.press('ArrowLeft');
       await client3.page.waitForTimeout(500);
 
       await client1.page.waitForTimeout(1000);
@@ -399,14 +274,12 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
       await client3.page.waitForTimeout(2000);
 
       // Client 1 should still see client 3's cursor (at minimum)
-      // Note: The disconnected client's cursor may still be visible briefly
-      // until awareness timeout cleans it up
       cursorCount = await getRemoteCursorCount(client1.page);
       expect(cursorCount).toBeGreaterThanOrEqual(1);
 
     } finally {
-      await clients[0].context.close();
-      await clients[2].context.close();
+      await client1.context.close();
+      await client3.context.close();
     }
   });
 
@@ -419,11 +292,15 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
       // Client 2 at Line1 (position 0)
       await focusEditor(client2.page);
       await setCursorPosition(client2.page, 0);
+      await client2.page.keyboard.press('ArrowRight');
+      await client2.page.keyboard.press('ArrowLeft');
       await client2.page.waitForTimeout(500);
 
       // Client 3 at Line3 (position 12)
       await focusEditor(client3.page);
       await setCursorPosition(client3.page, 12);
+      await client3.page.keyboard.press('ArrowRight');
+      await client3.page.keyboard.press('ArrowLeft');
       await client3.page.waitForTimeout(500);
 
       await client1.page.waitForTimeout(1000);
@@ -456,6 +333,8 @@ test.describe('Remote Cursor Synchronization - 3 Clients', () => {
       // Client 2 places cursor
       await focusEditor(page2);
       await setCursorPosition(page2, 5);
+      await page2.keyboard.press('ArrowRight');
+      await page2.keyboard.press('ArrowLeft');
       await page2.waitForTimeout(1000);
 
       // Client 1 should see client 2's cursor

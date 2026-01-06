@@ -1,8 +1,3 @@
-import { test, expect, Page } from '@playwright/test';
-
-// Longer timeout for rate limiting tests that need to exhaust tokens
-test.setTimeout(60000);
-
 /**
  * Rate Limiting E2E Tests
  *
@@ -19,42 +14,24 @@ test.setTimeout(60000);
  * 3. Recovery works after slowing down
  */
 
-/**
- * Helper to create a note and wait for WebSocket connection
- */
-async function createNoteAndConnect(page: Page, content: string): Promise<string> {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+import { test, expect } from '@playwright/test';
+import {
+  createNote,
+  getEditorContent,
+  setup2Clients
+} from './utils/test-helpers';
 
-  const textarea = page.locator('textarea');
-  await textarea.click();
-  await textarea.fill(content);
+// Longer timeout for rate limiting tests that need to exhaust tokens
+test.setTimeout(60000);
 
-  // Wait for auto-save to complete and URL to update
-  await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
-
-  // Wait for WebSocket to connect
-  await page.waitForTimeout(500);
-
-  return page.url();
-}
-
-/**
- * Helper to get the current content from the editor
- */
-async function getEditorContent(page: Page): Promise<string> {
-  const textarea = page.locator('textarea');
-  if (await textarea.isVisible()) {
-    return textarea.inputValue();
-  }
-  const editor = page.locator('[contenteditable="true"]');
-  return (await editor.textContent()) ?? '';
-}
+// ============================================================================
+// TESTS
+// ============================================================================
 
 test.describe('WebSocket Rate Limiting - Below Threshold', () => {
 
   test('Normal and fast typing should stay under limit', async ({ page }) => {
-    await createNoteAndConnect(page, 'start');
+    await createNote(page, 'start');
 
     const textarea = page.locator('textarea');
     await textarea.click();
@@ -96,7 +73,7 @@ test.describe('WebSocket Rate Limiting - Below Threshold', () => {
 test.describe('WebSocket Rate Limiting - At Threshold', () => {
 
   test('Sustained editing and rapid pastes at threshold', async ({ page }) => {
-    await createNoteAndConnect(page, 'initial');
+    await createNote(page, 'initial');
 
     const textarea = page.locator('textarea');
     await textarea.click();
@@ -132,7 +109,7 @@ test.describe('WebSocket Rate Limiting - At Threshold', () => {
 test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
 
   test('Extreme rate should trigger rate limiting warnings', async ({ page }) => {
-    await createNoteAndConnect(page, 'x');
+    await createNote(page, 'x');
 
     const textarea = page.locator('textarea');
     await textarea.click();
@@ -148,7 +125,6 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
 
     // Bypass client batching by using fill() which sends immediately
     // Send > 100 updates to exhaust burst allowance
-    // Then continue to trigger rate limiting
     for (let i = 0; i < 150; i++) {
       await textarea.fill(`update${i}`);
       // No delay - send as fast as possible
@@ -156,15 +132,13 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
 
     await page.waitForTimeout(2000);
 
-    // After 150 rapid updates, we should have seen rate limiting
-    // (100 burst + 25/sec refill over ~2 seconds = ~150 allowed)
-    // Some updates may have been rate limited
+    // After 150 rapid updates, some updates may have been rate limited
     const content = await getEditorContent(page);
-    expect(content).toMatch(/^update\d+$/); // Some update got through
+    expect(content).toMatch(/^update\d+$/);
   });
 
   test('Sustained extreme rate should trigger rate limit response', async ({ page }) => {
-    await createNoteAndConnect(page, 'disconnect-test');
+    await createNote(page, 'disconnect-test');
 
     const textarea = page.locator('textarea');
     await textarea.click();
@@ -183,8 +157,6 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
     });
 
     // Send updates as fast as possible to exhaust tokens
-    // With 100 burst + 25/sec refill, sending 200 updates in <1 second
-    // should definitely exceed the limit
     const startTime = Date.now();
     for (let i = 0; i < 200; i++) {
       await textarea.fill(`spam${i}`);
@@ -194,19 +166,9 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
     // Wait for any rate limit responses
     await page.waitForTimeout(2000);
 
-    // Calculate expected behavior:
-    // If 200 updates sent in ~1-2 seconds:
-    // Available tokens = 100 (burst) + 25 * (elapsed/1000) = ~125-150
-    // So ~50-75 updates should have been rate limited
-
-    // The test passes if we either:
-    // 1. Saw rate limit warnings in console
-    // 2. WebSocket was closed/errored
-    // 3. Content shows rate limiting happened (some updates were dropped)
-
-    // For now, just verify the system didn't crash and handled the load
+    // Verify the system handled the load gracefully
     const content = await getEditorContent(page);
-    expect(content).toMatch(/^spam\d+$/); // Some update got through
+    expect(content).toMatch(/^spam\d+$/);
 
     // Log diagnostic info
     console.log(`Sent 200 updates in ${elapsed}ms, rate limit warning: ${sawRateLimitWarning}, WS error: ${sawWebSocketError}`);
@@ -217,7 +179,7 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
 test.describe('WebSocket Rate Limiting - Recovery', () => {
 
   test('Recovery after burst and intermittent bursts', async ({ page }) => {
-    await createNoteAndConnect(page, 'recovery');
+    await createNote(page, 'recovery');
 
     const textarea = page.locator('textarea');
     await textarea.click();
@@ -273,7 +235,7 @@ test.describe('WebSocket Rate Limiting - Recovery', () => {
 test.describe('Large Content - Rate Limiting', () => {
 
   test('Large pastes should work (single updates)', async ({ page }) => {
-    await createNoteAndConnect(page, 'init');
+    await createNote(page, 'init');
 
     const textarea = page.locator('textarea');
     await textarea.click();
@@ -314,23 +276,12 @@ test.describe('Large Content - Rate Limiting', () => {
 test.describe('Multi-User Rate Limiting', () => {
 
   test('Two users editing rapidly should both have independent rate limits', async ({ browser }) => {
-    const context1 = await browser.newContext();
-    const context2 = await browser.newContext();
-
-    const page1 = await context1.newPage();
-    const page2 = await context2.newPage();
+    const { clients, cleanup } = await setup2Clients(browser, 'shared');
 
     try {
-      // User 1 creates a note
-      const noteUrl = await createNoteAndConnect(page1, 'shared');
-
-      // User 2 opens the same note
-      await page2.goto(noteUrl);
-      await page2.waitForLoadState('networkidle');
-      await page2.waitForTimeout(800);
-
-      const textarea1 = page1.locator('textarea');
-      const textarea2 = page2.locator('textarea');
+      const [client1, client2] = clients;
+      const textarea1 = client1.page.locator('textarea');
+      const textarea2 = client2.page.locator('textarea');
 
       // Both users send rapid updates concurrently
       // Each has their own 100 token burst allowance
@@ -347,18 +298,17 @@ test.describe('Multi-User Rate Limiting', () => {
       })();
 
       await Promise.all([updates1, updates2]);
-      await page1.waitForTimeout(3000);
-      await page2.waitForTimeout(500);
+      await client1.page.waitForTimeout(3000);
+      await client2.page.waitForTimeout(500);
 
       // Both pages should show synced content
-      const content1 = await getEditorContent(page1);
-      const content2 = await getEditorContent(page2);
+      const content1 = await getEditorContent(client1.page);
+      const content2 = await getEditorContent(client2.page);
 
       expect(content1).toBe(content2);
 
     } finally {
-      await context1.close();
-      await context2.close();
+      await cleanup();
     }
   });
 

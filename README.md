@@ -2,7 +2,7 @@
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 ![Unit Tests](https://img.shields.io/badge/unit_tests-386_passed-brightgreen)
-![E2E Tests](https://img.shields.io/badge/e2e_tests-78_passed-brightgreen)
+![E2E Tests](https://img.shields.io/badge/e2e_tests-74_passed-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
@@ -286,12 +286,12 @@ npm run e2e
 npx playwright test --ui
 
 # Run specific test suite
-npx playwright test e2e/comprehensive-sync.spec.ts
+npx playwright test e2e/latency-sync.spec.ts
 ```
 
 E2E test suites:
 
-**Comprehensive Sync** (`comprehensive-sync.spec.ts`) - 13 tests
+**Latency Sync** (`latency-sync.spec.ts`) - 13 tests
 - Race conditions with high latency (client types while PUT in flight)
 - Concurrent insertions at different positions
 - Concurrent insertions at same position (CRDT resolution)
@@ -303,28 +303,28 @@ E2E test suites:
 - Enter key (newlines) with concurrent edits
 - Cut (Ctrl+X) operation with concurrent edits
 - Mixed operations (insert, delete, replace all at once)
-- Stress test: 50 rapid operations from 3 clients
+- Stress test: 45 rapid operations from 3 clients
 - Extreme latency difference (50ms vs 300ms clients)
 
-**Real-time Sync** (`realtime-sync.spec.ts`) - 5 tests
-- Basic two-client synchronization
-- Fast typing with network latency
-- Content persistence after fast typing
-- Typing during WebSocket reconnection
-
-**Remote Cursors** (`remote-cursors.spec.ts`) - 8 tests
-- Cursor visibility for remote users
-- Cursor position updates in real-time
-- Cursor color consistency
-- Cursor cleanup on user disconnect
-
-**Cursor Preservation** (`cursor-preservation.spec.ts`) - 13 tests
+**Collaborative Editing** (`collaborative-editing.spec.ts`) - 14 tests
 - Local cursor stays in place when remote user types after cursor
 - Cursor shifts correctly when remote user types before cursor
 - Selection preserved during remote edits elsewhere
 - Rapid typing from remote users doesn't disrupt local cursor
 - Multi-client simultaneous editing with stable cursors
 - Edge cases: cursor at position 0, end of document, multi-line
+- Concurrent insertions at different positions
+- Concurrent insertions at same position
+- Selection replacement with concurrent edits
+- Content persistence after fast typing
+
+**Remote Cursors** (`remote-cursors.spec.ts`) - 8 tests
+- Cursor visibility for remote users
+- Cursor position updates in real-time
+- Cursor color consistency
+- Cursor cleanup on user disconnect
+- Cursor shifts when text inserted/deleted before it
+- New client joining sees existing remote cursors
 
 **E2E Encryption Security** (`e2e-encryption.spec.ts`) - 9 tests
 - Passwords are NEVER sent to the server
@@ -427,13 +427,12 @@ yPad/
 │   ├── handlers/                   # Message handler tests
 │   ├── hooks/                      # Svelte hook tests
 │   └── rate-limiting/              # Rate limiting tests
-├── e2e/                            # Playwright e2e tests (78 tests)
-│   ├── comprehensive-sync.spec.ts  # CRDT sync with latency (13 tests)
-│   ├── cursor-preservation.spec.ts # Local cursor stability (13 tests)
+├── e2e/                            # Playwright e2e tests (74 tests)
+│   ├── collaborative-editing.spec.ts # Cursor preservation & editing (14 tests)
 │   ├── e2e-encryption.spec.ts      # E2E encryption security (9 tests)
 │   ├── editor-limits.spec.ts       # Editor limit tests (16 tests)
+│   ├── latency-sync.spec.ts        # CRDT sync with latency (13 tests)
 │   ├── rate-limiting.spec.ts       # Rate limiting tests (7 tests)
-│   ├── realtime-sync.spec.ts       # Basic sync tests (5 tests)
 │   ├── remote-cursors.spec.ts      # Remote cursor sync tests (8 tests)
 │   └── status-indicator.spec.ts    # Status display tests (7 tests)
 ├── public/                         # Static assets
