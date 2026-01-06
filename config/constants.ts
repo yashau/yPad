@@ -99,6 +99,9 @@ export const EDITOR_LIMITS = {
   ACTIVE_TIMEOUT_MS: 60_000,
 } as const;
 
+/** Default language for syntax highlighting (non-lazy loaded for immediate display). */
+export const DEFAULT_LANGUAGE = { value: 'plaintext', label: 'Plain Text' } as const;
+
 /** Rate limiting configuration. */
 export const RATE_LIMITS = {
   /** REST API limits (per session) */

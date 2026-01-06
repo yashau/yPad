@@ -505,12 +505,6 @@
     isEncrypted={security.isEncrypted}
     isUpdating={editor.isUpdating}
     onInput={handleEditorInput}
-    onScroll={(e) => {
-      const target = e.target as HTMLElement;
-      if (editor.lineNumbersRef) {
-        editor.lineNumbersRef.scrollTop = target.scrollTop;
-      }
-    }}
   />
 </div>
 

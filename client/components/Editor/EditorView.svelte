@@ -18,7 +18,6 @@
     isEncrypted: boolean;
     isUpdating: boolean;
     onInput: (getContent: () => string, event?: InputEvent) => void;
-    onScroll: (event: Event) => void;
   }
 
   let {
@@ -34,14 +33,14 @@
     isRealtimeEnabled,
     isEncrypted,
     isUpdating,
-    onInput,
-    onScroll
+    onInput
   }: Props = $props();
 
   // Container width for calculating line wrapping
   let containerWidth = $state(0);
   let measureDiv: HTMLDivElement | null = $state(null);
   let lineInfo = $state<Array<{lineNumber: number, visualLineCount: number}>>([{lineNumber: 1, visualLineCount: 1}]);
+  let scrollRAF: number | null = null;
 
   // Measure container width on resize
   $effect(() => {
@@ -136,6 +135,37 @@
       onInput(() => editorRef!.textContent || '', event as InputEvent);
     }
   }
+
+  // Smooth scroll sync for line numbers using RAF
+  function syncLineNumbersScroll(scrollElement: HTMLElement) {
+    if (scrollRAF !== null) {
+      cancelAnimationFrame(scrollRAF);
+    }
+    scrollRAF = requestAnimationFrame(() => {
+      if (lineNumbersRef) {
+        lineNumbersRef.scrollTop = scrollElement.scrollTop;
+      }
+      scrollRAF = null;
+    });
+  }
+
+  // Set up scroll listener on the scrolling element (textarea or contenteditable)
+  $effect(() => {
+    const scrollElement = syntaxHighlight === 'plaintext' ? textareaScrollRef : editorRef;
+    if (!scrollElement) return;
+
+    function handleScroll(e: Event) {
+      syncLineNumbersScroll(e.target as HTMLElement);
+    }
+
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll);
+      if (scrollRAF !== null) {
+        cancelAnimationFrame(scrollRAF);
+      }
+    };
+  });
 </script>
 
 <main class="flex-1 overflow-hidden flex">
@@ -145,7 +175,7 @@
     <!-- Hidden div for measuring text wrapping -->
     <div
       bind:this={measureDiv}
-      class="font-mono text-sm leading-6 whitespace-pre-wrap break-words overflow-hidden"
+      class="font-mono text-base md:text-sm leading-6 whitespace-pre-wrap break-words overflow-hidden"
       style="width: {containerWidth}px; position: absolute; visibility: hidden; top: 0; left: 0; padding: 0;"
       aria-hidden="true"
     ></div>
@@ -158,7 +188,6 @@
         disabled={isLoading}
         readonly={viewMode}
         spellcheck={false}
-        onscroll={onScroll}
         oninput={handleInput}
       />
     {:else}
@@ -166,7 +195,6 @@
         bind:this={editorRef}
         contenteditable={!isLoading && !viewMode}
         oninput={handleContentEditableInput}
-        onscroll={onScroll}
         class="w-full h-full p-4 pl-3 pb-8 font-mono text-base md:text-sm leading-6 outline-none whitespace-pre overflow-auto bg-transparent"
         spellcheck={false}
       >{@html highlightedHtml}</div>

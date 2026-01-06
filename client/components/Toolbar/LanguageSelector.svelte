@@ -5,6 +5,7 @@
   import Check from '@lucide/svelte/icons/check';
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
   import type { LanguageOption } from '../../../config/languages';
+  import { DEFAULT_LANGUAGE } from '../../../config/constants';
 
   interface Props {
     selected: string;
@@ -19,9 +20,11 @@
   let languages = $state<readonly LanguageOption[]>([]);
   let isLoading = $state(false);
 
-  // Find label from loaded languages, or show the value if not yet loaded
+  // Find label from loaded languages, with fallback for default before lazy load
   const syntaxHighlightLabel = $derived(
-    languages.find((opt) => opt.value === selected)?.label ?? selected ?? "Select language"
+    languages.find((opt) => opt.value === selected)?.label ??
+    (selected === DEFAULT_LANGUAGE.value ? DEFAULT_LANGUAGE.label : selected) ??
+    "Select language"
   );
 
   // Lazy load languages when popover opens
