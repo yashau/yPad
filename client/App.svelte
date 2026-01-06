@@ -257,9 +257,18 @@
           // Trigger input handler
           handleEditorInput(() => textarea.value);
         } else if (editor.editorRef) {
-          // For contenteditable, use execCommand or manual insertion
-          document.execCommand('insertText', false, tabSpaces);
-          // The input event handler will be triggered automatically
+          // For contenteditable, use Selection API to insert text
+          const selection = window.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            range.insertNode(document.createTextNode(tabSpaces));
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            // Trigger input handler with updated content
+            handleEditorInput(() => editor.editorRef?.textContent || '');
+          }
         }
 
         return;
@@ -289,7 +298,8 @@
     editor.syntaxHighlight;
 
     if (noteState.isInitialLoad || collaboration.isSyncing) return;
-    if (security.isEncrypted && editor.content === editor.lastLocalContent) return;
+    // Skip save if content hasn't changed (prevents spurious saves on WebSocket reconnect)
+    if (editor.content === editor.lastLocalContent) return;
 
     if (editor.content && !noteState.viewMode && (!collaboration.isRealtimeEnabled || security.isEncrypted)) {
       noteState.setSaveTimeout(() => noteOps.saveNote(), 500);
