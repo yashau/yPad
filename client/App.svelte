@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import hljs from 'highlight.js';
+  import { getHighlighter, highlightSync, isHighlighterLoaded } from './lib/utils/highlighter';
 
   // Hooks
   import { useNoteState } from './lib/hooks/useNoteState.svelte';
@@ -149,15 +149,38 @@
     }
   });
 
-  // Derived state for syntax highlighting
-  const highlightedHtml = $derived.by(() => {
-    if (editor.syntaxHighlight === 'plaintext' || !editor.content) {
-      return editor.content;
+  // State for syntax highlighting (async loading)
+  let highlightedHtml = $state(editor.content);
+  let highlighterReady = $state(false);
+
+  // Load highlighter when syntax highlighting is needed
+  $effect(() => {
+    const lang = editor.syntaxHighlight;
+    if (lang !== 'plaintext' && !isHighlighterLoaded()) {
+      getHighlighter().then(() => {
+        highlighterReady = true;
+      });
     }
-    try {
-      return hljs.highlight(editor.content, { language: editor.syntaxHighlight }).value;
-    } catch {
-      return editor.content;
+  });
+
+  // Update highlighted HTML when content, language, or highlighter readiness changes
+  $effect(() => {
+    const content = editor.content;
+    const lang = editor.syntaxHighlight;
+    // Dependency on highlighterReady ensures re-run after loading
+    const _ = highlighterReady;
+
+    if (lang === 'plaintext' || !content) {
+      highlightedHtml = content;
+      return;
+    }
+
+    // If highlighter is loaded, use it
+    if (isHighlighterLoaded()) {
+      highlightedHtml = highlightSync(content, lang);
+    } else {
+      // Show plain content while loading
+      highlightedHtml = content;
     }
   });
 

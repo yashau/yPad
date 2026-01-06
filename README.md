@@ -2,7 +2,7 @@
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
 ![Unit Tests](https://img.shields.io/badge/unit_tests-386_passed-brightgreen)
-![E2E Tests](https://img.shields.io/badge/e2e_tests-74_passed-brightgreen)
+![E2E Tests](https://img.shields.io/badge/e2e_tests-83_passed-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)
 
 [![Svelte](https://img.shields.io/badge/Svelte_5-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://svelte.dev/)
@@ -350,6 +350,13 @@ E2E test suites:
 - Save status indicators
 - Sync state visualization
 
+**Syntax Highlighting** (`syntax-highlighting.spec.ts`) - 9 tests
+- JavaScript, Python, TypeScript highlighting in light theme
+- JavaScript, Python, TypeScript highlighting in dark theme
+- Switching back to Plain Text removes highlighting
+- Note with language pre-set loads with highlighting after reload
+- Highlighting persists after theme toggle
+
 ### Project Structure
 
 ```
@@ -399,7 +406,8 @@ yPad/
 │   │   ├── stores/
 │   │   │   └── theme.svelte.ts
 │   │   ├── utils/
-│   │   │   └── cn.ts
+│   │   │   ├── cn.ts
+│   │   │   └── highlighter.ts      # Lazy-loaded syntax highlighter
 │   │   └── crypto.ts               # Client-side encryption (AES-GCM)
 │   ├── App.svelte                  # Main app component
 │   ├── app.css                     # Global styles
@@ -427,14 +435,15 @@ yPad/
 │   ├── handlers/                   # Message handler tests
 │   ├── hooks/                      # Svelte hook tests
 │   └── rate-limiting/              # Rate limiting tests
-├── e2e/                            # Playwright e2e tests (74 tests)
+├── e2e/                            # Playwright e2e tests (83 tests)
 │   ├── collaborative-editing.spec.ts # Cursor preservation & editing (14 tests)
 │   ├── e2e-encryption.spec.ts      # E2E encryption security (9 tests)
 │   ├── editor-limits.spec.ts       # Editor limit tests (16 tests)
 │   ├── latency-sync.spec.ts        # CRDT sync with latency (13 tests)
 │   ├── rate-limiting.spec.ts       # Rate limiting tests (7 tests)
 │   ├── remote-cursors.spec.ts      # Remote cursor sync tests (8 tests)
-│   └── status-indicator.spec.ts    # Status display tests (7 tests)
+│   ├── status-indicator.spec.ts    # Status display tests (7 tests)
+│   └── syntax-highlighting.spec.ts # Syntax highlighting tests (9 tests)
 ├── public/                         # Static assets
 │   ├── icons/                      # Favicon icons
 │   ├── favicon.ico
