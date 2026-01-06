@@ -258,11 +258,9 @@ export function useNoteOperations(config: NoteOperationsConfig) {
         }, 100);
       }
 
-      // Update lastLocalContent after successful save for encrypted notes
+      // Update lastLocalContent after successful save to prevent re-triggering auto-save
       // Use originalContent (the content that was actually saved) to avoid race conditions
-      if (security.isEncrypted) {
-        editor.lastLocalContent = originalContent;
-      }
+      editor.lastLocalContent = originalContent;
 
       noteState.saveStatus = 'Saved';
       setTimeout(() => {

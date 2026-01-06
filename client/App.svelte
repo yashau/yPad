@@ -322,13 +322,10 @@
       editor.content = newContent;
       editor.lastLocalContent = newContent;
     } else {
-      // For non-realtime modes (encrypted notes, no WebSocket), update content immediately
+      // For non-realtime modes (encrypted notes, new notes without WebSocket), update content immediately
+      // Don't update lastLocalContent here - it should only be updated after successful save
+      // so the auto-save effect can detect changes and trigger saveNote()
       editor.content = newContent;
-      // Don't update lastLocalContent here for encrypted notes - it should only be updated
-      // after successful save so the auto-save effect can detect changes
-      if (!security.isEncrypted) {
-        editor.lastLocalContent = newContent;
-      }
     }
   }
 

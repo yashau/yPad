@@ -78,7 +78,7 @@ export function useCollaboration() {
   function cleanupStaleCursors(connectedWsClientIds: string[]) {
     // First, clean up the mapping for disconnected clients
     const disconnectedWsIds: string[] = [];
-    wsToAwarenessMap.forEach((awarenessId, wsId) => {
+    wsToAwarenessMap.forEach((_awarenessId, wsId) => {
       if (!connectedWsClientIds.includes(wsId)) {
         disconnectedWsIds.push(wsId);
       }
@@ -125,12 +125,13 @@ export function useCollaboration() {
     const updatedCursors = new Map<string, RemoteCursorData>();
 
     cursors.forEach((cursorState, awarenessClientId) => {
-      updatedCursors.set(String(awarenessClientId), {
+      const cursorData = {
         position: cursorState.position,
         selectionEnd: cursorState.selectionEnd,
         color: cursorState.color,
         label: cursorState.name
-      });
+      };
+      updatedCursors.set(String(awarenessClientId), cursorData);
     });
 
     remoteCursors = updatedCursors;

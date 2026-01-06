@@ -1,10 +1,14 @@
 import { test, expect, Page, Browser, BrowserContext, APIRequestContext } from '@playwright/test';
 
 /**
- * Comprehensive Real-time Yjs CRDT E2E Tests
+ * Latency Sync E2E Tests - Content Convergence Under Network Delays
  *
  * Tests 3 clients with varying network latencies (50ms-300ms)
  * performing all types of text operations concurrently.
+ *
+ * IMPORTANT: These tests focus ONLY on content convergence (eventual consistency).
+ * They do NOT test cursor preservation during edits - for cursor position tests,
+ * see collaborative-editing.spec.ts instead.
  *
  * Uses server-side latency injection via /api/notes/:id/test-latency endpoint
  * because CDP network emulation doesn't affect WebSocket connections.

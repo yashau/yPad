@@ -6,7 +6,7 @@
  */
 
 import { WebSocketClient } from '../realtime/WebSocketClient';
-import { YjsManager, type SavedCursorState } from '../yjs/YjsManager';
+import { YjsManager } from '../yjs/YjsManager';
 import type { useNoteState } from './useNoteState.svelte';
 import type { useEditor } from './useEditor.svelte';
 import type { useSecurity } from './useSecurity.svelte';
@@ -52,15 +52,32 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         }
       },
       onContentChange: (content) => {
-        // Update editor content when Yjs document changes
-        // Note: isUpdating is managed by the caller (onYjsUpdate, onYjsSync, etc.)
-        // to ensure proper cursor restoration coordination with EditorView
+        // Update editor content state (textarea is already updated directly by YjsManager)
+        // This keeps Svelte state in sync for other UI elements that depend on content
         editor.content = content;
         editor.lastLocalContent = content;
       },
       onRemoteCursorsChange: (cursors) => {
         // Update remote cursors from awareness
         collaboration.updateRemoteCursorsFromAwareness(cursors);
+      },
+      // CRITICAL: Provide editor element reference for direct DOM manipulation
+      // This bypasses Svelte's reactivity to ensure cursor position is preserved
+      // during remote updates (the same approach used by y-textarea)
+      getEditorElement: () => {
+        // Return the appropriate editor element based on current mode
+        // Plaintext mode uses textarea, syntax highlight mode uses contenteditable div
+        if (editor.syntaxHighlight === 'plaintext') {
+          return {
+            element: editor.textareaScrollRef,
+            isTextarea: true
+          };
+        } else {
+          return {
+            element: editor.editorRef,
+            isTextarea: false
+          };
+        }
       }
     });
 
@@ -114,38 +131,18 @@ export function useWebSocketConnection(config: WebSocketConfig) {
           }
         },
         onYjsUpdate: (update, _clientId) => {
-          // Save cursor position before applying remote update
-          // We always save the cursor position (even when not focused) so that
-          // the cursor doesn't jump when user switches back to the editor
-          let savedCursor: SavedCursorState | null = null;
-          const textarea = editor.textareaScrollRef;
-          if (textarea) {
-            savedCursor = yjsManager.saveCursorPosition(
-              textarea.selectionStart,
-              textarea.selectionEnd
-            );
-          }
-
-          // Set isUpdating to prevent EditorView from doing its own cursor restoration
+          // Set isUpdating to prevent EditorView from interfering with cursor
+          // YjsManager handles cursor preservation internally via beforeTransaction
           editor.isUpdating = true;
 
-          // Apply remote Yjs update (this triggers onContentChange synchronously)
+          // Apply remote Yjs update - YjsManager will:
+          // 1. Save cursor position (beforeTransaction)
+          // 2. Apply the update
+          // 3. Update textarea value directly and restore cursor (text observer)
           yjsManager.applyUpdate(update);
 
-          // Restore cursor position after Svelte has updated the textarea
-          // Use requestAnimationFrame to ensure we run after Svelte's reactive updates
-          if (savedCursor && textarea) {
-            requestAnimationFrame(() => {
-              const restored = yjsManager.restoreCursorPosition(savedCursor!);
-              if (restored) {
-                textarea.setSelectionRange(restored.start, restored.end);
-              }
-              // Now it's safe to allow EditorView to manage cursor again
-              editor.isUpdating = false;
-            });
-          } else {
-            editor.isUpdating = false;
-          }
+          // Reset isUpdating synchronously since YjsManager handles everything
+          editor.isUpdating = false;
         },
         onAwarenessUpdate: (update, wsClientId) => {
           // Apply remote awareness update and get the awareness client IDs
@@ -377,6 +374,10 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     if (!collaboration.yjsManager || !collaboration.isRealtimeEnabled || noteState.viewMode || security.isEncrypted) {
       return;
     }
+
+    // Mark that this change comes from local textarea input
+    // This prevents YjsManager from updating the DOM again (it already has the value)
+    collaboration.yjsManager.markLocalTextfieldChange();
 
     // Yjs will automatically generate and send the update via onLocalUpdate callback
     collaboration.yjsManager.replaceContent(newContent);

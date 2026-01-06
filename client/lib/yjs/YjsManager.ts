@@ -16,6 +16,13 @@ export interface YjsManagerOptions {
   onRemoteCursorsChange?: (cursors: Map<number, RemoteCursorState>) => void;
   /** Debounce interval for batching updates (default: 50ms) */
   updateDebounceMs?: number;
+  /**
+   * Get the active editor element for direct DOM manipulation.
+   * Returns textarea for plaintext mode, or contenteditable div for syntax highlight mode.
+   * This is critical for cursor preservation - we need to update the content
+   * and restore cursor position synchronously, bypassing framework reactivity.
+   */
+  getEditorElement?: () => { element: HTMLTextAreaElement | HTMLDivElement | null; isTextarea: boolean };
 }
 
 export interface RemoteCursorState {
@@ -87,7 +94,77 @@ export class YjsManager {
     this.setupObservers();
   }
 
+  // Flag to track if the current change originated from local textarea input
+  private localTextfieldChanged = false;
+
+  /**
+   * Mark that the next change will come from local textarea input.
+   * Call this BEFORE applying local changes to skip unnecessary DOM updates.
+   */
+  markLocalTextfieldChange(): void {
+    this.localTextfieldChanged = true;
+  }
+
   private setupObservers(): void {
+    // Cursor state saved BEFORE any Yjs transaction for restoration after
+    let savedRelPosStart: Y.RelativePosition | null = null;
+    let savedRelPosEnd: Y.RelativePosition | null = null;
+    let savedSelectionDirection: 'forward' | 'backward' | 'none' | null = null;
+
+    // CRITICAL: Listen for beforeTransaction to save cursor position BEFORE any changes
+    // This is the key to cursor preservation - we must capture the cursor state
+    // before Yjs modifies the document, because after the transaction starts,
+    // the editor value may already be out of sync with what we're trying to save.
+    this.doc.on('beforeTransaction', () => {
+      const editorInfo = this.options.getEditorElement?.();
+      if (!editorInfo?.element) return;
+
+      const { element, isTextarea } = editorInfo;
+
+      if (isTextarea) {
+        // Textarea mode: use selectionStart/selectionEnd
+        const textarea = element as HTMLTextAreaElement;
+        savedSelectionDirection = textarea.selectionDirection;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        // Clamp to valid range
+        const textLength = this.text.length;
+        const clampedStart = Math.max(0, Math.min(start, textLength));
+        const clampedEnd = Math.max(0, Math.min(end, textLength));
+        savedRelPosStart = Y.createRelativePositionFromTypeIndex(this.text, clampedStart);
+        savedRelPosEnd = Y.createRelativePositionFromTypeIndex(this.text, clampedEnd);
+      } else {
+        // Contenteditable mode: use window.getSelection()
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+
+        const range = selection.getRangeAt(0);
+        const rootNode = element.getRootNode() as Document;
+
+        // Only save if the contenteditable is focused
+        if (rootNode.activeElement !== element) return;
+
+        // Calculate absolute character positions from the selection range
+        const { start, end } = this.getCharacterOffsetsFromRange(element as HTMLDivElement, range);
+
+        // Determine selection direction based on anchor/focus comparison
+        if (selection.anchorNode && selection.focusNode) {
+          const anchorOffset = this.getCharacterOffsetForNode(element as HTMLDivElement, selection.anchorNode, selection.anchorOffset);
+          const focusOffset = this.getCharacterOffsetForNode(element as HTMLDivElement, selection.focusNode, selection.focusOffset);
+          savedSelectionDirection = anchorOffset <= focusOffset ? 'forward' : 'backward';
+        } else {
+          savedSelectionDirection = 'forward';
+        }
+
+        // Clamp to valid range
+        const textLength = this.text.length;
+        const clampedStart = Math.max(0, Math.min(start, textLength));
+        const clampedEnd = Math.max(0, Math.min(end, textLength));
+        savedRelPosStart = Y.createRelativePositionFromTypeIndex(this.text, clampedStart);
+        savedRelPosEnd = Y.createRelativePositionFromTypeIndex(this.text, clampedEnd);
+      }
+    });
+
     // Listen for local document updates (to send to server)
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
       // Only send updates that originated locally (not from remote)
@@ -97,10 +174,78 @@ export class YjsManager {
     });
 
     // Listen for text content changes
-    this.text.observe(() => {
-      this.options.onContentChange?.(this.text.toString());
+    this.text.observe((_event, transaction) => {
+      const content = this.text.toString();
+
+      // If this change originated from local editor input, skip DOM update
+      // (the editor already has the correct value)
+      if (transaction.local && this.localTextfieldChanged) {
+        this.localTextfieldChanged = false;
+        this.options.onContentChange?.(content);
+        this.updateRemoteCursors();
+        return;
+      }
+
+      // CRITICAL: Update editor value and restore cursor DIRECTLY,
+      // bypassing framework reactivity. This is how y-textarea does it.
+      const editorInfo = this.options.getEditorElement?.();
+      if (editorInfo?.element) {
+        const { element, isTextarea } = editorInfo;
+        const rootNode = element.getRootNode() as Document;
+        const isFocused = rootNode.activeElement === element;
+
+        if (isTextarea) {
+          // Textarea mode: update value directly
+          const textarea = element as HTMLTextAreaElement;
+          textarea.value = content;
+
+          // Restore cursor if textarea is focused
+          if (isFocused && savedRelPosStart && savedRelPosEnd) {
+            const startPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosStart, this.doc);
+            const endPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosEnd, this.doc);
+
+            if (startPos !== null && endPos !== null) {
+              textarea.setSelectionRange(
+                startPos.index,
+                endPos.index,
+                savedSelectionDirection || 'forward'
+              );
+            }
+          }
+        } else {
+          // Contenteditable mode: update innerHTML/textContent
+          // For syntax highlighted content, we need to preserve the HTML structure
+          // The framework will re-render with proper highlighting, but we need to restore cursor
+          const div = element as HTMLDivElement;
+
+          // For contenteditable, we update textContent which triggers the framework
+          // to re-render with proper syntax highlighting via onContentChange callback.
+          // We save cursor position and restore after the callback updates the DOM.
+
+          // Restore cursor if contenteditable is focused
+          if (isFocused && savedRelPosStart && savedRelPosEnd) {
+            const startPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosStart, this.doc);
+            const endPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosEnd, this.doc);
+
+            if (startPos !== null && endPos !== null) {
+              // Use requestAnimationFrame to restore cursor after framework updates DOM
+              const savedStart = startPos.index;
+              const savedEnd = endPos.index;
+              requestAnimationFrame(() => {
+                // Re-check if still focused after RAF
+                if ((div.getRootNode() as Document).activeElement === div) {
+                  this.setCursorInContentEditable(div, savedStart, savedEnd);
+                }
+              });
+            }
+          }
+        }
+      }
+
+      // Still notify via callback for state sync (editor may already be updated for textarea)
+      this.options.onContentChange?.(content);
+
       // Re-compute remote cursor positions when content changes
-      // (relative positions need to be converted to new absolute positions)
       this.updateRemoteCursors();
     });
 
@@ -187,13 +332,40 @@ export class YjsManager {
         let selectionEnd: number | undefined;
 
         if (cursor.anchor) {
-          // New format: relative positions
-          const anchorAbs = Y.createAbsolutePositionFromRelativePosition(cursor.anchor, this.doc);
-          position = anchorAbs?.index ?? 0;
+          // New format: relative positions stored as JSON
+          // Convert JSON back to RelativePosition, then to absolute position
+          try {
+            const anchorRelPos = Y.createRelativePositionFromJSON(cursor.anchor);
+            const anchorAbs = Y.createAbsolutePositionFromRelativePosition(anchorRelPos, this.doc);
 
-          if (cursor.head) {
-            const headAbs = Y.createAbsolutePositionFromRelativePosition(cursor.head, this.doc);
-            selectionEnd = headAbs?.index;
+            if (anchorAbs === null) {
+              // The relative position couldn't be resolved - the referenced item doesn't exist
+              // in this document. This can happen if the cursor was set on content that
+              // hasn't synced to this client yet. Skip this cursor.
+              console.warn('[YjsManager] Could not resolve relative position for client', clientId,
+                '- item not found in local doc. Skipping cursor.');
+              return;
+            }
+
+            position = anchorAbs.index;
+
+            if (cursor.head) {
+              const headRelPos = Y.createRelativePositionFromJSON(cursor.head);
+              const headAbs = Y.createAbsolutePositionFromRelativePosition(headRelPos, this.doc);
+              selectionEnd = headAbs?.index;
+            }
+          } catch (e) {
+            console.warn('[YjsManager] Failed to parse cursor JSON, using fallback:', e);
+            // Fallback: try using the object directly (old format)
+            const anchorAbs = Y.createAbsolutePositionFromRelativePosition(cursor.anchor, this.doc);
+            if (anchorAbs === null) {
+              return;
+            }
+            position = anchorAbs.index;
+            if (cursor.head) {
+              const headAbs = Y.createAbsolutePositionFromRelativePosition(cursor.head, this.doc);
+              selectionEnd = headAbs?.index;
+            }
           }
         } else {
           // Legacy format: absolute positions (for backwards compatibility)
@@ -341,6 +513,7 @@ export class YjsManager {
   /**
    * Set local cursor position for awareness.
    * Uses Yjs relative positions so cursors track correctly when other users edit.
+   * We store positions as JSON to ensure proper serialization through awareness protocol.
    */
   setLocalCursor(position: number, selectionEnd?: number): void {
     // Clamp positions to valid range
@@ -355,9 +528,14 @@ export class YjsManager {
     const anchor = Y.createRelativePositionFromTypeIndex(this.text, clampedPosition);
     const head = Y.createRelativePositionFromTypeIndex(this.text, clampedEnd);
 
+    // Convert to JSON format for awareness serialization
+    // This ensures proper structure is maintained through JSON stringify/parse
+    const anchorJSON = Y.relativePositionToJSON(anchor);
+    const headJSON = Y.relativePositionToJSON(head);
+
     this.awareness.setLocalStateField('cursor', {
-      anchor,
-      head
+      anchor: anchorJSON,
+      head: headJSON
     });
   }
 
@@ -518,6 +696,121 @@ export class YjsManager {
       start: anchorAbs.index,
       end: headAbs.index
     };
+  }
+
+  /**
+   * Get character offsets from a Range within a contenteditable element.
+   * Walks the DOM tree and counts characters to find absolute positions.
+   */
+  private getCharacterOffsetsFromRange(container: HTMLElement, range: Range): { start: number; end: number } {
+    const start = this.getCharacterOffsetForNode(container, range.startContainer, range.startOffset);
+    const end = this.getCharacterOffsetForNode(container, range.endContainer, range.endOffset);
+    return { start: Math.min(start, end), end: Math.max(start, end) };
+  }
+
+  /**
+   * Get the absolute character offset for a node and offset within a contenteditable.
+   * This counts all text characters before the given position.
+   */
+  private getCharacterOffsetForNode(container: HTMLElement, targetNode: Node, targetOffset: number): number {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let charCount = 0;
+    let node: Node | null = null;
+
+    while ((node = walker.nextNode())) {
+      if (node === targetNode) {
+        return charCount + targetOffset;
+      }
+      charCount += node.textContent?.length || 0;
+    }
+
+    // If targetNode is not a text node but an element, handle offset as child index
+    if (targetNode === container || container.contains(targetNode)) {
+      // If targeting the container itself, offset is the child index
+      if (targetNode.nodeType === Node.ELEMENT_NODE) {
+        const children = Array.from(targetNode.childNodes);
+        for (let i = 0; i < Math.min(targetOffset, children.length); i++) {
+          charCount += this.getTextContentLength(children[i]);
+        }
+        return charCount;
+      }
+    }
+
+    // Fallback: return the total length if node wasn't found
+    return container.textContent?.length || 0;
+  }
+
+  /**
+   * Get the total text content length of a node and all its descendants.
+   */
+  private getTextContentLength(node: Node): number {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent?.length || 0;
+    }
+    let length = 0;
+    node.childNodes.forEach(child => {
+      length += this.getTextContentLength(child);
+    });
+    return length;
+  }
+
+  /**
+   * Set the cursor position in a contenteditable element.
+   * Creates a Range at the specified character offset.
+   */
+  private setCursorInContentEditable(container: HTMLElement, start: number, end: number): void {
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const range = document.createRange();
+    const startPos = this.findNodeAndOffsetAtCharacter(container, start);
+    const endPos = this.findNodeAndOffsetAtCharacter(container, end);
+
+    if (startPos && endPos) {
+      range.setStart(startPos.node, startPos.offset);
+      range.setEnd(endPos.node, endPos.offset);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }
+
+  /**
+   * Find the DOM node and offset for a given character position.
+   */
+  private findNodeAndOffsetAtCharacter(container: HTMLElement, charPosition: number): { node: Node; offset: number } | null {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let charCount = 0;
+    let node: Node | null = null;
+
+    while ((node = walker.nextNode())) {
+      const nodeLength = node.textContent?.length || 0;
+      if (charCount + nodeLength >= charPosition) {
+        return { node, offset: charPosition - charCount };
+      }
+      charCount += nodeLength;
+    }
+
+    // If position is beyond content, return end of last text node
+    const lastTextNode = this.getLastTextNode(container);
+    if (lastTextNode) {
+      return { node: lastTextNode, offset: lastTextNode.textContent?.length || 0 };
+    }
+
+    // If no text nodes exist, return the container itself
+    return { node: container, offset: 0 };
+  }
+
+  /**
+   * Get the last text node in a container.
+   */
+  private getLastTextNode(container: HTMLElement): Text | null {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let lastNode: Text | null = null;
+    let node: Node | null = null;
+    while ((node = walker.nextNode())) {
+      lastNode = node as Text;
+    }
+    return lastNode;
   }
 
   /**

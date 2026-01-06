@@ -108,17 +108,22 @@
   // Sync textarea value when content changes from parent (e.g., server updates)
   $effect(() => {
     if (textareaScrollRef && textareaScrollRef.value !== content) {
+      // Save cursor position BEFORE changing value - browser may reset it when value changes
+      const cursorStart = textareaScrollRef.selectionStart;
+      const cursorEnd = textareaScrollRef.selectionEnd;
       const scrollTop = textareaScrollRef.scrollTop;
+
       textareaScrollRef.value = content;
+
       // Only restore cursor if NOT in the middle of applying a remote operation.
-      // When isUpdating is true, applyRemoteOperation will handle cursor restoration
-      // with the correctly transformed position.
+      // When isUpdating is true, the WebSocket handler will restore cursor
+      // using Yjs relative positions for correct tracking.
       if (!isUpdating) {
-        const cursorPos = textareaScrollRef.selectionStart;
-        if (cursorPos <= content.length) {
-          textareaScrollRef.selectionStart = cursorPos;
-          textareaScrollRef.selectionEnd = cursorPos;
-        }
+        // Clamp cursor position to valid range
+        const newCursorStart = Math.min(cursorStart, content.length);
+        const newCursorEnd = Math.min(cursorEnd, content.length);
+        textareaScrollRef.selectionStart = newCursorStart;
+        textareaScrollRef.selectionEnd = newCursorEnd;
       }
       textareaScrollRef.scrollTop = scrollTop;
     }
