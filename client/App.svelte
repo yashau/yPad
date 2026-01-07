@@ -315,6 +315,23 @@
     };
   });
 
+  // Update document title based on note content
+  $effect(() => {
+    const content = editor.content.trim();
+    if (!content) {
+      document.title = 'yPad';
+      return;
+    }
+    // Get first non-empty line, truncated to 100 chars
+    const firstLine = content.split('\n').find(line => line.trim()) || '';
+    if (!firstLine) {
+      document.title = 'yPad';
+      return;
+    }
+    const snippet = firstLine.length > 100 ? firstLine.substring(0, 100) + '…' : firstLine;
+    document.title = `yPad · ${snippet}`;
+  });
+
   // Auto-save effect
   $effect(() => {
     editor.content;

@@ -40,7 +40,6 @@
   let containerWidth = $state(0);
   let measureDiv: HTMLDivElement | null = $state(null);
   let lineInfo = $state<Array<{lineNumber: number, visualLineCount: number}>>([{lineNumber: 1, visualLineCount: 1}]);
-  let scrollRAF: number | null = null;
 
   // Measure container width on resize
   $effect(() => {
@@ -141,34 +140,21 @@
     }
   }
 
-  // Smooth scroll sync for line numbers using RAF
-  function syncLineNumbersScroll(scrollElement: HTMLElement) {
-    if (scrollRAF !== null) {
-      cancelAnimationFrame(scrollRAF);
-    }
-    scrollRAF = requestAnimationFrame(() => {
-      if (lineNumbersRef) {
-        lineNumbersRef.scrollTop = scrollElement.scrollTop;
-      }
-      scrollRAF = null;
-    });
-  }
-
   // Set up scroll listener on the scrolling element (textarea or contenteditable)
   $effect(() => {
     const scrollElement = syntaxHighlight === 'plaintext' ? textareaScrollRef : editorRef;
     if (!scrollElement) return;
 
     function handleScroll(e: Event) {
-      syncLineNumbersScroll(e.target as HTMLElement);
+      // Sync immediately without RAF to eliminate visual lag
+      if (lineNumbersRef) {
+        lineNumbersRef.scrollTop = (e.target as HTMLElement).scrollTop;
+      }
     }
 
     scrollElement.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       scrollElement.removeEventListener('scroll', handleScroll);
-      if (scrollRAF !== null) {
-        cancelAnimationFrame(scrollRAF);
-      }
     };
   });
 </script>
