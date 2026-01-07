@@ -257,7 +257,7 @@
       const keyEvent = e as KeyboardEvent;
 
       // Handle Tab key - insert spaces instead of changing focus
-      if (keyEvent.key === 'Tab' && !keyEvent.ctrlKey && !keyEvent.altKey && !keyEvent.metaKey) {
+      if (keyEvent.key === 'Tab' && !keyEvent.shiftKey && !keyEvent.ctrlKey && !keyEvent.altKey && !keyEvent.metaKey) {
         e.preventDefault();
 
         // Insert 2 spaces (common convention for code editors)
@@ -291,6 +291,56 @@
             selection.addRange(range);
             // Trigger input handler with updated content
             handleEditorInput(() => editor.editorRef?.textContent || '');
+          }
+        }
+
+        return;
+      }
+
+      // Handle Shift+Tab - dedent (remove leading spaces)
+      if (keyEvent.key === 'Tab' && keyEvent.shiftKey && !keyEvent.ctrlKey && !keyEvent.altKey && !keyEvent.metaKey) {
+        e.preventDefault();
+
+        if (editor.syntaxHighlight === 'plaintext' && editor.textareaScrollRef) {
+          const textarea = editor.textareaScrollRef;
+          const start = textarea.selectionStart;
+          const value = textarea.value;
+
+          // Find the start of the current line
+          const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+          const lineContent = value.substring(lineStart);
+
+          // Check if line starts with spaces (up to 2)
+          const leadingSpaces = lineContent.match(/^( {1,2})/);
+          if (leadingSpaces) {
+            const spacesToRemove = leadingSpaces[1].length;
+            textarea.value = value.substring(0, lineStart) + value.substring(lineStart + spacesToRemove);
+
+            // Adjust cursor position
+            const newPos = Math.max(lineStart, start - spacesToRemove);
+            textarea.selectionStart = newPos;
+            textarea.selectionEnd = newPos;
+
+            handleEditorInput(() => textarea.value);
+          }
+        } else if (editor.editorRef) {
+          const selection = window.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const content = editor.editorRef.textContent || '';
+            const cursorPos = wsConnection.getCurrentCursorPosition();
+
+            // Find the start of the current line
+            const lineStart = content.lastIndexOf('\n', cursorPos - 1) + 1;
+            const lineContent = content.substring(lineStart);
+
+            // Check if line starts with spaces (up to 2)
+            const leadingSpaces = lineContent.match(/^( {1,2})/);
+            if (leadingSpaces) {
+              const spacesToRemove = leadingSpaces[1].length;
+              const newContent = content.substring(0, lineStart) + content.substring(lineStart + spacesToRemove);
+
+              handleEditorInput(() => newContent);
+            }
           }
         }
 
