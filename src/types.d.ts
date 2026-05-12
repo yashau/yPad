@@ -4,8 +4,6 @@
 
 /// <reference types="@cloudflare/workers-types" />
 
-export {};
-
 declare global {
   /** Cloudflare Workers environment bindings. */
   interface Env {
@@ -36,3 +34,5 @@ declare module "fast-diff" {
 
   export default diff;
 }
+
+export {};

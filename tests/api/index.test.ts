@@ -3,68 +3,9 @@
  * Tests the Hono API endpoints with mocked D1 database
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Hono } from "hono";
+import { describe, it, expect } from "vitest";
 import { LIMITS, CUSTOM_ID_PATTERN } from "../../config/constants";
 import { ALLOWED_SYNTAX_MODES } from "../../config/languages";
-
-// Mock D1 database
-function createMockDB() {
-  const mockNotes = new Map<string, any>();
-
-  const createMockStatement = (result: any) => ({
-    bind: vi.fn().mockReturnThis(),
-    first: vi.fn().mockResolvedValue(result),
-    all: vi.fn().mockResolvedValue({ results: result ? [result] : [] }),
-    run: vi.fn().mockResolvedValue({ meta: { changes: 1 } }),
-  });
-
-  return {
-    prepare: vi.fn((sql: string) => {
-      // Return appropriate mock based on SQL
-      if (sql.includes("SELECT") && sql.includes("FROM notes")) {
-        return createMockStatement(null); // Default: note not found
-      }
-      if (sql.includes("INSERT INTO notes")) {
-        return createMockStatement(null);
-      }
-      if (sql.includes("UPDATE notes")) {
-        return createMockStatement({ version: 1 });
-      }
-      if (sql.includes("DELETE FROM notes")) {
-        return createMockStatement(null);
-      }
-      return createMockStatement(null);
-    }),
-    _mockNotes: mockNotes,
-  };
-}
-
-// Mock Durable Object
-function createMockDO() {
-  return {
-    idFromName: vi.fn().mockReturnValue({ id: "test-do-id" }),
-    get: vi.fn().mockReturnValue({
-      fetch: vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            content: "test content",
-            version: 1,
-            syntax_highlight: "plaintext",
-            is_encrypted: false,
-          }),
-        ),
-      ),
-    }),
-  };
-}
-
-// Mock ASSETS fetcher
-function createMockAssets() {
-  return {
-    fetch: vi.fn().mockResolvedValue(new Response("<html></html>")),
-  };
-}
 
 describe("API Constants and Validation", () => {
   describe("LIMITS", () => {
@@ -500,7 +441,6 @@ describe("Version conflict detection", () => {
 
   it("should skip check when expected version is null", () => {
     const expectedVersion = null;
-    const currentVersion = 5;
     const shouldCheck = expectedVersion !== null;
     expect(shouldCheck).toBe(false);
   });

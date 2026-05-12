@@ -190,8 +190,8 @@
           return null; // Different host, reject
         }
         // Extract path and remove leading/trailing slashes
-        const noteId = url.pathname.replace(/^\/+|\/+$/g, '');
-        return noteId || null;
+        const parsedNoteId = url.pathname.replace(/^\/+|\/+$/g, '');
+        return parsedNoteId || null;
       } catch {
         // Invalid URL, treat as note ID
         return trimmed;

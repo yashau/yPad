@@ -515,7 +515,7 @@ app.put("/api/notes/:id", rateLimit(RATE_LIMITS.API.UPDATE_PER_MINUTE), async (c
 });
 
 app.get("/api/check/:id", async (c) => {
-  const id = c.req.param("id")!;
+  const id = c.req.param("id");
 
   const note = await c.env.DB.prepare("SELECT id FROM notes WHERE id = ?").bind(id).first();
 
@@ -523,7 +523,7 @@ app.get("/api/check/:id", async (c) => {
 });
 
 app.post("/api/notes/:id/refresh", async (c) => {
-  const id = c.req.param("id")!;
+  const id = c.req.param("id");
 
   // Force Durable Object to refresh from database
   try {
@@ -540,7 +540,7 @@ app.post("/api/notes/:id/refresh", async (c) => {
 
 // Test endpoint: Set artificial latency for WebSocket message processing (E2E testing only)
 app.post("/api/notes/:id/test-latency", async (c) => {
-  const id = c.req.param("id")!;
+  const id = c.req.param("id");
   const body = (await c.req.json()) as { latencyMs: number };
 
   try {

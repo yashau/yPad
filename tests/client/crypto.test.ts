@@ -3,7 +3,7 @@
  * Tests encryption and decryption functions
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { encryptContent, decryptContent } from "../../client/lib/crypto";
 
 describe("encryptContent", () => {
@@ -252,11 +252,10 @@ describe("Salt and IV handling", () => {
 describe("Error handling", () => {
   it("should handle malformed base64 gracefully", async () => {
     const malformedBase64 = "not valid base64!!!";
-    const password = "secret";
 
     // atob will throw on invalid base64
     await expect(async () => {
-      const decoded = atob(malformedBase64);
+      atob(malformedBase64);
     }).rejects.toThrow();
   });
 

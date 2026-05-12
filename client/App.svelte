@@ -5,7 +5,7 @@
   Handles URL routing, auto-save, and Yjs CRDT synchronization.
 -->
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { getHighlighter, highlightSync, isHighlighterLoaded } from './lib/utils/highlighter';
 
   // Hooks
@@ -152,6 +152,127 @@
   // State for syntax highlighting (async loading)
   let highlightedHtml = $state(editor.content);
   let highlighterReady = $state(false);
+  let pendingSyntaxSelection: { start: number; end: number } | null = null;
+
+  function getTextContentLength(node: Node): number {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent?.length || 0;
+    }
+
+    let length = 0;
+    node.childNodes.forEach((child) => {
+      length += getTextContentLength(child);
+    });
+    return length;
+  }
+
+  function getCharacterOffsetForNode(
+    container: HTMLElement,
+    targetNode: Node,
+    targetOffset: number,
+  ): number {
+    if (!container.contains(targetNode) && targetNode !== container) {
+      return 0;
+    }
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let charCount = 0;
+    let node: Node | null = null;
+
+    while ((node = walker.nextNode())) {
+      if (node === targetNode) {
+        return charCount + targetOffset;
+      }
+
+      charCount += node.textContent?.length || 0;
+    }
+
+    if (targetNode.nodeType === Node.ELEMENT_NODE) {
+      const children = Array.from(targetNode.childNodes);
+      let offset = 0;
+
+      for (let i = 0; i < Math.min(targetOffset, children.length); i++) {
+        offset += getTextContentLength(children[i]);
+      }
+
+      if (targetNode === container) {
+        return offset;
+      }
+
+      const parent = targetNode.parentNode || container;
+      const childIndex = Array.prototype.indexOf.call(parent.childNodes, targetNode) as number;
+      return getCharacterOffsetForNode(container, parent, childIndex) + offset;
+    }
+
+    return container.textContent?.length || 0;
+  }
+
+  function getSyntaxSelection(): { start: number; end: number } | null {
+    if (!editor.editorRef || document.activeElement !== editor.editorRef) return null;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+
+    const range = selection.getRangeAt(0);
+    const start = getCharacterOffsetForNode(editor.editorRef, range.startContainer, range.startOffset);
+    const end = getCharacterOffsetForNode(editor.editorRef, range.endContainer, range.endOffset);
+
+    return { start: Math.min(start, end), end: Math.max(start, end) };
+  }
+
+  function findNodeAndOffsetAtCharacter(
+    container: HTMLElement,
+    charPosition: number,
+  ): { node: Node; offset: number } {
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let charCount = 0;
+    let lastTextNode: Node | null = null;
+    let node: Node | null = null;
+
+    while ((node = walker.nextNode())) {
+      lastTextNode = node;
+      const nodeLength = node.textContent?.length || 0;
+      if (charCount + nodeLength >= charPosition) {
+        return { node, offset: charPosition - charCount };
+      }
+      charCount += nodeLength;
+    }
+
+    if (lastTextNode) {
+      return { node: lastTextNode, offset: lastTextNode.textContent?.length || 0 };
+    }
+
+    return { node: container, offset: 0 };
+  }
+
+  function restoreSyntaxSelection(selectionRange: { start: number; end: number }) {
+    if (!editor.editorRef || editor.syntaxHighlight === 'plaintext') return;
+    if (document.activeElement !== editor.editorRef) return;
+
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    const textLength = editor.editorRef.textContent?.length || 0;
+    const start = Math.max(0, Math.min(selectionRange.start, textLength));
+    const end = Math.max(0, Math.min(selectionRange.end, textLength));
+    const startPos = findNodeAndOffsetAtCharacter(editor.editorRef, start);
+    const endPos = findNodeAndOffsetAtCharacter(editor.editorRef, end);
+
+    const range = document.createRange();
+    range.setStart(startPos.node, startPos.offset);
+    range.setEnd(endPos.node, endPos.offset);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function captureSyntaxSelection() {
+    if (editor.syntaxHighlight === 'plaintext') return;
+
+    const selectionRange = getSyntaxSelection();
+    if (selectionRange) {
+      pendingSyntaxSelection = selectionRange;
+    }
+  }
 
   // Load highlighter when syntax highlighting is needed
   $effect(() => {
@@ -184,56 +305,20 @@
     }
   });
 
-  // Update highlighted content when syntaxHighlight changes or content changes
+  // Restore syntax-mode cursor after Svelte replaces highlighted spans.
   $effect(() => {
-    if (editor.editorRef && editor.syntaxHighlight !== 'plaintext' && !editor.isUpdating) {
-      editor.isUpdating = true;
+    highlightedHtml;
+    editor.syntaxHighlight;
 
-      // Save cursor position
-      const selection = window.getSelection();
-      let cursorPos = 0;
-      const hadFocus = document.activeElement === editor.editorRef;
+    const selectionRange = pendingSyntaxSelection;
+    if (!selectionRange) return;
 
-      if (selection && selection.rangeCount > 0 && hadFocus) {
-        cursorPos = wsConnection.getCurrentCursorPosition();
+    tick().then(() => {
+      restoreSyntaxSelection(selectionRange);
+      if (pendingSyntaxSelection === selectionRange) {
+        pendingSyntaxSelection = null;
       }
-
-      // Update HTML
-      editor.editorRef.innerHTML = highlightedHtml || '';
-
-      // Restore cursor position
-      if (hadFocus) {
-        const textContentStr = editor.editorRef.textContent || '';
-        const newCursorPos = Math.min(cursorPos, textContentStr.length);
-
-        const walker = document.createTreeWalker(editor.editorRef, NodeFilter.SHOW_TEXT);
-        let charCount = 0;
-        let targetNode: Node | null = null;
-        let targetOffset = 0;
-
-        while (walker.nextNode()) {
-          const node = walker.currentNode;
-          const nodeLength = node.textContent?.length || 0;
-
-          if (charCount + nodeLength >= newCursorPos) {
-            targetNode = node;
-            targetOffset = newCursorPos - charCount;
-            break;
-          }
-          charCount += nodeLength;
-        }
-
-        if (targetNode && selection) {
-          const newRange = document.createRange();
-          newRange.setStart(targetNode, targetOffset);
-          newRange.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(newRange);
-        }
-      }
-
-      editor.isUpdating = false;
-    }
+    });
   });
 
   // Track cursor position changes for awareness
@@ -404,6 +489,7 @@
     }
 
     const newContent = getContent();
+    captureSyntaxSelection();
 
     if (collaboration.yjsManager && collaboration.isRealtimeEnabled && !noteState.viewMode && !security.isEncrypted) {
       // For realtime mode with Yjs, apply the change through YjsManager

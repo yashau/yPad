@@ -19,16 +19,7 @@
 
 import * as Y from "yjs";
 import { RATE_LIMITS } from "../../config/constants";
-import type {
-  WSMessage,
-  ClientSession,
-  YjsUpdateMessage,
-  YjsSyncMessage,
-  AwarenessUpdateMessage,
-  SyntaxChangeMessage,
-  YjsStateRequestMessage,
-  RequestEditMessage,
-} from "../types/messages";
+import type { WSMessage, ClientSession, YjsSyncMessage } from "../types/messages";
 import {
   handleYjsUpdate as handleYjsUpdateImpl,
   handleAwarenessUpdate as handleAwarenessUpdateImpl,
@@ -405,15 +396,15 @@ export class NoteSessionDurableObject implements DurableObject {
     const ctx = this.getContext();
 
     if (message.type === "yjs_update") {
-      await handleYjsUpdateImpl(ctx, ws, message as YjsUpdateMessage);
+      await handleYjsUpdateImpl(ctx, ws, message);
     } else if (message.type === "awareness_update") {
-      await handleAwarenessUpdateImpl(ctx, ws, message as AwarenessUpdateMessage);
+      await handleAwarenessUpdateImpl(ctx, ws, message);
     } else if (message.type === "yjs_state_request") {
-      await handleYjsStateRequestImpl(ctx, ws, message as YjsStateRequestMessage);
+      await handleYjsStateRequestImpl(ctx, ws, message);
     } else if (message.type === "syntax_change") {
-      await handleSyntaxChangeImpl(ctx, ws, message as SyntaxChangeMessage);
+      await handleSyntaxChangeImpl(ctx, ws, message);
     } else if (message.type === "request_edit") {
-      await handleRequestEditImpl(ctx, ws, message as RequestEditMessage);
+      await handleRequestEditImpl(ctx, ws, message);
     }
 
     // Sync state changes from handler back to the DO

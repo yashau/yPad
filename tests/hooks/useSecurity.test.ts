@@ -308,6 +308,7 @@ describe("useSecurity error handling logic", () => {
     passwordInput = "n";
     passwordError = ""; // Clear error on input
 
+    expect(passwordInput).toBe("n");
     expect(passwordError).toBe("");
   });
 
@@ -319,6 +320,7 @@ describe("useSecurity error handling logic", () => {
     removePasswordInput = "n";
     removePasswordError = ""; // Clear error on input
 
+    expect(removePasswordInput).toBe("n");
     expect(removePasswordError).toBe("");
   });
 

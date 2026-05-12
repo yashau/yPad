@@ -89,6 +89,6 @@ export async function decryptContent(encryptedBase64: string, password: string):
 
     return decoder.decode(decryptedData);
   } catch (error) {
-    throw new Error("Failed to decrypt: invalid password or corrupted data");
+    throw new Error("Failed to decrypt: invalid password or corrupted data", { cause: error });
   }
 }

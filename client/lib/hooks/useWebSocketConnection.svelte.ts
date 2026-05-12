@@ -280,6 +280,59 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     collaboration.isSyncing = false;
   }
 
+  function getTextContentLength(node: Node): number {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent?.length || 0;
+    }
+
+    let length = 0;
+    node.childNodes.forEach((child) => {
+      length += getTextContentLength(child);
+    });
+    return length;
+  }
+
+  function getCharacterOffsetForNode(
+    container: HTMLElement,
+    targetNode: Node,
+    targetOffset: number,
+  ): number {
+    if (!container.contains(targetNode) && targetNode !== container) {
+      return 0;
+    }
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let charCount = 0;
+    let node: Node | null = null;
+
+    while ((node = walker.nextNode())) {
+      if (node === targetNode) {
+        return charCount + targetOffset;
+      }
+
+      charCount += node.textContent?.length || 0;
+    }
+
+    if (targetNode.nodeType === Node.ELEMENT_NODE) {
+      const children = Array.from(targetNode.childNodes);
+      let offset = 0;
+
+      for (let i = 0; i < Math.min(targetOffset, children.length); i++) {
+        offset += getTextContentLength(children[i]);
+      }
+
+      if (targetNode === container) {
+        return offset;
+      }
+
+      const parent = targetNode.parentNode || container;
+      const childIndex = Array.prototype.indexOf.call(parent.childNodes, targetNode);
+      return getCharacterOffsetForNode(container, parent, childIndex) + offset;
+    }
+
+    return container.textContent?.length || 0;
+  }
+
   function getCurrentCursorPosition(): number {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
@@ -290,21 +343,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     const activeElement = document.activeElement;
 
     if (activeElement === editor.editorRef && editor.editorRef) {
-      const walker = document.createTreeWalker(editor.editorRef, NodeFilter.SHOW_TEXT);
-      let charCount = 0;
-      let node: Node | null = null;
-
-      while ((node = walker.nextNode())) {
-        if (node === range.startContainer) {
-          charCount += range.startOffset;
-          break;
-        }
-
-        const nodeLength = node.textContent?.length || 0;
-        charCount += nodeLength;
-      }
-
-      return charCount;
+      return getCharacterOffsetForNode(editor.editorRef, range.startContainer, range.startOffset);
     } else if (activeElement === editor.textareaScrollRef && editor.textareaScrollRef) {
       return editor.textareaScrollRef.selectionStart;
     }
@@ -322,32 +361,14 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     const activeElement = document.activeElement;
 
     if (activeElement === editor.editorRef && editor.editorRef) {
-      const walker = document.createTreeWalker(editor.editorRef, NodeFilter.SHOW_TEXT);
-      let charCount = 0;
-      let startPos = 0;
-      let endPos = 0;
-      let foundStart = false;
-      let foundEnd = false;
-      let node: Node | null = null;
+      const start = getCharacterOffsetForNode(
+        editor.editorRef,
+        range.startContainer,
+        range.startOffset,
+      );
+      const end = getCharacterOffsetForNode(editor.editorRef, range.endContainer, range.endOffset);
 
-      while ((node = walker.nextNode())) {
-        const nodeLength = node.textContent?.length || 0;
-
-        if (!foundStart && node === range.startContainer) {
-          startPos = charCount + range.startOffset;
-          foundStart = true;
-        }
-
-        if (!foundEnd && node === range.endContainer) {
-          endPos = charCount + range.endOffset;
-          foundEnd = true;
-        }
-
-        if (foundStart && foundEnd) break;
-        charCount += nodeLength;
-      }
-
-      return { start: startPos, end: endPos };
+      return { start: Math.min(start, end), end: Math.max(start, end) };
     } else if (activeElement === editor.textareaScrollRef && editor.textareaScrollRef) {
       return {
         start: editor.textareaScrollRef.selectionStart,

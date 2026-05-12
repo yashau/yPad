@@ -6,6 +6,6 @@ declare const __APP_VERSION__: string;
 
 declare module "*.svelte" {
   import type { ComponentType, SvelteComponent } from "svelte";
-  const component: ComponentType<SvelteComponent>;
+  const component: ComponentType;
   export default component;
 }

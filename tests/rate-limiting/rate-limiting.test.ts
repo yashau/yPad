@@ -3,7 +3,7 @@
  * Tests both REST API rate limiting and WebSocket rate limiting
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { RATE_LIMITS } from "../../config/constants";
 
 describe("RATE_LIMITS configuration", () => {

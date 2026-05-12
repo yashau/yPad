@@ -151,6 +151,58 @@ export async function typeInEditor(
  */
 export async function getCursorPosition(page: Page): Promise<number> {
   return page.evaluate(() => {
+    function getTextContentLength(node: Node): number {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent?.length || 0;
+      }
+
+      let length = 0;
+      node.childNodes.forEach((child) => {
+        length += getTextContentLength(child);
+      });
+      return length;
+    }
+
+    function getCharacterOffsetForNode(
+      container: HTMLElement,
+      targetNode: Node,
+      targetOffset: number,
+    ): number {
+      if (!container.contains(targetNode) && targetNode !== container) {
+        return 0;
+      }
+
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      let charCount = 0;
+      let node: Node | null = null;
+
+      while ((node = walker.nextNode())) {
+        if (node === targetNode) {
+          return charCount + targetOffset;
+        }
+        charCount += node.textContent?.length || 0;
+      }
+
+      if (targetNode.nodeType === Node.ELEMENT_NODE) {
+        const children = Array.from(targetNode.childNodes);
+        let offset = 0;
+
+        for (let i = 0; i < Math.min(targetOffset, children.length); i++) {
+          offset += getTextContentLength(children[i]);
+        }
+
+        if (targetNode === container) {
+          return offset;
+        }
+
+        const parent = targetNode.parentNode || container;
+        const childIndex = Array.prototype.indexOf.call(parent.childNodes, targetNode) as number;
+        return getCharacterOffsetForNode(container, parent, childIndex) + offset;
+      }
+
+      return container.textContent?.length || 0;
+    }
+
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       return textarea.selectionStart ?? -1;
@@ -161,16 +213,7 @@ export async function getCursorPosition(page: Page): Promise<number> {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) return -1;
       const range = selection.getRangeAt(0);
-      const walker = document.createTreeWalker(contentEditable, NodeFilter.SHOW_TEXT);
-      let charCount = 0;
-      let node: Node | null = null;
-      while ((node = walker.nextNode())) {
-        if (node === range.startContainer) {
-          return charCount + range.startOffset;
-        }
-        charCount += node.textContent?.length || 0;
-      }
-      return charCount;
+      return getCharacterOffsetForNode(contentEditable, range.startContainer, range.startOffset);
     }
     return -1;
   });
@@ -217,6 +260,58 @@ export async function setCursorPosition(page: Page, position: number): Promise<v
  */
 export async function getSelectionRange(page: Page): Promise<{ start: number; end: number }> {
   return page.evaluate(() => {
+    function getTextContentLength(node: Node): number {
+      if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent?.length || 0;
+      }
+
+      let length = 0;
+      node.childNodes.forEach((child) => {
+        length += getTextContentLength(child);
+      });
+      return length;
+    }
+
+    function getCharacterOffsetForNode(
+      container: HTMLElement,
+      targetNode: Node,
+      targetOffset: number,
+    ): number {
+      if (!container.contains(targetNode) && targetNode !== container) {
+        return 0;
+      }
+
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+      let charCount = 0;
+      let node: Node | null = null;
+
+      while ((node = walker.nextNode())) {
+        if (node === targetNode) {
+          return charCount + targetOffset;
+        }
+        charCount += node.textContent?.length || 0;
+      }
+
+      if (targetNode.nodeType === Node.ELEMENT_NODE) {
+        const children = Array.from(targetNode.childNodes);
+        let offset = 0;
+
+        for (let i = 0; i < Math.min(targetOffset, children.length); i++) {
+          offset += getTextContentLength(children[i]);
+        }
+
+        if (targetNode === container) {
+          return offset;
+        }
+
+        const parent = targetNode.parentNode || container;
+        const childIndex = Array.prototype.indexOf.call(parent.childNodes, targetNode) as number;
+        return getCharacterOffsetForNode(container, parent, childIndex) + offset;
+      }
+
+      return container.textContent?.length || 0;
+    }
+
     const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       return {
@@ -230,22 +325,13 @@ export async function getSelectionRange(page: Page): Promise<{ start: number; en
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) return { start: -1, end: -1 };
       const range = selection.getRangeAt(0);
-      const walker = document.createTreeWalker(contentEditable, NodeFilter.SHOW_TEXT);
-      let charCount = 0;
-      let startPos = -1;
-      let endPos = -1;
-      let node: Node | null = null;
-      while ((node = walker.nextNode())) {
-        if (node === range.startContainer) {
-          startPos = charCount + range.startOffset;
-        }
-        if (node === range.endContainer) {
-          endPos = charCount + range.endOffset;
-          break;
-        }
-        charCount += node.textContent?.length || 0;
-      }
-      return { start: startPos, end: endPos };
+      const start = getCharacterOffsetForNode(
+        contentEditable,
+        range.startContainer,
+        range.startOffset,
+      );
+      const end = getCharacterOffsetForNode(contentEditable, range.endContainer, range.endOffset);
+      return { start: Math.min(start, end), end: Math.max(start, end) };
     }
     return { start: -1, end: -1 };
   });

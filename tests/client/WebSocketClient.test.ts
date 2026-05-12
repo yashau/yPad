@@ -12,11 +12,7 @@ import type {
   UserJoinedMessage,
   UserLeftMessage,
   SyntaxChangeMessage,
-  NoteStatusMessage,
 } from "../../src/types/messages";
-
-// Get the mock WebSocket class from our setup
-const MockWebSocket = (globalThis as any).WebSocket;
 
 // Helper to create base64 encoded test data
 function encodeBase64(data: Uint8Array): string {

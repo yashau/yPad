@@ -316,7 +316,6 @@ describe("useEditor syntax highlighting logic", () => {
   it("should handle syntax mode change", () => {
     let syntaxHighlight = "plaintext";
     let highlightedContent = "";
-    const content = "function test() {}";
 
     // Change to javascript
     syntaxHighlight = "javascript";

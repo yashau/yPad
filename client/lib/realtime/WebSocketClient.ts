@@ -18,7 +18,6 @@ import type {
   UserLeftMessage,
   SyntaxChangeMessage,
   SyntaxAckMessage,
-  NoteStatusMessage,
   RequestEditResponseMessage,
   EditorCountUpdateMessage,
   YjsStateResponseMessage,
@@ -245,25 +244,25 @@ export class WebSocketClient {
   private async handleMessage(message: WSMessage): Promise<void> {
     // Process Yjs sync immediately - it sets up sequence tracking
     if (message.type === "yjs_sync") {
-      await this.handleYjsSync(message as YjsSyncMessage);
+      await this.handleYjsSync(message);
       return;
     }
 
     // Process ACK immediately - not a broadcast message
     if (message.type === "yjs_ack") {
-      await this.handleYjsAck(message as YjsAckMessage);
+      await this.handleYjsAck(message);
       return;
     }
 
     // Process syntax ACK immediately
     if (message.type === "syntax_ack") {
-      await this.handleSyntaxAck(message as SyntaxAckMessage);
+      await this.handleSyntaxAck(message);
       return;
     }
 
     // Process Yjs state response immediately (recovery)
     if (message.type === "yjs_state_response") {
-      await this.handleYjsStateResponse(message as YjsStateResponseMessage);
+      await this.handleYjsStateResponse(message);
       return;
     }
 
@@ -320,7 +319,7 @@ export class WebSocketClient {
 
       case "note_status":
         if (this.options.onNoteStatus) {
-          const statusMsg = message as NoteStatusMessage;
+          const statusMsg = message;
           this.options.onNoteStatus(
             statusMsg.view_count,
             statusMsg.max_views,
@@ -330,12 +329,12 @@ export class WebSocketClient {
         break;
 
       case "request_edit_response":
-        await this.handleRequestEditResponse(message as RequestEditResponseMessage);
+        await this.handleRequestEditResponse(message);
         break;
 
       case "awareness_update":
         // Awareness updates don't use sequence numbers (cursor positions are ephemeral)
-        await this.handleAwarenessUpdate(message as AwarenessUpdateMessage);
+        await this.handleAwarenessUpdate(message);
         break;
 
       default:
@@ -389,23 +388,23 @@ export class WebSocketClient {
   private async processSequencedMessage(message: WSMessage): Promise<void> {
     switch (message.type) {
       case "yjs_update":
-        await this.handleYjsUpdate(message as YjsUpdateMessage);
+        await this.handleYjsUpdate(message);
         break;
 
       case "user_joined":
-        await this.handleUserJoined(message as UserJoinedMessage);
+        await this.handleUserJoined(message);
         break;
 
       case "user_left":
-        await this.handleUserLeft(message as UserLeftMessage);
+        await this.handleUserLeft(message);
         break;
 
       case "syntax_change":
-        await this.handleSyntaxChange(message as SyntaxChangeMessage);
+        await this.handleSyntaxChange(message);
         break;
 
       case "editor_count_update":
-        await this.handleEditorCountUpdate(message as EditorCountUpdateMessage);
+        await this.handleEditorCountUpdate(message);
         break;
 
       default:

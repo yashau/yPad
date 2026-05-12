@@ -1,6 +1,6 @@
 {
   "name": "ypad",
-  "version": "1.7.4",
+  "version": "1.8.0",
   "type": "module",
   "scripts": {
     "dev": "node scripts/writeWranglerConfig.mjs && wrangler dev --local --persist-to .wrangler/state",

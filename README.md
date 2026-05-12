@@ -212,7 +212,7 @@ Visit `http://127.0.0.1:8787` to see the app.
 
 ### Development Scripts
 
-yPad includes automated development and deployment scripts for both Windows and Mac/Linux:
+yPad includes local development scripts for both Windows and Mac/Linux:
 
 #### Quick Dev Server Restart (Recommended)
 
@@ -473,11 +473,10 @@ yPad/
 │   ├── icons/                      # Favicon icons
 │   ├── favicon.ico
 │   └── site.webmanifest
-├── scripts/                        # Automation scripts
+├── scripts/                        # Local development and config helpers
 │   ├── dev.ps1                     # Windows dev server script
 │   ├── dev.sh                      # Mac/Linux dev server script
-│   ├── prod.ps1                    # Windows production deployment
-│   └── prod.sh                     # Mac/Linux production deployment
+│   └── writeWranglerConfig.mjs     # Generates wrangler.toml from CI/local env
 ├── migrations/                     # D1 database migrations
 │   ├── 0001_initial_schema.sql
 │   └── 0002_add_yjs_state.sql
@@ -490,91 +489,49 @@ yPad/
 
 ## Deployment
 
-### Automated Production Deployment (Recommended)
+### GitHub Actions Deployment (Recommended)
 
-yPad includes automated deployment scripts that handle environment configuration, migrations, building, and deployment:
+Production deploys are handled by the `CI` workflow in `.github/workflows/ci.yml`.
+Every pull request runs formatting, type checks, lint, build, unit tests, and Playwright e2e tests.
+Pushes to `main` or `master` run the same checks and then deploy to Cloudflare Workers.
 
-#### Setup Environment Configuration
+The deployment job:
 
-1. **Copy the example environment file**:
+1. Installs dependencies with `pnpm install --frozen-lockfile`
+2. Runs `pnpm run check:ci`
+3. Builds with `pnpm run build`
+4. Runs `pnpm run test:unit`
+5. Installs Chromium and runs `pnpm run e2e`
+6. Generates `wrangler.toml` from repository variables and secrets
+7. Deploys with `pnpm run cf:deploy`
 
-   ```bash
-   cp .env.example .env
-   ```
+Configure these GitHub Actions secrets:
 
-2. **Edit `.env` with your production values**:
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_D1_DATABASE_ID` (or set `WRANGLER_D1_DATABASE_ID` as a repository variable)
 
-   ```bash
-   # Cloudflare Account ID (optional)
-   ACCOUNT_ID=your-account-id
+Configure these GitHub Actions variables as needed:
 
-   # Worker name for production
-   WORKER_NAME=ypad
+- `WRANGLER_COMPATIBILITY_DATE`
+- `WRANGLER_NAME`
+- `WRANGLER_ROUTE` or `WRANGLER_ROUTES_JSON`
+- `WRANGLER_D1_DATABASE_NAME`
+- `WRANGLER_D1_DATABASE_ID`
+- `DISABLE_RATE_LIMITS`
 
-   # D1 Database Configuration
-   DB_NAME=ypad-db
-   DB_ID=your-production-database-id
-
-   # Durable Objects Configuration
-   DO_SCRIPT_NAME=ypad
-
-   # Contact Information
-   ABUSE_EMAIL=abuse@example.com
-   ```
-
-3. **Create production database** (if not already created):
-   ```bash
-   wrangler d1 create ypad-db
-   # Copy the database_id from output to your .env file
-   ```
-
-#### Deploy to Production
-
-**Windows (PowerShell)**:
-
-```powershell
-.\scripts\prod.ps1
-```
-
-**Mac/Linux (Bash)**:
+Create the production D1 database once before the first deploy:
 
 ```bash
-./scripts/prod.sh
+wrangler d1 create ypad-db
 ```
 
-The deployment script automatically:
-
-1. ✅ Validates `.env` configuration
-2. ✅ Backs up your local `wrangler.toml`
-3. ✅ Generates production `wrangler.toml` from `.env`
-4. ✅ Runs production database migrations
-5. ✅ Injects environment variables into constants.ts
-6. ✅ Builds the frontend
-7. ✅ Deploys to Cloudflare Workers
-8. ✅ Restores your local `wrangler.toml` and `constants.ts`
-
-**Features**:
-
-- Automatic rollback on failure
-- Timestamped backups of `wrangler.toml`
-- Optional account ID support
-- Color-coded output with progress tracking
-- Environment validation before deployment
-
-### Manual Deployment
+Copy the generated database ID into `CLOUDFLARE_D1_DATABASE_ID` or `WRANGLER_D1_DATABASE_ID`.
+When schema migrations change, apply them to production with:
 
 ```bash
-# Build and deploy
-npm run deploy
+npm run db:migrate:prod
 ```
-
-This will:
-
-1. Run `npm run build` to build the Svelte frontend
-2. Deploy to Cloudflare Workers using Wrangler
-3. Upload assets to Cloudflare CDN
-
-**Note**: Manual deployment uses the `wrangler.toml` in your repo. For production, you'll need to manually update it with production values.
 
 ### Configuration
 
@@ -586,7 +543,7 @@ For local development, edit [wrangler.toml](wrangler.toml) to configure:
 - Cron triggers (cleanup schedule)
 - Compatibility date
 
-For production deployment, use the `.env` file (see Automated Production Deployment above).
+For production deployment, set the GitHub Actions secrets and repository variables described above.
 
 ## Usage
 

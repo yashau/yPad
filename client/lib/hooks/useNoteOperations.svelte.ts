@@ -269,7 +269,7 @@ export function useNoteOperations(config: NoteOperationsConfig) {
       setTimeout(() => {
         noteState.saveStatus = "";
       }, 2000);
-    } catch (error) {
+    } catch {
       // Silent - UI handles save status display
       noteState.saveStatus = "Failed to save";
     }

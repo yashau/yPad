@@ -31,7 +31,19 @@
     "**/*.pdf"
   ],
   "rules": {
-    "tailwindcss/enforce-canonical": "error"
+    "tailwindcss/enforce-canonical": "error",
+    "no-await-in-loop": "off",
+    "no-unused-expressions": "off",
+    "no-underscore-dangle": "off",
+    "typescript/no-base-to-string": "off",
+    "typescript/no-unnecessary-type-conversion": "off",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/unbound-method": "off",
+    "typescript/consistent-return": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/require-module-specifiers": "off",
+    "unicorn/prefer-add-event-listener": "off"
   },
   "overrides": [
     {
