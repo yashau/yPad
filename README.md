@@ -35,6 +35,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 ## Features
 
 ### Real-Time Collaboration
+
 - **Multi-User Editing**: Multiple users can edit simultaneously with Yjs CRDT
 - **Conflict-Free Sync**: CRDTs guarantee eventual consistency without conflicts
 - **Remote Cursors**: See other users' cursor positions via Yjs Awareness protocol
@@ -42,12 +43,14 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 - **Editor Limits**: Maximum 10 concurrent editors per note with real-time status
 
 ### Security & Privacy
+
 - **True End-to-End Encryption**: AES-GCM 256-bit client-side encryption for password-protected notes
 - **Password Never Leaves Browser**: Passwords are used locally for encryption/decryption only
 - **Password Protection**: PBKDF2 key derivation (100,000 iterations)
 - **Zero-Knowledge**: Server only stores encrypted blobs, never sees plaintext or passwords
 
 ### Note Management
+
 - **Auto-Save**: Automatic saving as you type
 - **Custom URLs**: Set custom note URLs with availability checking
 - **Self-Destructing Notes**: Max view count limits
@@ -55,6 +58,7 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 - **Automatic Cleanup**: Expired and inactive notes are deleted
 
 ### Editor
+
 - **Syntax Highlighting**: 190+ languages via highlight.js (lazy-loaded)
 - **Line Numbers**: Synchronized with scroll
 - **Dark/Light Theme**: Persistent theme toggle
@@ -62,46 +66,53 @@ A real-time collaborative notepad with end-to-end encryption, built on Cloudflar
 ## Tech Stack
 
 ### Platform
+
 - **Cloudflare Workers** - Serverless edge computing
 - **Cloudflare Durable Objects** - Stateful WebSocket coordination for real-time sync
 - **Cloudflare D1** - Serverless SQLite database at the edge
 - **Cloudflare Assets** - Global CDN for static files
 
 ### Backend
-| Technology | Purpose |
-|------------|---------|
-| Hono | Lightweight web framework for Workers |
-| TypeScript | Type-safe development |
-| Wrangler | Cloudflare development & deployment CLI |
+
+| Technology | Purpose                                 |
+| ---------- | --------------------------------------- |
+| Hono       | Lightweight web framework for Workers   |
+| TypeScript | Type-safe development                   |
+| Wrangler   | Cloudflare development & deployment CLI |
 
 ### Frontend
-| Technology | Purpose |
-|------------|---------|
-| Svelte 5 | Reactive UI framework with Runes |
-| Vite | Build tool and dev server |
-| TypeScript | Type safety |
+
+| Technology | Purpose                          |
+| ---------- | -------------------------------- |
+| Svelte 5   | Reactive UI framework with Runes |
+| Vite       | Build tool and dev server        |
+| TypeScript | Type safety                      |
 
 ### Real-Time Collaboration
-| Technology | Purpose |
-|------------|---------|
-| Yjs | CRDT framework for conflict-free collaborative editing |
-| y-protocols | Yjs sync and awareness protocols |
+
+| Technology  | Purpose                                                |
+| ----------- | ------------------------------------------------------ |
+| Yjs         | CRDT framework for conflict-free collaborative editing |
+| y-protocols | Yjs sync and awareness protocols                       |
 
 ### Styling & UI
-| Technology | Purpose |
-|------------|---------|
-| Tailwind CSS | Utility-first CSS framework |
-| shadcn-svelte | High-quality component library |
-| bits-ui | Headless UI primitives |
-| @lucide/svelte | Icon library |
+
+| Technology     | Purpose                        |
+| -------------- | ------------------------------ |
+| Tailwind CSS   | Utility-first CSS framework    |
+| shadcn-svelte  | High-quality component library |
+| bits-ui        | Headless UI primitives         |
+| @lucide/svelte | Icon library                   |
 
 ### Specialized Libraries
-| Technology | Purpose |
-|------------|---------|
-| highlight.js | Syntax highlighting for 190+ languages |
-| @internationalized/date | Internationalized date handling |
+
+| Technology              | Purpose                                |
+| ----------------------- | -------------------------------------- |
+| highlight.js            | Syntax highlighting for 190+ languages |
+| @internationalized/date | Internationalized date handling        |
 
 ### Security & Cryptography
+
 - **Web Crypto API** - Browser-native cryptography
   - AES-GCM encryption (256-bit)
   - PBKDF2 key derivation
@@ -173,6 +184,7 @@ CREATE INDEX idx_notes_last_accessed_at ON notes(last_accessed_at);
 ## Quick Start
 
 ### Prerequisites
+
 - Node.js 18+
 - npm or pnpm
 - Cloudflare account (for deployment)
@@ -205,16 +217,19 @@ yPad includes automated development and deployment scripts for both Windows and 
 #### Quick Dev Server Restart (Recommended)
 
 **Windows (PowerShell)**:
+
 ```powershell
 .\scripts\dev.ps1
 ```
 
 **Mac/Linux (Bash)**:
+
 ```bash
 ./scripts/dev.sh
 ```
 
 This script automatically:
+
 1. Kills any processes running on port 8787
 2. Runs database migrations if needed
 3. Builds the frontend
@@ -234,6 +249,7 @@ npm run preview
 ```
 
 The dev server runs with:
+
 - Local D1 database (`--local`)
 - Persistent state in `.wrangler/state` (`--persist-to`)
 - Hot module replacement
@@ -269,6 +285,7 @@ npm run test:coverage
 ```
 
 Unit test suites cover:
+
 - API validation and constants
 - WebSocket client behavior
 - Cryptography utilities
@@ -292,6 +309,7 @@ npx playwright test e2e/latency-sync.spec.ts
 E2E test suites:
 
 **Latency Sync** (`latency-sync.spec.ts`) - 13 tests
+
 - Race conditions with high latency (client types while PUT in flight)
 - Concurrent insertions at different positions
 - Concurrent insertions at same position (CRDT resolution)
@@ -307,6 +325,7 @@ E2E test suites:
 - Extreme latency difference (50ms vs 300ms clients)
 
 **Collaborative Editing** (`collaborative-editing.spec.ts`) - 14 tests
+
 - Local cursor stays in place when remote user types after cursor
 - Cursor shifts correctly when remote user types before cursor
 - Selection preserved during remote edits elsewhere
@@ -319,6 +338,7 @@ E2E test suites:
 - Content persistence after fast typing
 
 **Remote Cursors** (`remote-cursors.spec.ts`) - 8 tests
+
 - Cursor visibility for remote users
 - Cursor position updates in real-time
 - Cursor color consistency
@@ -327,12 +347,14 @@ E2E test suites:
 - New client joining sees existing remote cursors
 
 **E2E Encryption Security** (`e2e-encryption.spec.ts`) - 9 tests
+
 - Passwords are NEVER sent to the server
 - Plaintext content never leaves the browser
 - WebSocket messages never contain password or plaintext
 - Multiple password attempts don't leak to server
 
 **Editor Limits** (`editor-limits.spec.ts`) - 16 tests
+
 - First user edit permission and typing capability
 - Connection status shows client ID and editor count
 - Viewer count shown separately from editor count
@@ -341,16 +363,19 @@ E2E test suites:
 - Retry button allows editing after an editor leaves
 
 **Rate Limiting** (`rate-limiting.spec.ts`) - 7 tests
+
 - REST API rate limits per endpoint
 - WebSocket operation rate limits
 - Token bucket refill behavior
 
 **Status Indicator** (`status-indicator.spec.ts`) - 7 tests
+
 - Connection status display
 - Save status indicators
 - Sync state visualization
 
 **Syntax Highlighting** (`syntax-highlighting.spec.ts`) - 9 tests
+
 - JavaScript, Python, TypeScript highlighting in light theme
 - JavaScript, Python, TypeScript highlighting in dark theme
 - Switching back to Plain Text removes highlighting
@@ -472,11 +497,13 @@ yPad includes automated deployment scripts that handle environment configuration
 #### Setup Environment Configuration
 
 1. **Copy the example environment file**:
+
    ```bash
    cp .env.example .env
    ```
 
 2. **Edit `.env` with your production values**:
+
    ```bash
    # Cloudflare Account ID (optional)
    ACCOUNT_ID=your-account-id
@@ -504,16 +531,19 @@ yPad includes automated deployment scripts that handle environment configuration
 #### Deploy to Production
 
 **Windows (PowerShell)**:
+
 ```powershell
 .\scripts\prod.ps1
 ```
 
 **Mac/Linux (Bash)**:
+
 ```bash
 ./scripts/prod.sh
 ```
 
 The deployment script automatically:
+
 1. ✅ Validates `.env` configuration
 2. ✅ Backs up your local `wrangler.toml`
 3. ✅ Generates production `wrangler.toml` from `.env`
@@ -524,6 +554,7 @@ The deployment script automatically:
 8. ✅ Restores your local `wrangler.toml` and `constants.ts`
 
 **Features**:
+
 - Automatic rollback on failure
 - Timestamped backups of `wrangler.toml`
 - Optional account ID support
@@ -538,6 +569,7 @@ npm run deploy
 ```
 
 This will:
+
 1. Run `npm run build` to build the Svelte frontend
 2. Deploy to Cloudflare Workers using Wrangler
 3. Upload assets to Cloudflare CDN
@@ -547,6 +579,7 @@ This will:
 ### Configuration
 
 For local development, edit [wrangler.toml](wrangler.toml) to configure:
+
 - Worker name
 - Database binding
 - Durable Objects configuration
@@ -593,6 +626,7 @@ For production deployment, use the `.env` file (see Automated Production Deploym
 ### Configuring Note Options
 
 Click **Options** to set:
+
 - **Syntax Highlighting**: Choose from 150+ languages
 - **Password Protection**: Enable/disable with password
 - **Max Views**: Set view limit - displays remaining views with reset option
@@ -624,6 +658,7 @@ Click **Options** to set:
 ### Final View Handling
 
 When a note reaches its maximum view count:
+
 1. The note content is displayed one final time
 2. A warning banner appears indicating the note has been deleted
 3. The note is permanently removed from the server
@@ -634,9 +669,11 @@ When a note reaches its maximum view count:
 ### REST Endpoints
 
 #### `GET /api/notes/:id`
+
 Retrieve a note by ID. Updates `last_accessed_at` timestamp.
 
 **Response**:
+
 ```json
 {
   "id": "abc123",
@@ -651,6 +688,7 @@ Retrieve a note by ID. Updates `last_accessed_at` timestamp.
 ```
 
 **Side Effects**:
+
 - Increments `view_count` (for non-encrypted notes only)
 - Updates `last_accessed_at` timestamp
 - If `is_last_view` is true, note is deleted after response
@@ -658,9 +696,11 @@ Retrieve a note by ID. Updates `last_accessed_at` timestamp.
 **Note**: For encrypted notes, content is returned as an encrypted blob. Decryption happens client-side.
 
 #### `POST /api/notes`
+
 Create a new note. Initializes `last_accessed_at` to current timestamp.
 
 **Body**:
+
 ```json
 {
   "id": "custom-id",
@@ -673,12 +713,15 @@ Create a new note. Initializes `last_accessed_at` to current timestamp.
 ```
 
 **Side Effects**:
+
 - Sets `last_accessed_at` to current timestamp
 
 #### `PUT /api/notes/:id`
+
 Update an existing note.
 
 **Body**:
+
 ```json
 {
   "content": "Updated content",
@@ -690,6 +733,7 @@ Update an existing note.
 ```
 
 **Response**:
+
 ```json
 {
   "version": 2,
@@ -698,20 +742,25 @@ Update an existing note.
 ```
 
 **Notes**:
+
 - Setting `max_views` resets `view_count` to 0
 - `expires_at` is computed server-side from `expires_in`
 - Use `clear_expiration: true` to remove expiration
 
 #### `DELETE /api/notes/:id`
+
 Delete a note and cleanup Durable Object state.
 
 **Query Parameters**:
+
 - `session_id` (optional): Session ID for WebSocket cleanup
 
 #### `POST /api/notes/:id/view`
+
 Confirm view for encrypted notes after successful client-side decryption.
 
 **Response**:
+
 ```json
 {
   "view_count": 6,
@@ -722,9 +771,11 @@ Confirm view for encrypted notes after successful client-side decryption.
 **Note**: This endpoint is only used for encrypted notes. View count is incremented after the client successfully decrypts the content.
 
 #### `GET /api/check/:id`
+
 Check if a custom ID is available.
 
 **Response**:
+
 ```json
 {
   "available": true
@@ -734,16 +785,19 @@ Check if a custom ID is available.
 ### WebSocket Protocol
 
 #### Connection
+
 ```
 ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Side Effects**:
+
 - Updates `last_accessed_at` timestamp when connection is established
 
 #### Message Types
 
 **Yjs Sync** (server → client):
+
 ```json
 {
   "type": "yjs_sync",
@@ -755,6 +809,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Yjs Update** (client ↔ server):
+
 ```json
 {
   "type": "yjs_update",
@@ -765,6 +820,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Yjs Acknowledgment** (server → client):
+
 ```json
 {
   "type": "yjs_ack",
@@ -773,6 +829,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Awareness Update** (client ↔ server):
+
 ```json
 {
   "type": "awareness_update",
@@ -783,6 +840,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Note Status** (server → client, every 10 seconds):
+
 ```json
 {
   "type": "note_status",
@@ -793,6 +851,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **User Joined** (server → client):
+
 ```json
 {
   "type": "user_joined",
@@ -805,6 +864,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **User Left** (server → client):
+
 ```json
 {
   "type": "user_left",
@@ -817,6 +877,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Request Edit** (client → server):
+
 ```json
 {
   "type": "request_edit",
@@ -826,6 +887,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Request Edit Response** (server → client):
+
 ```json
 {
   "type": "request_edit_response",
@@ -836,6 +898,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Editor Count Update** (server → client):
+
 ```json
 {
   "type": "editor_count_update",
@@ -846,6 +909,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Syntax Change** (client ↔ server):
+
 ```json
 {
   "type": "syntax_change",
@@ -856,6 +920,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Encryption Changed** (server → client):
+
 ```json
 {
   "type": "encryption_changed",
@@ -865,6 +930,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Note Deleted** (server → client):
+
 ```json
 {
   "type": "note_deleted",
@@ -873,6 +939,7 @@ ws://localhost:8787/api/notes/:id/ws
 ```
 
 **Error** (server → client):
+
 ```json
 {
   "type": "error",
@@ -891,6 +958,7 @@ yPad uses [Yjs](https://yjs.dev/), a high-performance CRDT (Conflict-free Replic
 Unlike traditional Operational Transform (OT), CRDTs don't require a central server to resolve conflicts. Each character in the document has a unique identifier, and Yjs uses these identifiers to merge concurrent edits deterministically.
 
 **Example**: If User A inserts "hello" at position 5 while User B simultaneously deletes characters 3-7:
+
 - Each edit is applied independently using Yjs's merge algorithm
 - No transformation needed - CRDT guarantees convergence
 - Both users automatically end up with identical documents
@@ -926,7 +994,7 @@ yPad uses the [y-protocols](https://github.com/yjs/y-protocols) library for sync
 ```typescript
 // Server-side Yjs document
 const yjsDoc = new Y.Doc();
-const yjsText = yjsDoc.getText('content');
+const yjsText = yjsDoc.getText("content");
 
 // Client receives state as base64-encoded binary
 const state = Y.encodeStateAsUpdate(yjsDoc);
@@ -934,12 +1002,12 @@ const state = Y.encodeStateAsUpdate(yjsDoc);
 
 #### Why Yjs Over OT?
 
-| Aspect | OT | Yjs CRDT |
-|--------|-----|----------|
-| Conflict Resolution | Server transforms operations | Automatic via unique IDs |
-| Complexity | O(n²) transform pairs | O(1) merge |
-| Offline Support | Difficult | Built-in |
-| Convergence | Requires careful implementation | Mathematically guaranteed |
+| Aspect              | OT                              | Yjs CRDT                  |
+| ------------------- | ------------------------------- | ------------------------- |
+| Conflict Resolution | Server transforms operations    | Automatic via unique IDs  |
+| Complexity          | O(n²) transform pairs           | O(1) merge                |
+| Offline Support     | Difficult                       | Built-in                  |
+| Convergence         | Requires careful implementation | Mathematically guaranteed |
 
 ### Awareness Protocol
 
@@ -953,6 +1021,7 @@ yPad uses the Yjs Awareness protocol for cursor synchronization and user presenc
 ### Client-Side Encryption
 
 For password-protected notes:
+
 1. User enters password
 2. Password derives encryption key (PBKDF2, 100,000 iterations)
 3. Content encrypted with AES-GCM before transmission
@@ -964,6 +1033,7 @@ For password-protected notes:
 9. All connected clients notified when encryption status changes
 
 **Security Guarantees** (verified by E2E tests):
+
 - Passwords are never transmitted to the server in any form
 - Plaintext content is never sent after encryption is enabled
 - Server only stores and serves encrypted blobs
@@ -1005,8 +1075,8 @@ Editor limits are configured in `config/constants.ts`:
 
 ```typescript
 export const EDITOR_LIMITS = {
-  MAX_ACTIVE_EDITORS: 10,      // Maximum concurrent editors per note
-  ACTIVE_TIMEOUT_MS: 60_000,   // Time before an idle editor becomes a viewer
+  MAX_ACTIVE_EDITORS: 10, // Maximum concurrent editors per note
+  ACTIVE_TIMEOUT_MS: 60_000, // Time before an idle editor becomes a viewer
 } as const;
 ```
 
@@ -1015,6 +1085,7 @@ export const EDITOR_LIMITS = {
 yPad supports two types of note lifecycle limits:
 
 **Max Views**:
+
 - Set a maximum number of views (1-1000)
 - View count resets when max views is set (counts from time of setting)
 - Remaining views displayed in options panel
@@ -1022,6 +1093,7 @@ yPad supports two types of note lifecycle limits:
 - Final view shows content with warning banner
 
 **Expiration**:
+
 - Set time-based expiration (1 hour to 1 month)
 - Live countdown timer in options panel
 - Expiration time computed server-side for accuracy
@@ -1032,6 +1104,7 @@ Both limits can be reset (removed) after being set.
 ### Automatic Cleanup
 
 A cron trigger runs every 15 minutes to clean up notes:
+
 ```javascript
 // Triggered by: crons = ["*/15 * * * *"]
 async scheduled(event, env, ctx) {
@@ -1051,6 +1124,7 @@ async scheduled(event, env, ctx) {
 ```
 
 **Cleanup Rules**:
+
 - Notes with `expires_at` past current time are deleted
 - Notes not accessed in 90 days (configurable via `INACTIVE_NOTE_EXPIRY_DAYS` constant) are deleted
 - Access tracking updates on:
@@ -1066,15 +1140,16 @@ yPad implements rate limiting to prevent abuse while allowing normal usage patte
 
 Per-session rate limiting using Cloudflare Durable Objects:
 
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| `POST /api/notes` (create) | 10 requests | per minute |
-| `GET /api/notes/:id` (read) | 60 requests | per minute |
-| `PUT /api/notes/:id` (update) | 30 requests | per minute |
-| `DELETE /api/notes/:id` (delete) | 20 requests | per minute |
+| Endpoint                                    | Limit       | Window     |
+| ------------------------------------------- | ----------- | ---------- |
+| `POST /api/notes` (create)                  | 10 requests | per minute |
+| `GET /api/notes/:id` (read)                 | 60 requests | per minute |
+| `PUT /api/notes/:id` (update)               | 30 requests | per minute |
+| `DELETE /api/notes/:id` (delete)            | 20 requests | per minute |
 | `GET /api/notes/:id/ws` (WebSocket upgrade) | 30 requests | per minute |
 
 **Rate Limit Response**:
+
 ```json
 HTTP/1.1 429 Too Many Requests
 Retry-After: 45
@@ -1088,13 +1163,14 @@ The `Retry-After` header indicates how many seconds to wait before retrying.
 
 Token bucket algorithm for real-time messages:
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| Messages per second | 25 | Sustained rate limit |
-| Burst allowance | 100 | Tokens for paste operations |
-| Max message size | 128 KB | Maximum WebSocket message size |
+| Setting             | Value  | Description                    |
+| ------------------- | ------ | ------------------------------ |
+| Messages per second | 25     | Sustained rate limit           |
+| Burst allowance     | 100    | Tokens for paste operations    |
+| Max message size    | 128 KB | Maximum WebSocket message size |
 
 **How it works**:
+
 - Each connection starts with 100 tokens (burst allowance)
 - Tokens refill at 25 per second
 - Each message consumes 1 token
@@ -1102,11 +1178,12 @@ Token bucket algorithm for real-time messages:
 - Large pastes consume burst tokens but recover quickly
 
 **Violation Handling**:
+
 1. First violations: Warning message sent via WebSocket
 2. After 10 violations: Connection closed with code 1008
 
 ```json
-{"type": "error", "message": "Rate limit exceeded. Please slow down."}
+{ "type": "error", "message": "Rate limit exceeded. Please slow down." }
 ```
 
 #### Local Development
@@ -1129,11 +1206,11 @@ export const RATE_LIMITS = {
   WEBSOCKET: {
     OPS_PER_SECOND: 25,
     BURST_ALLOWANCE: 100,
-    MAX_MESSAGE_SIZE: 131072,  // 128 KB
+    MAX_MESSAGE_SIZE: 131072, // 128 KB
   },
   PENALTY: {
     DISCONNECT_THRESHOLD: 10,
-    WARNING_MESSAGE: 'Rate limit exceeded. Please slow down.',
+    WARNING_MESSAGE: "Rate limit exceeded. Please slow down.",
   },
 } as const;
 ```

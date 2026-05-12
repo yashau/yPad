@@ -17,8 +17,8 @@
  * Message handlers are extracted to handlers/messageHandlers.ts for organization.
  */
 
-import * as Y from 'yjs';
-import { RATE_LIMITS } from '../../config/constants';
+import * as Y from "yjs";
+import { RATE_LIMITS } from "../../config/constants";
 import type {
   WSMessage,
   ClientSession,
@@ -28,7 +28,7 @@ import type {
   SyntaxChangeMessage,
   YjsStateRequestMessage,
   RequestEditMessage,
-} from '../types/messages';
+} from "../types/messages";
 import {
   handleYjsUpdate as handleYjsUpdateImpl,
   handleAwarenessUpdate as handleAwarenessUpdateImpl,
@@ -40,8 +40,8 @@ import {
   broadcastUserJoined as broadcastUserJoinedImpl,
   broadcastUserLeft as broadcastUserLeftImpl,
   broadcastNoteStatus as broadcastNoteStatusImpl,
-} from './handlers';
-import type { NoteSessionContext } from './handlers';
+} from "./handlers";
+import type { NoteSessionContext } from "./handlers";
 
 /** Queued WebSocket message for sequential processing. */
 interface QueuedMessage {
@@ -62,7 +62,7 @@ interface NoteRecord {
  * Encode Uint8Array to base64 string
  */
 function encodeBase64(data: Uint8Array): string {
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < data.length; i++) {
     binary += String.fromCharCode(data[i]);
   }
@@ -83,7 +83,7 @@ export class NoteSessionDurableObject implements DurableObject {
   private isInitialized: boolean;
   private lastEditSessionId: string | null = null;
   private isEncrypted: boolean = false;
-  private currentSyntax: string = 'plaintext';
+  private currentSyntax: string = "plaintext";
 
   // Message queue for sequential processing
   private messageQueue: QueuedMessage[] = [];
@@ -102,11 +102,11 @@ export class NoteSessionDurableObject implements DurableObject {
   constructor(_state: DurableObjectState, env: Env) {
     this.env = env;
     this.sessions = new Map();
-    this.noteId = '';
+    this.noteId = "";
 
     // Initialize Yjs document
     this.yjsDoc = new Y.Doc();
-    this.yjsText = this.yjsDoc.getText('content');
+    this.yjsText = this.yjsDoc.getText("content");
 
     this.persistenceTimer = null;
     this.updatesSincePersist = 0;
@@ -117,41 +117,44 @@ export class NoteSessionDurableObject implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     // Extract note ID from the URL or Durable Object name
     const url = new URL(request.url);
-    const pathSegments = url.pathname.split('/');
+    const pathSegments = url.pathname.split("/");
 
     // Handle reset request (when note is deleted)
-    if (request.method === 'DELETE' && url.pathname === '/reset') {
+    if (request.method === "DELETE" && url.pathname === "/reset") {
       try {
-        const body = await request.json().catch(() => ({})) as { session_id?: string };
+        const body = (await request.json().catch(() => ({}))) as { session_id?: string };
         this.resetState(body.session_id);
       } catch {
         this.resetState();
       }
-      return new Response('State reset', { status: 200 });
+      return new Response("State reset", { status: 200 });
     }
 
     // Handle force refresh request (for testing/debugging)
-    if (request.method === 'POST' && url.pathname === '/refresh') {
+    if (request.method === "POST" && url.pathname === "/refresh") {
       this.isInitialized = false;
       await this.initializeFromDatabase();
-      return new Response('Refreshed from database', { status: 200 });
+      return new Response("Refreshed from database", { status: 200 });
     }
 
     // Handle test latency setting (for E2E testing only)
-    if (request.method === 'POST' && url.pathname === '/test-latency') {
+    if (request.method === "POST" && url.pathname === "/test-latency") {
       try {
-        const body = await request.json() as { latencyMs: number };
+        const body = (await request.json()) as { latencyMs: number };
         this.testLatencyMs = body.latencyMs || 0;
         return new Response(JSON.stringify({ latencyMs: this.testLatencyMs }), { status: 200 });
       } catch {
-        return new Response('Invalid request', { status: 400 });
+        return new Response("Invalid request", { status: 400 });
       }
     }
 
     // Handle encryption change notification
-    if (request.method === 'POST' && url.pathname === '/notify-encryption-change') {
+    if (request.method === "POST" && url.pathname === "/notify-encryption-change") {
       try {
-        const body = await request.json() as { is_encrypted: boolean; exclude_session_id?: string };
+        const body = (await request.json()) as {
+          is_encrypted: boolean;
+          exclude_session_id?: string;
+        };
 
         // Force re-initialization from database to get updated content
         // This is critical when encryption is removed - the DO has encrypted content in memory
@@ -160,17 +163,22 @@ export class NoteSessionDurableObject implements DurableObject {
         await this.initializeFromDatabase();
 
         this.broadcastEncryptionChange(body.is_encrypted, body.exclude_session_id);
-        return new Response('OK', { status: 200 });
+        return new Response("OK", { status: 200 });
       } catch (error) {
-        console.error('Error handling encryption change notification:', error);
-        return new Response('Error', { status: 500 });
+        console.error("Error handling encryption change notification:", error);
+        return new Response("Error", { status: 500 });
       }
     }
 
     // Handle version update notification (for encrypted notes)
-    if (request.method === 'POST' && url.pathname === '/notify-version-update') {
+    if (request.method === "POST" && url.pathname === "/notify-version-update") {
       try {
-        const body = await request.json() as { version: number; content?: string; syntax_highlight?: string; exclude_session_id?: string };
+        const body = (await request.json()) as {
+          version: number;
+          content?: string;
+          syntax_highlight?: string;
+          exclude_session_id?: string;
+        };
 
         // Update cached content if provided (for encrypted notes updated via HTTP PUT)
         if (body.content !== undefined) {
@@ -186,20 +194,20 @@ export class NoteSessionDurableObject implements DurableObject {
         }
 
         this.broadcastVersionUpdate(body.version, body.exclude_session_id);
-        return new Response('OK', { status: 200 });
+        return new Response("OK", { status: 200 });
       } catch (error) {
-        console.error('Error handling version update notification:', error);
-        return new Response('Error', { status: 500 });
+        console.error("Error handling version update notification:", error);
+        return new Response("Error", { status: 500 });
       }
     }
 
     // Handle GET /fetch request - return cached note data
-    if (request.method === 'GET' && url.pathname === '/fetch') {
+    if (request.method === "GET" && url.pathname === "/fetch") {
       try {
         // Get note ID from query parameter
-        const noteIdParam = url.searchParams.get('noteId');
+        const noteIdParam = url.searchParams.get("noteId");
         if (!noteIdParam) {
-          return new Response('Note ID required', { status: 400 });
+          return new Response("Note ID required", { status: 400 });
         }
 
         // Set note ID if not already set
@@ -220,15 +228,15 @@ export class NoteSessionDurableObject implements DurableObject {
           is_encrypted: this.isEncrypted,
         });
       } catch (error) {
-        console.error('Error fetching note from DO cache:', error);
-        return new Response('Error fetching note', { status: 500 });
+        console.error("Error fetching note from DO cache:", error);
+        return new Response("Error fetching note", { status: 500 });
       }
     }
 
     this.noteId = pathSegments[pathSegments.length - 2]; // /api/notes/:id/ws
 
     // WebSocket upgrade
-    if (request.headers.get('Upgrade') === 'websocket') {
+    if (request.headers.get("Upgrade") === "websocket") {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
@@ -241,7 +249,7 @@ export class NoteSessionDurableObject implements DurableObject {
       });
     }
 
-    return new Response('Expected WebSocket', { status: 400 });
+    return new Response("Expected WebSocket", { status: 400 });
   }
 
   async handleWebSocket(ws: WebSocket, request: Request): Promise<void> {
@@ -253,7 +261,7 @@ export class NoteSessionDurableObject implements DurableObject {
     // Extract client info from query params
     const url = new URL(request.url);
     const clientId = crypto.randomUUID();
-    const sessionId = url.searchParams.get('session_id') || crypto.randomUUID();
+    const sessionId = url.searchParams.get("session_id") || crypto.randomUUID();
     const isAuthenticated = true; // Password already validated by worker
 
     // Accept the WebSocket
@@ -276,7 +284,7 @@ export class NoteSessionDurableObject implements DurableObject {
     // Send initial sync message with full Yjs state
     const yjsState = Y.encodeStateAsUpdate(this.yjsDoc);
     const syncMessage: YjsSyncMessage = {
-      type: 'yjs_sync',
+      type: "yjs_sync",
       state: encodeBase64(yjsState),
       clientId, // Send the server-assigned clientId to the client
       seqNum: this.globalSeqNum, // Current global sequence before any broadcasts
@@ -298,18 +306,18 @@ export class NoteSessionDurableObject implements DurableObject {
     this.broadcastUserJoined(clientId);
 
     // Set up message handler - enqueue messages for sequential processing
-    ws.addEventListener('message', async (event) => {
+    ws.addEventListener("message", async (event) => {
       try {
         const message: WSMessage = JSON.parse(event.data as string);
         this.enqueueMessage(ws, message);
       } catch (error) {
         console.error(`[DO ${this.noteId}] Error parsing message:`, error);
-        this.sendError(ws, 'Invalid message format');
+        this.sendError(ws, "Invalid message format");
       }
     });
 
     // Set up close handler
-    ws.addEventListener('close', () => {
+    ws.addEventListener("close", () => {
       const closingClientId = session.clientId;
       this.sessions.delete(ws);
 
@@ -324,7 +332,7 @@ export class NoteSessionDurableObject implements DurableObject {
     });
 
     // Set up error handler
-    ws.addEventListener('error', () => {
+    ws.addEventListener("error", () => {
       this.sessions.delete(ws);
     });
   }
@@ -336,7 +344,7 @@ export class NoteSessionDurableObject implements DurableObject {
     // Check message size
     const messageStr = JSON.stringify(message);
     if (messageStr.length > RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE) {
-      this.sendError(ws, 'Message too large');
+      this.sendError(ws, "Message too large");
       return;
     }
 
@@ -373,7 +381,7 @@ export class NoteSessionDurableObject implements DurableObject {
 
         // Apply test latency if configured (for E2E testing)
         if (this.testLatencyMs > 0) {
-          await new Promise(resolve => setTimeout(resolve, this.testLatencyMs));
+          await new Promise((resolve) => setTimeout(resolve, this.testLatencyMs));
         }
 
         try {
@@ -396,15 +404,15 @@ export class NoteSessionDurableObject implements DurableObject {
 
     const ctx = this.getContext();
 
-    if (message.type === 'yjs_update') {
+    if (message.type === "yjs_update") {
       await handleYjsUpdateImpl(ctx, ws, message as YjsUpdateMessage);
-    } else if (message.type === 'awareness_update') {
+    } else if (message.type === "awareness_update") {
       await handleAwarenessUpdateImpl(ctx, ws, message as AwarenessUpdateMessage);
-    } else if (message.type === 'yjs_state_request') {
+    } else if (message.type === "yjs_state_request") {
       await handleYjsStateRequestImpl(ctx, ws, message as YjsStateRequestMessage);
-    } else if (message.type === 'syntax_change') {
+    } else if (message.type === "syntax_change") {
       await handleSyntaxChangeImpl(ctx, ws, message as SyntaxChangeMessage);
-    } else if (message.type === 'request_edit') {
+    } else if (message.type === "request_edit") {
       await handleRequestEditImpl(ctx, ws, message as RequestEditMessage);
     }
 
@@ -458,8 +466,10 @@ export class NoteSessionDurableObject implements DurableObject {
   async persistSyntaxToDB(syntax: string): Promise<void> {
     try {
       await this.env.DB.prepare(
-        `UPDATE notes SET syntax_highlight = ?, updated_at = ? WHERE id = ?`
-      ).bind(syntax, Date.now(), this.noteId).run();
+        `UPDATE notes SET syntax_highlight = ?, updated_at = ? WHERE id = ?`,
+      )
+        .bind(syntax, Date.now(), this.noteId)
+        .run();
     } catch (error) {
       console.error(`[DO ${this.noteId}] Error persisting syntax to database:`, error);
     }
@@ -498,13 +508,15 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       const note = await this.env.DB.prepare(
-        'SELECT content, yjs_state, version, is_encrypted, syntax_highlight FROM notes WHERE id = ?'
-      ).bind(this.noteId).first<NoteRecord>();
+        "SELECT content, yjs_state, version, is_encrypted, syntax_highlight FROM notes WHERE id = ?",
+      )
+        .bind(this.noteId)
+        .first<NoteRecord>();
 
       if (note) {
         // Create fresh Yjs doc
         this.yjsDoc = new Y.Doc();
-        this.yjsText = this.yjsDoc.getText('content');
+        this.yjsText = this.yjsDoc.getText("content");
 
         if (note.yjs_state) {
           // Restore from Yjs state if available
@@ -516,13 +528,13 @@ export class NoteSessionDurableObject implements DurableObject {
         }
 
         this.isEncrypted = !!note.is_encrypted;
-        this.currentSyntax = note.syntax_highlight || 'plaintext';
+        this.currentSyntax = note.syntax_highlight || "plaintext";
       } else {
         // New note - start with empty Yjs doc
         this.yjsDoc = new Y.Doc();
-        this.yjsText = this.yjsDoc.getText('content');
+        this.yjsText = this.yjsDoc.getText("content");
         this.isEncrypted = false;
-        this.currentSyntax = 'plaintext';
+        this.currentSyntax = "plaintext";
       }
 
       this.isInitialized = true;
@@ -530,7 +542,7 @@ export class NoteSessionDurableObject implements DurableObject {
       console.error(`[DO ${this.noteId}] Failed to initialize from database:`, error);
       // Start with empty content if database fails
       this.yjsDoc = new Y.Doc();
-      this.yjsText = this.yjsDoc.getText('content');
+      this.yjsText = this.yjsDoc.getText("content");
       this.isInitialized = true;
     }
   }
@@ -555,26 +567,23 @@ export class NoteSessionDurableObject implements DurableObject {
     this.env.DB.prepare(
       `UPDATE notes
        SET content = ?, yjs_state = ?, updated_at = ?, last_session_id = ?
-       WHERE id = ?`
-    ).bind(
-      contentToSave,
-      yjsStateToSave,
-      Date.now(),
-      sessionIdToSave,
-      this.noteId
-    ).run().catch((error: unknown) => {
-      console.error(`[DO ${this.noteId}] persistToDB ERROR:`, error);
-      // On error, increment counter to retry on next persistence
-      this.updatesSincePersist += countToSave;
-    });
+       WHERE id = ?`,
+    )
+      .bind(contentToSave, yjsStateToSave, Date.now(), sessionIdToSave, this.noteId)
+      .run()
+      .catch((error: unknown) => {
+        console.error(`[DO ${this.noteId}] persistToDB ERROR:`, error);
+        // On error, increment counter to retry on next persistence
+        this.updatesSincePersist += countToSave;
+      });
   }
 
   sendError(ws: WebSocket, message: string): void {
     ws.send(
       JSON.stringify({
-        type: 'error',
+        type: "error",
         message,
-      })
+      }),
     );
   }
 
@@ -606,12 +615,14 @@ export class NoteSessionDurableObject implements DurableObject {
     // Close all WebSocket connections
     for (const [ws] of this.sessions) {
       try {
-        ws.send(JSON.stringify({
-          type: 'note_deleted',
-          sessionId: deletedBySessionId,
-          message: 'Note has been deleted'
-        }));
-        ws.close(1000, 'Note deleted');
+        ws.send(
+          JSON.stringify({
+            type: "note_deleted",
+            sessionId: deletedBySessionId,
+            message: "Note has been deleted",
+          }),
+        );
+        ws.close(1000, "Note deleted");
       } catch (error) {
         console.error(`[DO ${this.noteId}] Error closing WebSocket:`, error);
       }
@@ -620,7 +631,7 @@ export class NoteSessionDurableObject implements DurableObject {
     // Clear all state
     this.sessions.clear();
     this.yjsDoc = new Y.Doc();
-    this.yjsText = this.yjsDoc.getText('content');
+    this.yjsText = this.yjsDoc.getText("content");
     this.updatesSincePersist = 0;
     this.isInitialized = false;
     this.lastEditSessionId = null;
@@ -669,8 +680,10 @@ export class NoteSessionDurableObject implements DurableObject {
 
     try {
       const note = await this.env.DB.prepare(
-        'SELECT view_count, max_views, expires_at FROM notes WHERE id = ?'
-      ).bind(this.noteId).first();
+        "SELECT view_count, max_views, expires_at FROM notes WHERE id = ?",
+      )
+        .bind(this.noteId)
+        .first();
 
       if (!note) {
         return;
@@ -681,7 +694,7 @@ export class NoteSessionDurableObject implements DurableObject {
         ctx,
         Number(note.view_count) || 0,
         note.max_views !== null ? Number(note.max_views) : null,
-        note.expires_at !== null ? Number(note.expires_at) : null
+        note.expires_at !== null ? Number(note.expires_at) : null,
       );
       this.syncFromContext(ctx);
     } catch (error) {

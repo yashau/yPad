@@ -6,14 +6,14 @@
  */
 
 export function useEditor() {
-  let content = $state('');
-  let syntaxHighlight = $state('plaintext');
-  let highlightedContent = $state('');
+  let content = $state("");
+  let syntaxHighlight = $state("plaintext");
+  let highlightedContent = $state("");
   let editorRef = $state<HTMLDivElement | null>(null);
   let lineNumbersRef = $state<HTMLDivElement | null>(null);
   let textareaScrollRef = $state<HTMLTextAreaElement | null>(null);
   let isUpdating = false;
-  let lastLocalContent = $state('');
+  let lastLocalContent = $state("");
 
   // Pre-edit state captured in beforeinput for accurate OT positions
   let preEditCursorPosition: number | null = null;
@@ -21,47 +21,91 @@ export function useEditor() {
   let preEditContent: string | null = null;
 
   return {
-    get content() { return content; },
-    set content(value: string) { content = value; },
+    get content() {
+      return content;
+    },
+    set content(value: string) {
+      content = value;
+    },
 
-    get syntaxHighlight() { return syntaxHighlight; },
-    set syntaxHighlight(value: string) { syntaxHighlight = value; },
+    get syntaxHighlight() {
+      return syntaxHighlight;
+    },
+    set syntaxHighlight(value: string) {
+      syntaxHighlight = value;
+    },
 
-    get highlightedContent() { return highlightedContent; },
-    set highlightedContent(value: string) { highlightedContent = value; },
+    get highlightedContent() {
+      return highlightedContent;
+    },
+    set highlightedContent(value: string) {
+      highlightedContent = value;
+    },
 
-    get editorRef() { return editorRef; },
-    set editorRef(value: HTMLDivElement | null) { editorRef = value; },
+    get editorRef() {
+      return editorRef;
+    },
+    set editorRef(value: HTMLDivElement | null) {
+      editorRef = value;
+    },
 
-    get lineNumbersRef() { return lineNumbersRef; },
-    set lineNumbersRef(value: HTMLDivElement | null) { lineNumbersRef = value; },
+    get lineNumbersRef() {
+      return lineNumbersRef;
+    },
+    set lineNumbersRef(value: HTMLDivElement | null) {
+      lineNumbersRef = value;
+    },
 
-    get textareaScrollRef() { return textareaScrollRef; },
-    set textareaScrollRef(value: HTMLTextAreaElement | null) { textareaScrollRef = value; },
+    get textareaScrollRef() {
+      return textareaScrollRef;
+    },
+    set textareaScrollRef(value: HTMLTextAreaElement | null) {
+      textareaScrollRef = value;
+    },
 
-    get isUpdating() { return isUpdating; },
-    set isUpdating(value: boolean) { isUpdating = value; },
+    get isUpdating() {
+      return isUpdating;
+    },
+    set isUpdating(value: boolean) {
+      isUpdating = value;
+    },
 
-    get lastLocalContent() { return lastLocalContent; },
-    set lastLocalContent(value: string) { lastLocalContent = value; },
+    get lastLocalContent() {
+      return lastLocalContent;
+    },
+    set lastLocalContent(value: string) {
+      lastLocalContent = value;
+    },
 
-    get preEditCursorPosition() { return preEditCursorPosition; },
-    set preEditCursorPosition(value: number | null) { preEditCursorPosition = value; },
+    get preEditCursorPosition() {
+      return preEditCursorPosition;
+    },
+    set preEditCursorPosition(value: number | null) {
+      preEditCursorPosition = value;
+    },
 
-    get preEditSelectionEnd() { return preEditSelectionEnd; },
-    set preEditSelectionEnd(value: number | null) { preEditSelectionEnd = value; },
+    get preEditSelectionEnd() {
+      return preEditSelectionEnd;
+    },
+    set preEditSelectionEnd(value: number | null) {
+      preEditSelectionEnd = value;
+    },
 
-    get preEditContent() { return preEditContent; },
-    set preEditContent(value: string | null) { preEditContent = value; },
+    get preEditContent() {
+      return preEditContent;
+    },
+    set preEditContent(value: string | null) {
+      preEditContent = value;
+    },
 
     focusEditor() {
       setTimeout(() => {
-        if (syntaxHighlight === 'plaintext') {
+        if (syntaxHighlight === "plaintext") {
           textareaScrollRef?.focus();
         } else {
           editorRef?.focus();
         }
       }, 0);
-    }
+    },
   };
 }

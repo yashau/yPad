@@ -9,24 +9,24 @@
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   const passwordKey = await crypto.subtle.importKey(
-    'raw',
+    "raw",
     encoder.encode(password),
-    'PBKDF2',
+    "PBKDF2",
     false,
-    ['deriveKey']
+    ["deriveKey"],
   );
 
   return crypto.subtle.deriveKey(
     {
-      name: 'PBKDF2',
+      name: "PBKDF2",
       salt: salt as BufferSource,
       iterations: 100000,
-      hash: 'SHA-256'
+      hash: "SHA-256",
     },
     passwordKey,
-    { name: 'AES-GCM', length: 256 },
+    { name: "AES-GCM", length: 256 },
     false,
-    ['encrypt', 'decrypt']
+    ["encrypt", "decrypt"],
   );
 }
 
@@ -44,11 +44,11 @@ export async function encryptContent(content: string, password: string): Promise
   // Encrypt content
   const encryptedData = await crypto.subtle.encrypt(
     {
-      name: 'AES-GCM',
-      iv
+      name: "AES-GCM",
+      iv,
     },
     key,
-    encoder.encode(content)
+    encoder.encode(content),
   );
 
   // Combine salt + IV + encrypted data
@@ -66,7 +66,7 @@ export async function decryptContent(encryptedBase64: string, password: string):
   const decoder = new TextDecoder();
 
   // Decode from base64
-  const combined = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+  const combined = Uint8Array.from(atob(encryptedBase64), (c) => c.charCodeAt(0));
 
   // Extract salt, IV, and encrypted data
   const salt = combined.slice(0, 16);
@@ -80,16 +80,15 @@ export async function decryptContent(encryptedBase64: string, password: string):
   try {
     const decryptedData = await crypto.subtle.decrypt(
       {
-        name: 'AES-GCM',
-        iv
+        name: "AES-GCM",
+        iv,
       },
       key,
-      encryptedData
+      encryptedData,
     );
 
     return decoder.decode(decryptedData);
   } catch (error) {
-    throw new Error('Failed to decrypt: invalid password or corrupted data');
+    throw new Error("Failed to decrypt: invalid password or corrupted data");
   }
 }
-

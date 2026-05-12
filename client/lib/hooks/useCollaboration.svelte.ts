@@ -5,8 +5,8 @@
  * connected users, and Yjs document synchronization.
  */
 
-import type { WebSocketClient } from '../realtime/WebSocketClient';
-import type { YjsManager, RemoteCursorState } from '../yjs/YjsManager';
+import type { WebSocketClient } from "../realtime/WebSocketClient";
+import type { YjsManager, RemoteCursorState } from "../yjs/YjsManager";
 
 /** Remote user's cursor position and display info. */
 export interface RemoteCursorData {
@@ -20,24 +20,24 @@ export function useCollaboration() {
   let wsClient = $state<WebSocketClient | null>(null);
   let yjsManager = $state<YjsManager | null>(null);
   let isRealtimeEnabled = $state(false);
-  let connectionStatus = $state<'connected' | 'disconnected' | 'connecting'>('disconnected');
-  let clientId = $state('');
+  let connectionStatus = $state<"connected" | "disconnected" | "connecting">("disconnected");
+  let clientId = $state("");
   let isSyncing = $state(false);
   let remoteCursors = $state<Map<string, RemoteCursorData>>(new Map());
   let connectedUsers = $state<Set<string>>(new Set());
 
   // 10 pastel cursor colors - cycles through if more than 10 editors
   const CURSOR_COLORS = [
-    'blue',
-    'green',
-    'rose',
-    'amber',
-    'purple',
-    'pink',
-    'orange',
-    'cyan',
-    'teal',
-    'indigo'
+    "blue",
+    "green",
+    "rose",
+    "amber",
+    "purple",
+    "pink",
+    "orange",
+    "cyan",
+    "teal",
+    "indigo",
   ];
 
   // Mapping from WebSocket client IDs to Yjs awareness client IDs
@@ -55,7 +55,7 @@ export function useCollaboration() {
     let hash = 0;
     for (let i = 0; i < id.length; i++) {
       const char = id.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32bit integer
     }
     // Use absolute value and modulo to get color index
@@ -129,7 +129,7 @@ export function useCollaboration() {
         position: cursorState.position,
         selectionEnd: cursorState.selectionEnd,
         color: cursorState.color,
-        label: cursorState.name
+        label: cursorState.name,
       };
       updatedCursors.set(String(awarenessClientId), cursorData);
     });
@@ -138,33 +138,65 @@ export function useCollaboration() {
   }
 
   return {
-    get wsClient() { return wsClient; },
-    set wsClient(value: WebSocketClient | null) { wsClient = value; },
+    get wsClient() {
+      return wsClient;
+    },
+    set wsClient(value: WebSocketClient | null) {
+      wsClient = value;
+    },
 
-    get yjsManager() { return yjsManager; },
-    set yjsManager(value: YjsManager | null) { yjsManager = value; },
+    get yjsManager() {
+      return yjsManager;
+    },
+    set yjsManager(value: YjsManager | null) {
+      yjsManager = value;
+    },
 
-    get isRealtimeEnabled() { return isRealtimeEnabled; },
-    set isRealtimeEnabled(value: boolean) { isRealtimeEnabled = value; },
+    get isRealtimeEnabled() {
+      return isRealtimeEnabled;
+    },
+    set isRealtimeEnabled(value: boolean) {
+      isRealtimeEnabled = value;
+    },
 
-    get connectionStatus() { return connectionStatus; },
-    set connectionStatus(value: 'connected' | 'disconnected' | 'connecting') { connectionStatus = value; },
+    get connectionStatus() {
+      return connectionStatus;
+    },
+    set connectionStatus(value: "connected" | "disconnected" | "connecting") {
+      connectionStatus = value;
+    },
 
-    get clientId() { return clientId; },
-    set clientId(value: string) { clientId = value; },
+    get clientId() {
+      return clientId;
+    },
+    set clientId(value: string) {
+      clientId = value;
+    },
 
-    get isSyncing() { return isSyncing; },
-    set isSyncing(value: boolean) { isSyncing = value; },
+    get isSyncing() {
+      return isSyncing;
+    },
+    set isSyncing(value: boolean) {
+      isSyncing = value;
+    },
 
-    get remoteCursors() { return remoteCursors; },
-    set remoteCursors(value: Map<string, RemoteCursorData>) { remoteCursors = value; },
+    get remoteCursors() {
+      return remoteCursors;
+    },
+    set remoteCursors(value: Map<string, RemoteCursorData>) {
+      remoteCursors = value;
+    },
 
-    get connectedUsers() { return connectedUsers; },
-    set connectedUsers(value: Set<string>) { connectedUsers = value; },
+    get connectedUsers() {
+      return connectedUsers;
+    },
+    set connectedUsers(value: Set<string>) {
+      connectedUsers = value;
+    },
 
     getClientColor,
     cleanupStaleCursors,
     updateRemoteCursorsFromAwareness,
-    registerAwarenessClientId
+    registerAwarenessClientId,
   };
 }

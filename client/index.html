@@ -1,48 +1,56 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>yPad</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>yPad</title>
 
-  <!-- Favicons -->
-  <link rel="icon" href="/favicon.ico" sizes="32x32">
-  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
-  <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
-  <link rel="manifest" href="/site.webmanifest">
+    <!-- Favicons -->
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
 
-  <!-- Theme Color -->
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
 
-  <!-- Syntax Highlighting -->
-  <link id="hljs-theme-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
-  <link id="hljs-theme-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css">
-  <script>
-    // Sync highlight.js theme with app theme
-    function updateHljsTheme() {
-      const isDark = document.documentElement.classList.contains('dark');
-      const lightLink = document.getElementById('hljs-theme-light');
-      const darkLink = document.getElementById('hljs-theme-dark');
+    <!-- Syntax Highlighting -->
+    <link
+      id="hljs-theme-light"
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css"
+    />
+    <link
+      id="hljs-theme-dark"
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css"
+    />
+    <script>
+      // Sync highlight.js theme with app theme
+      function updateHljsTheme() {
+        const isDark = document.documentElement.classList.contains("dark");
+        const lightLink = document.getElementById("hljs-theme-light");
+        const darkLink = document.getElementById("hljs-theme-dark");
 
-      if (lightLink) lightLink.disabled = isDark;
-      if (darkLink) darkLink.disabled = !isDark;
-    }
+        if (lightLink) lightLink.disabled = isDark;
+        if (darkLink) darkLink.disabled = !isDark;
+      }
 
-    // Initial update
-    updateHljsTheme();
+      // Initial update
+      updateHljsTheme();
 
-    // Watch for theme changes
-    const observer = new MutationObserver(updateHljsTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class']
-    });
-  </script>
-</head>
-<body>
-  <div id="app"></div>
-  <script type="module" src="/client/main.ts"></script>
-</body>
+      // Watch for theme changes
+      const observer = new MutationObserver(updateHljsTheme);
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ["class"],
+      });
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/client/main.ts"></script>
+  </body>
 </html>

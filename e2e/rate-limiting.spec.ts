@@ -14,12 +14,8 @@
  * 3. Recovery works after slowing down
  */
 
-import { test, expect } from '@playwright/test';
-import {
-  createNote,
-  getEditorContent,
-  setup2Clients
-} from './utils/test-helpers';
+import { test, expect } from "@playwright/test";
+import { createNote, getEditorContent, setup2Clients } from "./utils/test-helpers";
 
 // Longer timeout for rate limiting tests that need to exhaust tokens
 test.setTimeout(60000);
@@ -28,37 +24,36 @@ test.setTimeout(60000);
 // TESTS
 // ============================================================================
 
-test.describe('WebSocket Rate Limiting - Below Threshold', () => {
+test.describe("WebSocket Rate Limiting - Below Threshold", () => {
+  test("Normal and fast typing should stay under limit", async ({ page }) => {
+    await createNote(page, "start");
 
-  test('Normal and fast typing should stay under limit', async ({ page }) => {
-    await createNote(page, 'start');
-
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await page.keyboard.press('End');
+    await page.keyboard.press("End");
 
     // Track rate limit warnings
     const rateLimitWarnings: string[] = [];
-    page.on('console', (msg) => {
-      if (msg.text().includes('Rate limit')) {
+    page.on("console", (msg) => {
+      if (msg.text().includes("Rate limit")) {
         rateLimitWarnings.push(msg.text());
       }
     });
 
     // Normal typing speed
-    const text = ' hello';
+    const text = " hello";
     for (const char of text) {
       await page.keyboard.type(char);
       await page.waitForTimeout(100);
     }
 
     // Fast typing with batching
-    const fastText = ' quick brown fox';
+    const fastText = " quick brown fox";
     await page.keyboard.type(fastText, { delay: 20 });
 
     // Burst typing
-    await page.keyboard.press('Control+a');
-    const burstText = 'abcdefghijklmnopqrstuvwxyz';
+    await page.keyboard.press("Control+a");
+    const burstText = "abcdefghijklmnopqrstuvwxyz";
     await page.keyboard.type(burstText, { delay: 5 });
 
     await page.waitForTimeout(2000);
@@ -67,58 +62,54 @@ test.describe('WebSocket Rate Limiting - Below Threshold', () => {
     expect(content).toBe(burstText);
     expect(rateLimitWarnings.length).toBe(0);
   });
-
 });
 
-test.describe('WebSocket Rate Limiting - At Threshold', () => {
+test.describe("WebSocket Rate Limiting - At Threshold", () => {
+  test("Sustained editing and rapid pastes at threshold", async ({ page }) => {
+    await createNote(page, "initial");
 
-  test('Sustained editing and rapid pastes at threshold', async ({ page }) => {
-    await createNote(page, 'initial');
-
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await page.keyboard.press('End');
+    await page.keyboard.press("End");
 
     // Track any rate limit messages
     const rateLimitEvents: string[] = [];
-    page.on('console', (msg) => {
+    page.on("console", (msg) => {
       const text = msg.text();
-      if (text.includes('Rate limit') || text.includes('rate limit')) {
+      if (text.includes("Rate limit") || text.includes("rate limit")) {
         rateLimitEvents.push(text);
       }
     });
 
     // Type at rate approaching limit
-    const testText = ' sustained typing test';
+    const testText = " sustained typing test";
     await page.keyboard.type(testText, { delay: 25 });
 
     // Multiple rapid paste operations (10 updates within burst)
     for (let i = 1; i <= 10; i++) {
-      await textarea.fill('paste'.repeat(i));
+      await textarea.fill("paste".repeat(i));
       await page.waitForTimeout(60);
     }
 
     await page.waitForTimeout(1500);
 
     const content = await getEditorContent(page);
-    expect(content).toBe('paste'.repeat(10));
+    expect(content).toBe("paste".repeat(10));
   });
-
 });
 
-test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
+test.describe("WebSocket Rate Limiting - Exceeding Threshold", () => {
+  test("Extreme rate should trigger rate limiting warnings", async ({ page }) => {
+    await createNote(page, "x");
 
-  test('Extreme rate should trigger rate limiting warnings', async ({ page }) => {
-    await createNote(page, 'x');
-
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
 
     // Track rate limit warnings from server
     const rateLimitWarnings: string[] = [];
-    page.on('console', (msg) => {
+    page.on("console", (msg) => {
       const text = msg.text();
-      if (text.includes('Rate limit') || text.includes('slow down')) {
+      if (text.includes("Rate limit") || text.includes("slow down")) {
         rateLimitWarnings.push(text);
       }
     });
@@ -137,21 +128,21 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
     expect(content).toMatch(/^update\d+$/);
   });
 
-  test('Sustained extreme rate should trigger rate limit response', async ({ page }) => {
-    await createNote(page, 'disconnect-test');
+  test("Sustained extreme rate should trigger rate limit response", async ({ page }) => {
+    await createNote(page, "disconnect-test");
 
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
 
     // Track console for rate limit messages and WebSocket errors
     let sawRateLimitWarning = false;
     let sawWebSocketError = false;
-    page.on('console', (msg) => {
+    page.on("console", (msg) => {
       const text = msg.text();
-      if (text.includes('Rate limit') || text.includes('slow down')) {
+      if (text.includes("Rate limit") || text.includes("slow down")) {
         sawRateLimitWarning = true;
       }
-      if (text.includes('WebSocket') && (text.includes('close') || text.includes('error'))) {
+      if (text.includes("WebSocket") && (text.includes("close") || text.includes("error"))) {
         sawWebSocketError = true;
       }
     });
@@ -171,17 +162,17 @@ test.describe('WebSocket Rate Limiting - Exceeding Threshold', () => {
     expect(content).toMatch(/^spam\d+$/);
 
     // Log diagnostic info
-    console.log(`Sent 200 updates in ${elapsed}ms, rate limit warning: ${sawRateLimitWarning}, WS error: ${sawWebSocketError}`);
+    console.log(
+      `Sent 200 updates in ${elapsed}ms, rate limit warning: ${sawRateLimitWarning}, WS error: ${sawWebSocketError}`,
+    );
   });
-
 });
 
-test.describe('WebSocket Rate Limiting - Recovery', () => {
+test.describe("WebSocket Rate Limiting - Recovery", () => {
+  test("Recovery after burst and intermittent bursts", async ({ page }) => {
+    await createNote(page, "recovery");
 
-  test('Recovery after burst and intermittent bursts', async ({ page }) => {
-    await createNote(page, 'recovery');
-
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
 
     // First: exhaust some tokens with rapid updates
@@ -193,11 +184,11 @@ test.describe('WebSocket Rate Limiting - Recovery', () => {
     await page.waitForTimeout(5000);
 
     // Now type normally - should work fine
-    await textarea.fill('recovered content');
+    await textarea.fill("recovered content");
     await page.waitForTimeout(1000);
 
     let content = await getEditorContent(page);
-    expect(content).toBe('recovered content');
+    expect(content).toBe("recovered content");
 
     // Test intermittent bursts with recovery periods
     // Burst 1
@@ -229,15 +220,13 @@ test.describe('WebSocket Rate Limiting - Recovery', () => {
     content = await getEditorContent(page);
     expect(content).toMatch(/^burst3-\d+$/);
   });
-
 });
 
-test.describe('Large Content - Rate Limiting', () => {
+test.describe("Large Content - Rate Limiting", () => {
+  test("Large pastes should work (single updates)", async ({ page }) => {
+    await createNote(page, "init");
 
-  test('Large pastes should work (single updates)', async ({ page }) => {
-    await createNote(page, 'init');
-
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
 
     // 500 lines in a single paste = 1 Yjs update
@@ -245,43 +234,43 @@ test.describe('Large Content - Rate Limiting', () => {
     for (let i = 1; i <= 500; i++) {
       lines.push(`Line ${i}: Content from a log file or code.`);
     }
-    const largeText = lines.join('\n');
+    const largeText = lines.join("\n");
 
     await textarea.fill(largeText);
     await page.waitForTimeout(2000);
 
     let content = await getEditorContent(page);
-    expect(content).toContain('Line 1:');
-    expect(content).toContain('Line 500:');
-    expect(content.split('\n').length).toBe(500);
+    expect(content).toContain("Line 1:");
+    expect(content).toContain("Line 500:");
+    expect(content.split("\n").length).toBe(500);
 
     // Multiple large pastes = few Yjs updates (within burst)
-    const chunk = 'Lorem ipsum dolor sit amet.\n'.repeat(100).trimEnd();
+    const chunk = "Lorem ipsum dolor sit amet.\n".repeat(100).trimEnd();
 
     await textarea.fill(chunk);
     await page.waitForTimeout(100);
 
-    await textarea.fill(chunk + '\n' + chunk);
+    await textarea.fill(chunk + "\n" + chunk);
     await page.waitForTimeout(100);
 
-    await textarea.fill(chunk + '\n' + chunk + '\n' + chunk);
+    await textarea.fill(chunk + "\n" + chunk + "\n" + chunk);
     await page.waitForTimeout(2000);
 
     content = await getEditorContent(page);
-    expect(content.split('\n').length).toBe(300);
+    expect(content.split("\n").length).toBe(300);
   });
-
 });
 
-test.describe('Multi-User Rate Limiting', () => {
-
-  test('Two users editing rapidly should both have independent rate limits', async ({ browser }) => {
-    const { clients, cleanup } = await setup2Clients(browser, 'shared');
+test.describe("Multi-User Rate Limiting", () => {
+  test("Two users editing rapidly should both have independent rate limits", async ({
+    browser,
+  }) => {
+    const { clients, cleanup } = await setup2Clients(browser, "shared");
 
     try {
       const [client1, client2] = clients;
-      const textarea1 = client1.page.locator('textarea');
-      const textarea2 = client2.page.locator('textarea');
+      const textarea1 = client1.page.locator("textarea");
+      const textarea2 = client2.page.locator("textarea");
 
       // Both users send rapid updates concurrently
       // Each has their own 100 token burst allowance
@@ -306,10 +295,8 @@ test.describe('Multi-User Rate Limiting', () => {
       const content2 = await getEditorContent(client2.page);
 
       expect(content1).toBe(content2);
-
     } finally {
       await cleanup();
     }
   });
-
 });

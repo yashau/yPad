@@ -22,7 +22,7 @@ import type {
   RequestEditResponseMessage,
   EditorCountUpdateMessage,
   YjsStateResponseMessage,
-} from '../../../src/types/messages';
+} from "../../../src/types/messages";
 
 /**
  * Configuration options for the WebSocket client.
@@ -53,15 +53,29 @@ export interface WebSocketClientOptions {
   /** Called when note version is updated by another user (encrypted notes) */
   onVersionUpdate?: (version: number, message: string) => void;
   /** Called when a user joins the session */
-  onUserJoined?: (clientId: string, connectedUsers: string[], activeEditorCount: number, viewerCount: number) => void;
+  onUserJoined?: (
+    clientId: string,
+    connectedUsers: string[],
+    activeEditorCount: number,
+    viewerCount: number,
+  ) => void;
   /** Called when a user leaves the session */
-  onUserLeft?: (clientId: string, connectedUsers: string[], activeEditorCount: number, viewerCount: number) => void;
+  onUserLeft?: (
+    clientId: string,
+    connectedUsers: string[],
+    activeEditorCount: number,
+    viewerCount: number,
+  ) => void;
   /** Called when syntax highlighting mode changes */
   onSyntaxChange?: (syntax: string) => void;
   /** Called when note status (view count, expiration) is received */
   onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
   /** Called when server responds to an edit permission request */
-  onRequestEditResponse?: (canEdit: boolean, activeEditorCount: number, viewerCount: number) => void;
+  onRequestEditResponse?: (
+    canEdit: boolean,
+    activeEditorCount: number,
+    viewerCount: number,
+  ) => void;
   /** Called when editor limit is reached and update is rejected */
   onEditorLimitReached?: () => void;
   /** Called when editor/viewer counts change (e.g., viewer becomes editor) */
@@ -80,7 +94,7 @@ interface QueuedInboundMessage {
  * Encode Uint8Array to base64 string for JSON transport
  */
 function encodeBase64(data: Uint8Array): string {
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < data.length; i++) {
     binary += String.fromCharCode(data[i]);
   }
@@ -109,7 +123,7 @@ export class WebSocketClient {
   private isIntentionallyClosed = false;
 
   // Client ID assigned by server during sync
-  private clientId: string = '';
+  private clientId: string = "";
 
   // Inbound message queue for sequential processing
   private inboundQueue: QueuedInboundMessage[] = [];
@@ -133,7 +147,7 @@ export class WebSocketClient {
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
     const url = `${protocol}//${host}/api/notes/${this.noteId}/ws?session_id=${this.options.sessionId}`;
 
@@ -154,7 +168,7 @@ export class WebSocketClient {
           const message: WSMessage = JSON.parse(event.data);
           this.enqueueInboundMessage(message);
         } catch (error) {
-          console.error('[WebSocket] Error parsing message:', error);
+          console.error("[WebSocket] Error parsing message:", error);
         }
       };
 
@@ -171,13 +185,13 @@ export class WebSocketClient {
       };
 
       this.ws.onerror = (event) => {
-        console.error('[WebSocket] Error:', event);
+        console.error("[WebSocket] Error:", event);
         if (this.options.onError) {
-          this.options.onError(new Error('WebSocket error'));
+          this.options.onError(new Error("WebSocket error"));
         }
       };
     } catch (error) {
-      console.error('[WebSocket] Connection error:', error);
+      console.error("[WebSocket] Connection error:", error);
       if (this.options.onError) {
         this.options.onError(error as Error);
       }
@@ -213,14 +227,14 @@ export class WebSocketClient {
         const queuedMessage = this.inboundQueue.shift();
 
         if (!queuedMessage) {
-          console.error('[WebSocket] Queue empty when message was expected');
+          console.error("[WebSocket] Queue empty when message was expected");
           break;
         }
 
         try {
           await this.handleMessage(queuedMessage.message);
         } catch (error) {
-          console.error('[WebSocket] Error processing queued message:', error);
+          console.error("[WebSocket] Error processing queued message:", error);
         }
       }
     } finally {
@@ -230,25 +244,25 @@ export class WebSocketClient {
 
   private async handleMessage(message: WSMessage): Promise<void> {
     // Process Yjs sync immediately - it sets up sequence tracking
-    if (message.type === 'yjs_sync') {
+    if (message.type === "yjs_sync") {
       await this.handleYjsSync(message as YjsSyncMessage);
       return;
     }
 
     // Process ACK immediately - not a broadcast message
-    if (message.type === 'yjs_ack') {
+    if (message.type === "yjs_ack") {
       await this.handleYjsAck(message as YjsAckMessage);
       return;
     }
 
     // Process syntax ACK immediately
-    if (message.type === 'syntax_ack') {
+    if (message.type === "syntax_ack") {
       await this.handleSyntaxAck(message as SyntaxAckMessage);
       return;
     }
 
     // Process Yjs state response immediately (recovery)
-    if (message.type === 'yjs_state_response') {
+    if (message.type === "yjs_state_response") {
       await this.handleYjsStateResponse(message as YjsStateResponseMessage);
       return;
     }
@@ -263,10 +277,10 @@ export class WebSocketClient {
 
     // Messages without sequence numbers process immediately
     switch (message.type) {
-      case 'error':
-        console.error('[WebSocket] Server error:', message.message);
+      case "error":
+        console.error("[WebSocket] Server error:", message.message);
         // Handle editor limit reached error specially
-        if (message.message === 'editor_limit_reached') {
+        if (message.message === "editor_limit_reached") {
           if (this.options.onEditorLimitReached) {
             this.options.onEditorLimitReached();
           }
@@ -275,53 +289,57 @@ export class WebSocketClient {
         }
         break;
 
-      case 'reload':
-        console.warn('[WebSocket] Reload requested:', message.reason);
+      case "reload":
+        console.warn("[WebSocket] Reload requested:", message.reason);
         break;
 
-      case 'note_expired':
-      case 'note_deleted':
-        console.warn('[WebSocket] Note no longer available');
+      case "note_expired":
+      case "note_deleted":
+        console.warn("[WebSocket] Note no longer available");
         if (this.options.onNoteDeleted) {
-          const deletedByCurrentUser = message.type === 'note_deleted' &&
-                                        message.sessionId === this.options.sessionId;
+          const deletedByCurrentUser =
+            message.type === "note_deleted" && message.sessionId === this.options.sessionId;
           this.options.onNoteDeleted(deletedByCurrentUser);
         }
         this.close();
         break;
 
-      case 'encryption_changed':
-        console.log('[WebSocket] Encryption status changed:', message);
+      case "encryption_changed":
+        console.log("[WebSocket] Encryption status changed:", message);
         if (this.options.onEncryptionChanged) {
           this.options.onEncryptionChanged(message.is_encrypted);
         }
         break;
 
-      case 'version_update':
-        console.log('[WebSocket] Version update:', message);
+      case "version_update":
+        console.log("[WebSocket] Version update:", message);
         if (this.options.onVersionUpdate) {
           this.options.onVersionUpdate(message.version, message.message);
         }
         break;
 
-      case 'note_status':
+      case "note_status":
         if (this.options.onNoteStatus) {
           const statusMsg = message as NoteStatusMessage;
-          this.options.onNoteStatus(statusMsg.view_count, statusMsg.max_views, statusMsg.expires_at);
+          this.options.onNoteStatus(
+            statusMsg.view_count,
+            statusMsg.max_views,
+            statusMsg.expires_at,
+          );
         }
         break;
 
-      case 'request_edit_response':
+      case "request_edit_response":
         await this.handleRequestEditResponse(message as RequestEditResponseMessage);
         break;
 
-      case 'awareness_update':
+      case "awareness_update":
         // Awareness updates don't use sequence numbers (cursor positions are ephemeral)
         await this.handleAwarenessUpdate(message as AwarenessUpdateMessage);
         break;
 
       default:
-        console.warn('[WebSocket] Unknown message type:', message);
+        console.warn("[WebSocket] Unknown message type:", message);
     }
   }
 
@@ -347,7 +365,9 @@ export class WebSocketClient {
     } else if (seqNum > this.nextExpectedSeq) {
       // Future message - buffer it
       if (this.pendingMessages.size >= this.maxPendingMessages) {
-        console.error(`[WebSocket] Pending messages buffer full (${this.maxPendingMessages}), requesting resync`);
+        console.error(
+          `[WebSocket] Pending messages buffer full (${this.maxPendingMessages}), requesting resync`,
+        );
         this.requestResync();
         return;
       }
@@ -368,28 +388,28 @@ export class WebSocketClient {
    */
   private async processSequencedMessage(message: WSMessage): Promise<void> {
     switch (message.type) {
-      case 'yjs_update':
+      case "yjs_update":
         await this.handleYjsUpdate(message as YjsUpdateMessage);
         break;
 
-      case 'user_joined':
+      case "user_joined":
         await this.handleUserJoined(message as UserJoinedMessage);
         break;
 
-      case 'user_left':
+      case "user_left":
         await this.handleUserLeft(message as UserLeftMessage);
         break;
 
-      case 'syntax_change':
+      case "syntax_change":
         await this.handleSyntaxChange(message as SyntaxChangeMessage);
         break;
 
-      case 'editor_count_update':
+      case "editor_count_update":
         await this.handleEditorCountUpdate(message as EditorCountUpdateMessage);
         break;
 
       default:
-        console.warn('[WebSocket] Unknown sequenced message type:', message);
+        console.warn("[WebSocket] Unknown sequenced message type:", message);
     }
   }
 
@@ -431,7 +451,7 @@ export class WebSocketClient {
         const pendingSeqs = Array.from(this.pendingMessages.keys()).sort((a, b) => a - b);
         console.error(
           `[WebSocket] Gap detection timeout! Expected seq ${this.nextExpectedSeq}, ` +
-          `have pending: [${pendingSeqs.join(', ')}]`
+            `have pending: [${pendingSeqs.join(", ")}]`,
         );
         this.requestResync();
       }
@@ -488,13 +508,23 @@ export class WebSocketClient {
 
   private async handleUserJoined(message: UserJoinedMessage): Promise<void> {
     if (this.options.onUserJoined) {
-      this.options.onUserJoined(message.clientId, message.connectedUsers, message.activeEditorCount, message.viewerCount);
+      this.options.onUserJoined(
+        message.clientId,
+        message.connectedUsers,
+        message.activeEditorCount,
+        message.viewerCount,
+      );
     }
   }
 
   private async handleUserLeft(message: UserLeftMessage): Promise<void> {
     if (this.options.onUserLeft) {
-      this.options.onUserLeft(message.clientId, message.connectedUsers, message.activeEditorCount, message.viewerCount);
+      this.options.onUserLeft(
+        message.clientId,
+        message.connectedUsers,
+        message.activeEditorCount,
+        message.viewerCount,
+      );
     }
   }
 
@@ -517,7 +547,11 @@ export class WebSocketClient {
 
   private async handleRequestEditResponse(message: RequestEditResponseMessage): Promise<void> {
     if (this.options.onRequestEditResponse) {
-      this.options.onRequestEditResponse(message.canEdit, message.activeEditorCount, message.viewerCount);
+      this.options.onRequestEditResponse(
+        message.canEdit,
+        message.activeEditorCount,
+        message.viewerCount,
+      );
     }
   }
 
@@ -525,7 +559,7 @@ export class WebSocketClient {
    * Request a full resync from the server
    */
   private requestResync(): void {
-    console.warn('[WebSocket] Requesting full resync due to gap');
+    console.warn("[WebSocket] Requesting full resync due to gap");
 
     // Clear gap detection timer
     if (this.gapTimer !== null) {
@@ -548,12 +582,12 @@ export class WebSocketClient {
    */
   sendRequestEdit(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[WebSocket] Cannot send request_edit - not connected');
+      console.warn("[WebSocket] Cannot send request_edit - not connected");
       return;
     }
 
     const message = {
-      type: 'request_edit',
+      type: "request_edit",
       clientId: this.clientId,
       sessionId: this.options.sessionId,
     };
@@ -566,12 +600,12 @@ export class WebSocketClient {
    */
   sendYjsUpdate(update: Uint8Array): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[WebSocket] Cannot send Yjs update - not connected');
+      console.warn("[WebSocket] Cannot send Yjs update - not connected");
       return;
     }
 
     const message: YjsUpdateMessage = {
-      type: 'yjs_update',
+      type: "yjs_update",
       update: encodeBase64(update),
       clientId: this.clientId,
       sessionId: this.options.sessionId,
@@ -589,7 +623,7 @@ export class WebSocketClient {
     }
 
     const message: AwarenessUpdateMessage = {
-      type: 'awareness_update',
+      type: "awareness_update",
       update: encodeBase64(update),
       clientId: this.clientId,
     };
@@ -606,7 +640,7 @@ export class WebSocketClient {
     }
 
     const message: SyntaxChangeMessage = {
-      type: 'syntax_change',
+      type: "syntax_change",
       clientId: this.clientId,
       syntax,
     };
@@ -623,7 +657,7 @@ export class WebSocketClient {
     }
 
     const message = {
-      type: 'yjs_state_request',
+      type: "yjs_state_request",
       clientId: this.clientId,
     };
 
@@ -632,9 +666,9 @@ export class WebSocketClient {
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[WebSocket] Max reconnection attempts reached');
+      console.error("[WebSocket] Max reconnection attempts reached");
       if (this.options.onError) {
-        this.options.onError(new Error('Failed to reconnect'));
+        this.options.onError(new Error("Failed to reconnect"));
       }
       return;
     }

@@ -3,7 +3,7 @@
  * Global mocks and test utilities
  */
 
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 // Mock crypto.subtle for tests
 const mockCryptoSubtle = {
@@ -16,8 +16,8 @@ const mockCryptoSubtle = {
     }
     return hash.buffer;
   }),
-  importKey: vi.fn(async () => ({ type: 'secret' })),
-  deriveKey: vi.fn(async () => ({ type: 'derived' })),
+  importKey: vi.fn(async () => ({ type: "secret" })),
+  deriveKey: vi.fn(async () => ({ type: "derived" })),
   encrypt: vi.fn(async (_algorithm: any, _key: any, data: ArrayBuffer) => {
     // Mock encryption - just return the data with a prefix
     const encrypted = new Uint8Array(data.byteLength + 16);
@@ -42,15 +42,15 @@ const mockGetRandomValues = vi.fn(<T extends ArrayBufferView>(array: T): T => {
 
 // Mock crypto.randomUUID
 const mockRandomUUID = vi.fn(() =>
-  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
-  })
+  }),
 );
 
 // Apply crypto mock globally
-Object.defineProperty(globalThis, 'crypto', {
+Object.defineProperty(globalThis, "crypto", {
   value: {
     subtle: mockCryptoSubtle,
     getRandomValues: mockGetRandomValues,
@@ -61,12 +61,18 @@ Object.defineProperty(globalThis, 'crypto', {
 
 // Mock sessionStorage
 const sessionStorageData: Record<string, string> = {};
-Object.defineProperty(globalThis, 'sessionStorage', {
+Object.defineProperty(globalThis, "sessionStorage", {
   value: {
     getItem: vi.fn((key: string) => sessionStorageData[key] || null),
-    setItem: vi.fn((key: string, value: string) => { sessionStorageData[key] = value; }),
-    removeItem: vi.fn((key: string) => { delete sessionStorageData[key]; }),
-    clear: vi.fn(() => { Object.keys(sessionStorageData).forEach(k => delete sessionStorageData[k]); }),
+    setItem: vi.fn((key: string, value: string) => {
+      sessionStorageData[key] = value;
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete sessionStorageData[key];
+    }),
+    clear: vi.fn(() => {
+      Object.keys(sessionStorageData).forEach((k) => delete sessionStorageData[k]);
+    }),
   },
   writable: true,
 });
@@ -91,7 +97,7 @@ class MockWebSocket {
     setTimeout(() => {
       this.readyState = MockWebSocket.OPEN;
       if (this.onopen) {
-        this.onopen(new Event('open'));
+        this.onopen(new Event("open"));
       }
     }, 0);
   }
@@ -100,43 +106,43 @@ class MockWebSocket {
   close = vi.fn(() => {
     this.readyState = MockWebSocket.CLOSED;
     if (this.onclose) {
-      this.onclose(new CloseEvent('close'));
+      this.onclose(new CloseEvent("close"));
     }
   });
 
   // Helper to simulate receiving a message
   simulateMessage(data: any) {
     if (this.onmessage) {
-      this.onmessage(new MessageEvent('message', { data: JSON.stringify(data) }));
+      this.onmessage(new MessageEvent("message", { data: JSON.stringify(data) }));
     }
   }
 
   // Helper to simulate error
   simulateError() {
     if (this.onerror) {
-      this.onerror(new Event('error'));
+      this.onerror(new Event("error"));
     }
   }
 }
 
-Object.defineProperty(globalThis, 'WebSocket', {
+Object.defineProperty(globalThis, "WebSocket", {
   value: MockWebSocket,
   writable: true,
 });
 
 // Mock window.location
-Object.defineProperty(globalThis, 'location', {
+Object.defineProperty(globalThis, "location", {
   value: {
-    protocol: 'https:',
-    host: 'localhost:8787',
-    pathname: '/',
-    href: 'https://localhost:8787/',
+    protocol: "https:",
+    host: "localhost:8787",
+    pathname: "/",
+    href: "https://localhost:8787/",
   },
   writable: true,
 });
 
 // Mock TextEncoder/TextDecoder (should exist in jsdom but ensure they work)
-if (typeof TextEncoder === 'undefined') {
+if (typeof TextEncoder === "undefined") {
   globalThis.TextEncoder = class TextEncoder {
     encode(str: string): Uint8Array {
       const arr = new Uint8Array(str.length);
@@ -148,7 +154,7 @@ if (typeof TextEncoder === 'undefined') {
   } as any;
 }
 
-if (typeof TextDecoder === 'undefined') {
+if (typeof TextDecoder === "undefined") {
   globalThis.TextDecoder = class TextDecoder {
     decode(arr: Uint8Array): string {
       return String.fromCharCode(...arr);
@@ -157,12 +163,12 @@ if (typeof TextDecoder === 'undefined') {
 }
 
 // Mock btoa/atob for base64
-if (typeof btoa === 'undefined') {
-  globalThis.btoa = (str: string) => Buffer.from(str, 'binary').toString('base64');
+if (typeof btoa === "undefined") {
+  globalThis.btoa = (str: string) => Buffer.from(str, "binary").toString("base64");
 }
 
-if (typeof atob === 'undefined') {
-  globalThis.atob = (str: string) => Buffer.from(str, 'base64').toString('binary');
+if (typeof atob === "undefined") {
+  globalThis.atob = (str: string) => Buffer.from(str, "base64").toString("binary");
 }
 
 // Export mocks for use in tests

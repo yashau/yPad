@@ -7,7 +7,7 @@
  * access to the necessary state.
  */
 
-import type { ClientSession } from '../../types/messages';
+import type { ClientSession } from "../../types/messages";
 
 /**
  * Context object passed to message handlers.

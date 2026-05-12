@@ -3,45 +3,45 @@
  * Tests security and encryption state management
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from "vitest";
 
-describe('useSecurity logic', () => {
-  describe('password state management', () => {
-    it('should track password', () => {
-      let password = '';
+describe("useSecurity logic", () => {
+  describe("password state management", () => {
+    it("should track password", () => {
+      let password = "";
 
-      password = 'secret123';
+      password = "secret123";
 
-      expect(password).toBe('secret123');
+      expect(password).toBe("secret123");
     });
 
-    it('should track passwordToSet', () => {
-      let passwordToSet = '';
+    it("should track passwordToSet", () => {
+      let passwordToSet = "";
 
-      passwordToSet = 'newPassword456';
+      passwordToSet = "newPassword456";
 
-      expect(passwordToSet).toBe('newPassword456');
+      expect(passwordToSet).toBe("newPassword456");
     });
 
-    it('should track passwordInput', () => {
-      let passwordInput = '';
+    it("should track passwordInput", () => {
+      let passwordInput = "";
 
-      passwordInput = 'userTypedPassword';
+      passwordInput = "userTypedPassword";
 
-      expect(passwordInput).toBe('userTypedPassword');
+      expect(passwordInput).toBe("userTypedPassword");
     });
 
-    it('should track removePasswordInput', () => {
-      let removePasswordInput = '';
+    it("should track removePasswordInput", () => {
+      let removePasswordInput = "";
 
-      removePasswordInput = 'confirmPassword';
+      removePasswordInput = "confirmPassword";
 
-      expect(removePasswordInput).toBe('confirmPassword');
+      expect(removePasswordInput).toBe("confirmPassword");
     });
   });
 
-  describe('password requirement state', () => {
-    it('should track passwordRequired', () => {
+  describe("password requirement state", () => {
+    it("should track passwordRequired", () => {
       let passwordRequired = false;
 
       passwordRequired = true;
@@ -49,7 +49,7 @@ describe('useSecurity logic', () => {
       expect(passwordRequired).toBe(true);
     });
 
-    it('should track hasPassword', () => {
+    it("should track hasPassword", () => {
       let hasPassword = false;
 
       hasPassword = true;
@@ -58,8 +58,8 @@ describe('useSecurity logic', () => {
     });
   });
 
-  describe('encryption state', () => {
-    it('should track isEncrypted', () => {
+  describe("encryption state", () => {
+    it("should track isEncrypted", () => {
       let isEncrypted = false;
 
       isEncrypted = true;
@@ -67,7 +67,7 @@ describe('useSecurity logic', () => {
       expect(isEncrypted).toBe(true);
     });
 
-    it('should link hasPassword and isEncrypted (true E2E encryption)', () => {
+    it("should link hasPassword and isEncrypted (true E2E encryption)", () => {
       // With true E2E encryption, hasPassword and isEncrypted are always in sync
       // If encrypted, has password. If has password, is encrypted.
       let hasPassword = false;
@@ -89,156 +89,158 @@ describe('useSecurity logic', () => {
     });
   });
 
-  describe('error state', () => {
-    it('should track passwordError', () => {
-      let passwordError = '';
+  describe("error state", () => {
+    it("should track passwordError", () => {
+      let passwordError = "";
 
-      passwordError = 'Incorrect password';
+      passwordError = "Incorrect password";
 
-      expect(passwordError).toBe('Incorrect password');
+      expect(passwordError).toBe("Incorrect password");
     });
 
-    it('should track removePasswordError', () => {
-      let removePasswordError = '';
+    it("should track removePasswordError", () => {
+      let removePasswordError = "";
 
-      removePasswordError = 'Password confirmation failed';
+      removePasswordError = "Password confirmation failed";
 
-      expect(removePasswordError).toBe('Password confirmation failed');
+      expect(removePasswordError).toBe("Password confirmation failed");
     });
 
-    it('should allow clearing errors', () => {
-      let passwordError = 'Some error';
+    it("should allow clearing errors", () => {
+      let passwordError = "Some error";
 
-      passwordError = '';
+      passwordError = "";
 
-      expect(passwordError).toBe('');
+      expect(passwordError).toBe("");
     });
   });
 
-  describe('state getters and setters', () => {
-    it('should provide getter/setter pairs for all state', () => {
+  describe("state getters and setters", () => {
+    it("should provide getter/setter pairs for all state", () => {
       const createState = <T>(initial: T) => {
         let value = initial;
         return {
           get: () => value,
-          set: (newValue: T) => { value = newValue; }
+          set: (newValue: T) => {
+            value = newValue;
+          },
         };
       };
 
-      const password = createState('');
+      const password = createState("");
       const hasPassword = createState(false);
       const isEncrypted = createState(false);
-      const passwordError = createState('');
+      const passwordError = createState("");
 
       // Test setters
-      password.set('secret');
+      password.set("secret");
       hasPassword.set(true);
       isEncrypted.set(true);
-      passwordError.set('Error!');
+      passwordError.set("Error!");
 
       // Test getters
-      expect(password.get()).toBe('secret');
+      expect(password.get()).toBe("secret");
       expect(hasPassword.get()).toBe(true);
       expect(isEncrypted.get()).toBe(true);
-      expect(passwordError.get()).toBe('Error!');
+      expect(passwordError.get()).toBe("Error!");
     });
   });
 });
 
-describe('useSecurity password workflow logic', () => {
-  describe('password protection flow', () => {
-    it('should handle setting new password', () => {
-      let passwordToSet = '';
+describe("useSecurity password workflow logic", () => {
+  describe("password protection flow", () => {
+    it("should handle setting new password", () => {
+      let passwordToSet = "";
       let hasPassword = false;
       let isEncrypted = false;
 
       // User enters password to set
-      passwordToSet = 'newSecretPassword';
+      passwordToSet = "newSecretPassword";
 
       // After save, update state
       hasPassword = true;
       isEncrypted = true;
-      passwordToSet = ''; // Clear after save
+      passwordToSet = ""; // Clear after save
 
       expect(hasPassword).toBe(true);
       expect(isEncrypted).toBe(true);
-      expect(passwordToSet).toBe('');
+      expect(passwordToSet).toBe("");
     });
 
-    it('should handle password verification flow', () => {
+    it("should handle password verification flow", () => {
       let passwordRequired = true;
-      let passwordInput = '';
-      let password = '';
-      let passwordError = '';
+      let passwordInput = "";
+      let password = "";
+      let passwordError = "";
 
       // User enters password
-      passwordInput = 'enteredPassword';
+      passwordInput = "enteredPassword";
 
       // Simulate verification success
       const isValid = true;
       if (isValid) {
         password = passwordInput;
         passwordRequired = false;
-        passwordError = '';
+        passwordError = "";
       }
 
-      expect(password).toBe('enteredPassword');
+      expect(password).toBe("enteredPassword");
       expect(passwordRequired).toBe(false);
-      expect(passwordError).toBe('');
+      expect(passwordError).toBe("");
     });
 
-    it('should handle password verification failure', () => {
+    it("should handle password verification failure", () => {
       let passwordRequired = true;
-      let passwordInput = '';
-      let password = '';
-      let passwordError = '';
+      let passwordInput = "";
+      let password = "";
+      let passwordError = "";
 
       // User enters password
-      passwordInput = 'wrongPassword';
+      passwordInput = "wrongPassword";
 
       // Simulate verification failure
       const isValid = false;
       if (!isValid) {
-        passwordError = 'Invalid password';
-        passwordInput = ''; // Clear input
+        passwordError = "Invalid password";
+        passwordInput = ""; // Clear input
       }
 
-      expect(password).toBe('');
+      expect(password).toBe("");
       expect(passwordRequired).toBe(true);
-      expect(passwordError).toBe('Invalid password');
-      expect(passwordInput).toBe('');
+      expect(passwordError).toBe("Invalid password");
+      expect(passwordInput).toBe("");
     });
   });
 
-  describe('password removal flow', () => {
-    it('should handle password removal (no verification needed - user already decrypted)', () => {
+  describe("password removal flow", () => {
+    it("should handle password removal (no verification needed - user already decrypted)", () => {
       let hasPassword = true;
       let isEncrypted = true;
-      let password = 'existingPassword';
+      let password = "existingPassword";
 
       // With true E2E encryption, user must have already decrypted the note
       // to see its contents, so they've already proven they know the password.
       // No additional verification is needed for removal.
-      const userCanSeeContent = password !== ''; // They have the password
+      const userCanSeeContent = password !== ""; // They have the password
 
       if (userCanSeeContent) {
         hasPassword = false;
         isEncrypted = false;
-        password = '';
+        password = "";
       }
 
       expect(hasPassword).toBe(false);
       expect(isEncrypted).toBe(false);
-      expect(password).toBe('');
+      expect(password).toBe("");
     });
 
-    it('should require decrypted state before removal', () => {
+    it("should require decrypted state before removal", () => {
       let hasPassword = true;
       let isEncrypted = true;
-      let password = ''; // User hasn't decrypted yet
+      let password = ""; // User hasn't decrypted yet
 
       // User cannot remove password if they haven't decrypted the note
-      const userCanSeeContent = password !== '';
+      const userCanSeeContent = password !== "";
 
       expect(userCanSeeContent).toBe(false);
       expect(hasPassword).toBe(true); // Should remain encrypted
@@ -247,8 +249,8 @@ describe('useSecurity password workflow logic', () => {
   });
 });
 
-describe('useSecurity encryption state logic', () => {
-  it('should require password when encryption is enabled', () => {
+describe("useSecurity encryption state logic", () => {
+  it("should require password when encryption is enabled", () => {
     const isEncrypted = true;
 
     // When encrypted, password is always required for access
@@ -257,7 +259,7 @@ describe('useSecurity encryption state logic', () => {
     expect(requiresPassword).toBe(true);
   });
 
-  it('should always link password and encryption (true E2E)', () => {
+  it("should always link password and encryption (true E2E)", () => {
     // With true E2E encryption, there's no "password-only" mode
     // Password protection = encryption, always
     let hasPassword = false;
@@ -271,13 +273,13 @@ describe('useSecurity encryption state logic', () => {
     expect(isEncrypted).toBe(true);
   });
 
-  it('should handle encryption toggle', () => {
+  it("should handle encryption toggle", () => {
     let isEncrypted = false;
     let hasPassword = false;
-    let password = '';
+    let password = "";
 
     // Enable encryption (requires setting a password)
-    const newPassword = 'encryptionPassword';
+    const newPassword = "encryptionPassword";
     password = newPassword;
     hasPassword = true;
     isEncrypted = true;
@@ -289,47 +291,47 @@ describe('useSecurity encryption state logic', () => {
     // Disable encryption
     isEncrypted = false;
     hasPassword = false;
-    password = '';
+    password = "";
 
     expect(isEncrypted).toBe(false);
     expect(hasPassword).toBe(false);
-    expect(password).toBe('');
+    expect(password).toBe("");
   });
 });
 
-describe('useSecurity error handling logic', () => {
-  it('should clear password error on new input', () => {
-    let passwordError = 'Previous error';
-    let passwordInput = '';
+describe("useSecurity error handling logic", () => {
+  it("should clear password error on new input", () => {
+    let passwordError = "Previous error";
+    let passwordInput = "";
 
     // User starts typing (simulating input handler)
-    passwordInput = 'n';
-    passwordError = ''; // Clear error on input
+    passwordInput = "n";
+    passwordError = ""; // Clear error on input
 
-    expect(passwordError).toBe('');
+    expect(passwordError).toBe("");
   });
 
-  it('should clear remove password error on new input', () => {
-    let removePasswordError = 'Previous error';
-    let removePasswordInput = '';
+  it("should clear remove password error on new input", () => {
+    let removePasswordError = "Previous error";
+    let removePasswordInput = "";
 
     // User starts typing
-    removePasswordInput = 'n';
-    removePasswordError = ''; // Clear error on input
+    removePasswordInput = "n";
+    removePasswordError = ""; // Clear error on input
 
-    expect(removePasswordError).toBe('');
+    expect(removePasswordError).toBe("");
   });
 
-  it('should validate password strength', () => {
+  it("should validate password strength", () => {
     const validatePassword = (password: string): string | null => {
       if (password.length < 4) {
-        return 'Password must be at least 4 characters';
+        return "Password must be at least 4 characters";
       }
       return null;
     };
 
-    expect(validatePassword('abc')).toBe('Password must be at least 4 characters');
-    expect(validatePassword('abcd')).toBeNull();
-    expect(validatePassword('strongPassword123!')).toBeNull();
+    expect(validatePassword("abc")).toBe("Password must be at least 4 characters");
+    expect(validatePassword("abcd")).toBeNull();
+    expect(validatePassword("strongPassword123!")).toBeNull();
   });
 });

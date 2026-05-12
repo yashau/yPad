@@ -60,11 +60,11 @@ export const LIMITS = {
 
 /** Expiration time options for notes. */
 export const EXPIRATION_OPTIONS = [
-  { value: 'null', label: 'Never' },
-  { value: String(60 * 60 * 1000), label: '1 hour' },
-  { value: String(24 * 60 * 60 * 1000), label: '1 day' },
-  { value: String(7 * 24 * 60 * 60 * 1000), label: '1 week' },
-  { value: String(30 * 24 * 60 * 60 * 1000), label: '1 month' }
+  { value: "null", label: "Never" },
+  { value: String(60 * 60 * 1000), label: "1 hour" },
+  { value: String(24 * 60 * 60 * 1000), label: "1 day" },
+  { value: String(7 * 24 * 60 * 60 * 1000), label: "1 week" },
+  { value: String(30 * 24 * 60 * 60 * 1000), label: "1 month" },
 ] as const;
 
 /** Custom ID validation pattern (letters, numbers, hyphens, underscores). */
@@ -73,7 +73,7 @@ export const CUSTOM_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 /** Contact information. */
 export const CONTACT = {
   /** Email address for abuse reports */
-  ABUSE_EMAIL: 'abuse@example.com',
+  ABUSE_EMAIL: "abuse@example.com",
 } as const;
 
 /** Security headers configuration. */
@@ -86,9 +86,9 @@ export const SECURITY_HEADERS = {
     "font-src 'self' data:; " +
     "connect-src 'self' wss: ws:;",
 
-  X_CONTENT_TYPE_OPTIONS: 'nosniff',
-  X_FRAME_OPTIONS: 'DENY',
-  REFERRER_POLICY: 'strict-origin-when-cross-origin',
+  X_CONTENT_TYPE_OPTIONS: "nosniff",
+  X_FRAME_OPTIONS: "DENY",
+  REFERRER_POLICY: "strict-origin-when-cross-origin",
 } as const;
 
 /** Editor limit configuration for scaling. */
@@ -100,7 +100,7 @@ export const EDITOR_LIMITS = {
 } as const;
 
 /** Default language for syntax highlighting (non-lazy loaded for immediate display). */
-export const DEFAULT_LANGUAGE = { value: 'plaintext', label: 'Plain Text' } as const;
+export const DEFAULT_LANGUAGE = { value: "plaintext", label: "Plain Text" } as const;
 
 /** Rate limiting configuration. */
 export const RATE_LIMITS = {
@@ -137,6 +137,6 @@ export const RATE_LIMITS = {
     /** Disconnect after N violations */
     DISCONNECT_THRESHOLD: 10,
     /** Warning message to send on rate limit */
-    WARNING_MESSAGE: 'Rate limit exceeded. Please slow down.',
+    WARNING_MESSAGE: "Rate limit exceeded. Please slow down.",
   },
 } as const;

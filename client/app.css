@@ -64,7 +64,9 @@ body {
   color: var(--color-foreground);
 }
 
-body, html, #app {
+body,
+html,
+#app {
   height: 100%;
   margin: 0;
   padding: 0;
@@ -77,6 +79,6 @@ input::-webkit-inner-spin-button {
   margin: 0;
 }
 
-input[type=number] {
+input[type="number"] {
   -moz-appearance: textfield;
 }

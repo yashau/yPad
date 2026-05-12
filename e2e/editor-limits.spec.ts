@@ -17,7 +17,7 @@
  * need to create 11+ browser contexts to trigger the limit.
  */
 
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page } from "@playwright/test";
 import {
   createNote,
   waitForConnection,
@@ -30,8 +30,8 @@ import {
   closeContexts,
   openOptionsPanel,
   setNotePassword,
-  STATUS_SELECTORS
-} from './utils/test-helpers';
+  STATUS_SELECTORS,
+} from "./utils/test-helpers";
 
 // ============================================================================
 // TEST CONSTANTS
@@ -44,30 +44,29 @@ const MAX_EDITORS = 10;
 // TESTS
 // ============================================================================
 
-test.describe('Editor Limits', () => {
-
-  test('First user gets edit permission and can type', async ({ page }) => {
-    const noteUrl = await createNote(page, 'Initial content');
+test.describe("Editor Limits", () => {
+  test("First user gets edit permission and can type", async ({ page }) => {
+    const noteUrl = await createNote(page, "Initial content");
 
     // Reload to simulate fresh connection
     await page.goto(noteUrl);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
     await waitForConnection(page);
 
     // Should not be in view mode
     expect(await isViewMode(page)).toBe(false);
 
     // Should be able to type
-    await typeInEditor(page, ' - edited');
+    await typeInEditor(page, " - edited");
     await page.waitForTimeout(500);
 
     const content = await getEditorContent(page);
-    expect(content).toContain('edited');
+    expect(content).toContain("edited");
   });
 
-  test('Connection status shows client ID and editor count', async ({ page }) => {
-    await createNote(page, 'Test note');
-    await typeInEditor(page, ' more');
+  test("Connection status shows client ID and editor count", async ({ page }) => {
+    await createNote(page, "Test note");
+    await typeInEditor(page, " more");
     await page.waitForTimeout(500);
 
     // Get the status text - should show 4-char client ID
@@ -76,11 +75,11 @@ test.describe('Editor Limits', () => {
     // Status should show a 4-character client ID (first 4 chars of UUID)
     expect(statusText.length).toBeGreaterThanOrEqual(4);
     // When alone as the only active editor, should just be the client ID without +N or /N
-    expect(statusText).not.toContain('+');
-    expect(statusText).not.toContain('/');
+    expect(statusText).not.toContain("+");
+    expect(statusText).not.toContain("/");
   });
 
-  test('Second user joining updates connection count', async ({ browser }) => {
+  test("Second user joining updates connection count", async ({ browser }) => {
     const contexts = await createContexts(browser, 2);
 
     try {
@@ -88,13 +87,13 @@ test.describe('Editor Limits', () => {
       const page2 = await contexts[1].newPage();
 
       // User 1 creates a note and types to become active editor
-      const noteUrl = await createNote(page1, 'Shared note');
-      await typeInEditor(page1, ' - user1');
+      const noteUrl = await createNote(page1, "Shared note");
+      await typeInEditor(page1, " - user1");
       await page1.waitForTimeout(1000);
 
       // User 2 opens the same note
       await page2.goto(noteUrl);
-      await page2.waitForLoadState('networkidle');
+      await page2.waitForLoadState("networkidle");
       await waitForConnection(page2);
 
       // Wait for user_joined broadcast to propagate to user 1
@@ -107,13 +106,12 @@ test.describe('Editor Limits', () => {
 
       // User 2 should also be able to edit (not blocked)
       expect(await isViewMode(page2)).toBe(false);
-
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('Viewer count is shown separately from editor count', async ({ browser }) => {
+  test("Viewer count is shown separately from editor count", async ({ browser }) => {
     const contexts = await createContexts(browser, 2);
 
     try {
@@ -121,13 +119,13 @@ test.describe('Editor Limits', () => {
       const page2 = await contexts[1].newPage();
 
       // User 1 creates a note and types
-      const noteUrl = await createNote(page1, 'Test content');
-      await typeInEditor(page1, ' added');
+      const noteUrl = await createNote(page1, "Test content");
+      await typeInEditor(page1, " added");
       await page1.waitForTimeout(1000);
 
       // User 2 opens and just views (doesn't type)
       await page2.goto(noteUrl);
-      await page2.waitForLoadState('networkidle');
+      await page2.waitForLoadState("networkidle");
       await waitForConnection(page2);
 
       // Wait for user_joined broadcast to propagate
@@ -136,31 +134,30 @@ test.describe('Editor Limits', () => {
       // User 1 should see "+0/1" format (0 other editors, 1 viewer)
       const statusText = await getConnectionStatusText(page1);
       expect(statusText).toMatch(/\+0\/1/);
-
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('Encrypted notes are always editable (bypass editor limit)', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+  test("Encrypted notes are always editable (bypass editor limit)", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await textarea.fill('Secret content');
+    await textarea.fill("Secret content");
 
     await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
     await page.waitForTimeout(500);
 
     // Set password
     await openOptionsPanel(page);
-    await setNotePassword(page, 'testpassword');
+    await setNotePassword(page, "testpassword");
 
     // A password dialog should appear - enter the password
     const passwordDialog = page.locator('[role="dialog"] input[type="password"]');
     if (await passwordDialog.isVisible()) {
-      await passwordDialog.fill('testpassword');
+      await passwordDialog.fill("testpassword");
       await page.locator('button:has-text("Submit")').click();
       await page.waitForTimeout(1000);
     }
@@ -176,17 +173,17 @@ test.describe('Editor Limits', () => {
     expect(await isViewMode(page)).toBe(false);
 
     // Should be able to edit
-    const textareaAfter = page.locator('textarea');
+    const textareaAfter = page.locator("textarea");
     await textareaAfter.click();
-    await page.keyboard.press('End');
-    await page.keyboard.type(' - encrypted edit');
+    await page.keyboard.press("End");
+    await page.keyboard.type(" - encrypted edit");
     await page.waitForTimeout(500);
 
     const content = await getEditorContent(page);
-    expect(content).toContain('encrypted edit');
+    expect(content).toContain("encrypted edit");
   });
 
-  test('Editor limit banner shows when 11th user tries to edit', async ({ browser }) => {
+  test("Editor limit banner shows when 11th user tries to edit", async ({ browser }) => {
     const numUsers = MAX_EDITORS + 1; // 11 users to trigger the limit
     const contexts = await createContexts(browser, numUsers);
     const pages: Page[] = [];
@@ -194,8 +191,8 @@ test.describe('Editor Limits', () => {
     try {
       // First user creates a note
       pages.push(await contexts[0].newPage());
-      const noteUrl = await createNote(pages[0], 'Editor limit test');
-      await typeInEditor(pages[0], ' [0]');
+      const noteUrl = await createNote(pages[0], "Editor limit test");
+      await typeInEditor(pages[0], " [0]");
       await pages[0].waitForTimeout(500);
 
       // Users 1-9 join and type to become active editors (total 10 active)
@@ -203,7 +200,7 @@ test.describe('Editor Limits', () => {
         const page = await contexts[i].newPage();
         pages.push(page);
         await page.goto(noteUrl);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await waitForConnection(page);
 
         // Type to become an active editor
@@ -221,7 +218,7 @@ test.describe('Editor Limits', () => {
       const lastPage = await contexts[lastUserIndex].newPage();
       pages.push(lastPage);
       await lastPage.goto(noteUrl);
-      await lastPage.waitForLoadState('networkidle');
+      await lastPage.waitForLoadState("networkidle");
       await waitForConnection(lastPage);
 
       // The 11th user should be in view mode
@@ -241,13 +238,12 @@ test.describe('Editor Limits', () => {
         const bannerVisibleForEditor = await isEditorLimitBannerVisible(pages[i]);
         expect(bannerVisibleForEditor).toBe(false);
       }
-
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('Retry button allows user to edit after an editor leaves', async ({ browser }) => {
+  test("Retry button allows user to edit after an editor leaves", async ({ browser }) => {
     const numUsers = MAX_EDITORS + 1;
     const contexts = await createContexts(browser, numUsers);
     const pages: Page[] = [];
@@ -255,8 +251,8 @@ test.describe('Editor Limits', () => {
     try {
       // First user creates a note
       pages.push(await contexts[0].newPage());
-      const noteUrl = await createNote(pages[0], 'Retry button test');
-      await typeInEditor(pages[0], ' [0]');
+      const noteUrl = await createNote(pages[0], "Retry button test");
+      await typeInEditor(pages[0], " [0]");
       await pages[0].waitForTimeout(500);
 
       // Users 1-9 join and type to become active editors
@@ -264,7 +260,7 @@ test.describe('Editor Limits', () => {
         const page = await contexts[i].newPage();
         pages.push(page);
         await page.goto(noteUrl);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await waitForConnection(page);
 
         if (!(await isViewMode(page))) {
@@ -280,7 +276,7 @@ test.describe('Editor Limits', () => {
       const waitingPage = await contexts[waitingUserIndex].newPage();
       pages.push(waitingPage);
       await waitingPage.goto(noteUrl);
-      await waitingPage.waitForLoadState('networkidle');
+      await waitingPage.waitForLoadState("networkidle");
       await waitForConnection(waitingPage);
 
       // Should see the banner
@@ -308,7 +304,6 @@ test.describe('Editor Limits', () => {
 
       const content = await getEditorContent(waitingPage);
       expect(content).toContain(`[${waitingUserIndex}]`);
-
     } finally {
       // Close remaining contexts (skip the one we already closed)
       for (let i = 0; i < contexts.length; i++) {
@@ -319,14 +314,14 @@ test.describe('Editor Limits', () => {
     }
   });
 
-  test('Non-encrypted notes start in viewMode until server responds', async ({ page }) => {
-    const noteUrl = await createNote(page, 'Test viewMode');
+  test("Non-encrypted notes start in viewMode until server responds", async ({ page }) => {
+    const noteUrl = await createNote(page, "Test viewMode");
 
     // Navigate to the note (simulating a fresh page load)
     await page.goto(noteUrl);
 
     // Wait just for page load, not full connection
-    await page.waitForLoadState('domcontentloaded');
+    await page.waitForLoadState("domcontentloaded");
 
     // Now wait for connection and edit permission
     await waitForConnection(page);
@@ -335,7 +330,7 @@ test.describe('Editor Limits', () => {
     expect(await isViewMode(page)).toBe(false);
   });
 
-  test('Multiple editors see consistent content after concurrent edits', async ({ browser }) => {
+  test("Multiple editors see consistent content after concurrent edits", async ({ browser }) => {
     const contexts = await createContexts(browser, 3);
 
     try {
@@ -344,22 +339,22 @@ test.describe('Editor Limits', () => {
       const page3 = await contexts[2].newPage();
 
       // User 1 creates a note
-      const noteUrl = await createNote(page1, 'Start');
+      const noteUrl = await createNote(page1, "Start");
 
       // Users 2 and 3 join
       await page2.goto(noteUrl);
-      await page2.waitForLoadState('networkidle');
+      await page2.waitForLoadState("networkidle");
       await waitForConnection(page2);
 
       await page3.goto(noteUrl);
-      await page3.waitForLoadState('networkidle');
+      await page3.waitForLoadState("networkidle");
       await waitForConnection(page3);
 
       // All users type concurrently
       await Promise.all([
-        typeInEditor(page1, ' A'),
-        typeInEditor(page2, ' B'),
-        typeInEditor(page3, ' C'),
+        typeInEditor(page1, " A"),
+        typeInEditor(page2, " B"),
+        typeInEditor(page3, " C"),
       ]);
 
       // Wait for sync
@@ -374,16 +369,15 @@ test.describe('Editor Limits', () => {
       expect(content2).toBe(content3);
 
       // Content should contain all contributions
-      expect(content1).toContain('A');
-      expect(content1).toContain('B');
-      expect(content1).toContain('C');
-
+      expect(content1).toContain("A");
+      expect(content1).toContain("B");
+      expect(content1).toContain("C");
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('User leaving frees up editor slot', async ({ browser }) => {
+  test("User leaving frees up editor slot", async ({ browser }) => {
     const contexts = await createContexts(browser, 2);
 
     try {
@@ -391,15 +385,15 @@ test.describe('Editor Limits', () => {
       const page2 = await contexts[1].newPage();
 
       // User 1 creates a note and types
-      const noteUrl = await createNote(page1, 'Leave test');
-      await typeInEditor(page1, ' user1');
+      const noteUrl = await createNote(page1, "Leave test");
+      await typeInEditor(page1, " user1");
       await page1.waitForTimeout(500);
 
       // User 2 joins and types
       await page2.goto(noteUrl);
-      await page2.waitForLoadState('networkidle');
+      await page2.waitForLoadState("networkidle");
       await waitForConnection(page2);
-      await typeInEditor(page2, ' user2');
+      await typeInEditor(page2, " user2");
       await page2.waitForTimeout(500);
 
       // User 1 closes their page (leaves)
@@ -412,17 +406,16 @@ test.describe('Editor Limits', () => {
       const statusAfter = await getConnectionStatusText(page2);
 
       // After user 1 leaves, user 2 should be alone (no +N)
-      expect(statusAfter).not.toContain('+');
-
+      expect(statusAfter).not.toContain("+");
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('Editor limit banner has correct styling (yellow)', async ({ page }) => {
-    const noteUrl = await createNote(page, 'Banner test');
+  test("Editor limit banner has correct styling (yellow)", async ({ page }) => {
+    const noteUrl = await createNote(page, "Banner test");
     await page.goto(noteUrl);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
 
     // Verify the header status is working correctly
     await waitForConnection(page);
@@ -431,24 +424,24 @@ test.describe('Editor Limits', () => {
     expect(await greenDot.isVisible()).toBe(true);
   });
 
-  test('Lock icon shown for encrypted notes instead of green dot', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+  test("Lock icon shown for encrypted notes instead of green dot", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
-    const textarea = page.locator('textarea');
-    await textarea.fill('Encrypted content');
+    const textarea = page.locator("textarea");
+    await textarea.fill("Encrypted content");
 
     await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
     await page.waitForTimeout(500);
 
     // Set password
     await openOptionsPanel(page);
-    await setNotePassword(page, 'secret123');
+    await setNotePassword(page, "secret123");
 
     // Enter password in dialog
     const passwordDialog = page.locator('[role="dialog"] input[type="password"]');
     if (await passwordDialog.isVisible()) {
-      await passwordDialog.fill('secret123');
+      await passwordDialog.fill("secret123");
       await page.locator('button:has-text("Submit")').click();
       await page.waitForTimeout(1000);
     }
@@ -467,26 +460,24 @@ test.describe('Editor Limits', () => {
     const greenDot = page.locator(STATUS_SELECTORS.greenDot);
     expect(await greenDot.isVisible()).toBe(false);
   });
-
 });
 
-test.describe('Editor Limits - Stress Tests', () => {
-
-  test('Ten concurrent editors (at limit) all can edit', async ({ browser }) => {
+test.describe("Editor Limits - Stress Tests", () => {
+  test("Ten concurrent editors (at limit) all can edit", async ({ browser }) => {
     const contexts = await createContexts(browser, MAX_EDITORS);
     const pages: Page[] = [];
 
     try {
       // First user creates note
       pages.push(await contexts[0].newPage());
-      const noteUrl = await createNote(pages[0], 'Max editors test');
+      const noteUrl = await createNote(pages[0], "Max editors test");
 
       // All other users join
       for (let i = 1; i < MAX_EDITORS; i++) {
         const page = await contexts[i].newPage();
         pages.push(page);
         await page.goto(noteUrl);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await waitForConnection(page);
       }
 
@@ -505,7 +496,7 @@ test.describe('Editor Limits - Stress Tests', () => {
       await pages[0].waitForTimeout(3000);
 
       // Get all contents
-      const contents = await Promise.all(pages.map(p => getEditorContent(p)));
+      const contents = await Promise.all(pages.map((p) => getEditorContent(p)));
 
       // All should be identical
       const firstContent = contents[0];
@@ -517,21 +508,20 @@ test.describe('Editor Limits - Stress Tests', () => {
       for (let i = 0; i < pages.length; i++) {
         expect(firstContent).toContain(`[${i}]`);
       }
-
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('Editor count display shows +N/M format with multiple users', async ({ browser }) => {
+  test("Editor count display shows +N/M format with multiple users", async ({ browser }) => {
     const contexts = await createContexts(browser, 5);
     const pages: Page[] = [];
 
     try {
       // First user creates note and types
       pages.push(await contexts[0].newPage());
-      const noteUrl = await createNote(pages[0], 'Count test');
-      await typeInEditor(pages[0], ' [0]');
+      const noteUrl = await createNote(pages[0], "Count test");
+      await typeInEditor(pages[0], " [0]");
       await pages[0].waitForTimeout(500);
 
       // Other users join sequentially
@@ -539,7 +529,7 @@ test.describe('Editor Limits - Stress Tests', () => {
         const page = await contexts[i].newPage();
         pages.push(page);
         await page.goto(noteUrl);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await waitForConnection(page);
         await page.waitForTimeout(500);
       }
@@ -553,9 +543,9 @@ test.describe('Editor Limits - Stress Tests', () => {
       expect(statusText).toMatch(/\+0\/4/);
 
       // Now have users 1 and 2 type to become active editors
-      await typeInEditor(pages[1], ' [1]');
+      await typeInEditor(pages[1], " [1]");
       await pages[1].waitForTimeout(500);
-      await typeInEditor(pages[2], ' [2]');
+      await typeInEditor(pages[2], " [2]");
       await pages[2].waitForTimeout(500);
 
       // Wait for editor_count_update broadcasts to propagate
@@ -565,13 +555,12 @@ test.describe('Editor Limits - Stress Tests', () => {
       // Format: +2/2 (2 other editors, 2 viewers)
       const statusTextAfter = await getConnectionStatusText(pages[0]);
       expect(statusTextAfter).toMatch(/\+2\/2/);
-
     } finally {
       await closeContexts(contexts);
     }
   });
 
-  test('Multiple users blocked at limit, one leaves, others can retry', async ({ browser }) => {
+  test("Multiple users blocked at limit, one leaves, others can retry", async ({ browser }) => {
     const numUsers = MAX_EDITORS + 2; // 12 users
     const contexts = await createContexts(browser, numUsers);
     const pages: Page[] = [];
@@ -579,8 +568,8 @@ test.describe('Editor Limits - Stress Tests', () => {
     try {
       // First user creates note
       pages.push(await contexts[0].newPage());
-      const noteUrl = await createNote(pages[0], 'Multiple blocked test');
-      await typeInEditor(pages[0], ' [0]');
+      const noteUrl = await createNote(pages[0], "Multiple blocked test");
+      await typeInEditor(pages[0], " [0]");
       await pages[0].waitForTimeout(500);
 
       // Users 1-9 join and type
@@ -588,7 +577,7 @@ test.describe('Editor Limits - Stress Tests', () => {
         const page = await contexts[i].newPage();
         pages.push(page);
         await page.goto(noteUrl);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await waitForConnection(page);
         if (!(await isViewMode(page))) {
           await typeInEditor(page, ` [${i}]`);
@@ -603,7 +592,7 @@ test.describe('Editor Limits - Stress Tests', () => {
         const page = await contexts[i].newPage();
         pages.push(page);
         await page.goto(noteUrl);
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState("networkidle");
         await waitForConnection(page);
       }
 
@@ -627,7 +616,6 @@ test.describe('Editor Limits - Stress Tests', () => {
 
       // Second blocked user should still be blocked (only 1 slot freed)
       expect(await isEditorLimitBannerVisible(pages[MAX_EDITORS + 1])).toBe(true);
-
     } finally {
       for (let i = 0; i < contexts.length; i++) {
         if (i !== 1) {
@@ -637,15 +625,15 @@ test.describe('Editor Limits - Stress Tests', () => {
     }
   });
 
-  test('Rapid user joins and leaves maintain consistency', async ({ browser }) => {
+  test("Rapid user joins and leaves maintain consistency", async ({ browser }) => {
     const contexts = await createContexts(browser, 1);
 
     try {
       const page1 = await contexts[0].newPage();
 
       // User 1 creates a note
-      const noteUrl = await createNote(page1, 'Stability test');
-      await typeInEditor(page1, ' base');
+      const noteUrl = await createNote(page1, "Stability test");
+      await typeInEditor(page1, " base");
       await page1.waitForTimeout(500);
 
       // Rapidly create and close connections
@@ -654,7 +642,7 @@ test.describe('Editor Limits - Stress Tests', () => {
         const tempPage = await tempContext.newPage();
 
         await tempPage.goto(noteUrl);
-        await tempPage.waitForLoadState('networkidle');
+        await tempPage.waitForLoadState("networkidle");
         await waitForConnection(tempPage);
 
         // Type something
@@ -674,11 +662,9 @@ test.describe('Editor Limits - Stress Tests', () => {
 
       // User 1 should still have consistent view
       const content = await getEditorContent(page1);
-      expect(content).toContain('base');
-
+      expect(content).toContain("base");
     } finally {
       await closeContexts(contexts);
     }
   });
-
 });

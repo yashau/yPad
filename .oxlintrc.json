@@ -1,0 +1,64 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["unicorn", "typescript"],
+  "jsPlugins": ["oxlint-tailwindcss"],
+  "categories": {
+    "correctness": "warn",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "options": {
+    "typeAware": true
+  },
+  "env": {
+    "builtin": true,
+    "browser": true,
+    "node": true
+  },
+  "settings": {
+    "tailwindcss": {
+      "entryPoint": "client/app.css",
+      "rootFontSize": 16
+    }
+  },
+  "ignorePatterns": [
+    "dist",
+    "node_modules",
+    ".wrangler",
+    "coverage",
+    "test-results",
+    "playwright-report",
+    "**/*.pdf"
+  ],
+  "rules": {
+    "tailwindcss/enforce-canonical": "error"
+  },
+  "overrides": [
+    {
+      "files": [
+        "client/**/*.{ts,js}",
+        "src/**/*.{ts,js}",
+        "tests/**/*.{ts,js}",
+        "*.config.{ts,js,mjs}",
+        "*.{js,mjs}"
+      ],
+      "plugins": ["typescript"],
+      "rules": {
+        "no-debugger": "error",
+        "no-constant-condition": "error",
+        "no-duplicate-case": "error",
+        "no-empty": "error",
+        "no-unreachable": "error",
+        "no-unused-vars": "warn",
+        "typescript/no-explicit-any": "off",
+        "typescript/no-non-null-assertion": "off",
+        "typescript/no-floating-promises": "off",
+        "typescript/no-misused-promises": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-return": "off"
+      }
+    }
+  ]
+}

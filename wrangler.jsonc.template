@@ -1,0 +1,50 @@
+// Copy this file to `wrangler.jsonc` and edit values to match your account,
+// or run `pnpm cf:config` to generate it from environment variables.
+// `wrangler.jsonc` is gitignored so personal/per-environment values stay out of source control.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ypad",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-04-01",
+  "vars": {
+    "DISABLE_RATE_LIMITS": "true"
+  },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ypad-db",
+      "database_id": "YOUR_DATABASE_ID"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "NOTE_SESSIONS",
+        "class_name": "NoteSessionDurableObject",
+        "script_name": "ypad"
+      },
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimiterDurableObject",
+        "script_name": "ypad"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["NoteSessionDurableObject"]
+    },
+    {
+      "tag": "v2",
+      "new_classes": ["RateLimiterDurableObject"]
+    }
+  ],
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  }
+}

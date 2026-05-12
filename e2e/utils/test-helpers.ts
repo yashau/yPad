@@ -9,25 +9,25 @@
  * - Convergence waiting
  */
 
-import { Page, BrowserContext, Browser, devices, APIRequestContext } from '@playwright/test';
+import { Page, BrowserContext, Browser, devices, APIRequestContext } from "@playwright/test";
 
 // ============================================================================
 // CONSTANTS & TYPES
 // ============================================================================
 
 /** Mobile device configuration (iPhone 12 Pro) */
-export const MOBILE_DEVICE = devices['iPhone 12 Pro'];
+export const MOBILE_DEVICE = devices["iPhone 12 Pro"];
 
 /** Status indicator selectors */
 export const STATUS_SELECTORS = {
-  spinner: 'header svg.animate-spin',
+  spinner: "header svg.animate-spin",
   check: '[title="All changes saved"] svg',
   wifiOff: '[title="Connection lost - check your internet connection"]',
   slowSyncSpinner: '[title*="Taking longer than usual"]',
   connecting: '[title="Connecting to real-time sync..."]',
   realtimeIndicator: '[title*="Real-time"]',
-  greenDot: 'header .bg-green-500',
-  lockIcon: 'header .text-blue-500',
+  greenDot: "header .bg-green-500",
+  lockIcon: "header .text-blue-500",
 } as const;
 
 /** Client information for multi-client tests */
@@ -61,10 +61,10 @@ export interface CursorPosition {
  * Create a note and wait for WebSocket connection
  */
 export async function createNote(page: Page, content: string): Promise<string> {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
 
-  const textarea = page.locator('textarea');
+  const textarea = page.locator("textarea");
   await textarea.click();
   await textarea.fill(content);
 
@@ -101,15 +101,15 @@ export function getNoteIdFromUrl(url: string): string {
  */
 export async function getEditorContent(page: Page): Promise<string> {
   return page.evaluate(() => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       return textarea.value;
     }
     const contentEditable = document.querySelector('[contenteditable="true"]') as HTMLDivElement;
     if (contentEditable) {
-      return contentEditable.textContent || '';
+      return contentEditable.textContent || "";
     }
-    return '';
+    return "";
   });
 }
 
@@ -117,7 +117,7 @@ export async function getEditorContent(page: Page): Promise<string> {
  * Focus the editor (click to simulate realistic user interaction)
  */
 export async function focusEditor(page: Page): Promise<void> {
-  const textarea = page.locator('textarea');
+  const textarea = page.locator("textarea");
   const isTextareaVisible = await textarea.isVisible().catch(() => false);
   if (isTextareaVisible) {
     await textarea.click();
@@ -130,8 +130,12 @@ export async function focusEditor(page: Page): Promise<void> {
 /**
  * Type text in the editor (handles both textarea and contenteditable)
  */
-export async function typeInEditor(page: Page, text: string, options?: { delay?: number }): Promise<void> {
-  const textarea = page.locator('textarea');
+export async function typeInEditor(
+  page: Page,
+  text: string,
+  options?: { delay?: number },
+): Promise<void> {
+  const textarea = page.locator("textarea");
   if (await textarea.isVisible().catch(() => false)) {
     await textarea.click();
     await page.keyboard.type(text, { delay: options?.delay ?? 30 });
@@ -147,7 +151,7 @@ export async function typeInEditor(page: Page, text: string, options?: { delay?:
  */
 export async function getCursorPosition(page: Page): Promise<number> {
   return page.evaluate(() => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       return textarea.selectionStart ?? -1;
     }
@@ -177,7 +181,7 @@ export async function getCursorPosition(page: Page): Promise<number> {
  */
 export async function setCursorPosition(page: Page, position: number): Promise<void> {
   await page.evaluate((pos) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       textarea.focus();
       textarea.setSelectionRange(pos, pos);
@@ -213,11 +217,11 @@ export async function setCursorPosition(page: Page, position: number): Promise<v
  */
 export async function getSelectionRange(page: Page): Promise<{ start: number; end: number }> {
   return page.evaluate(() => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       return {
         start: textarea.selectionStart ?? -1,
-        end: textarea.selectionEnd ?? -1
+        end: textarea.selectionEnd ?? -1,
       };
     }
     // For contenteditable
@@ -251,40 +255,43 @@ export async function getSelectionRange(page: Page): Promise<{ start: number; en
  * Set selection range in the active editor
  */
 export async function setSelectionRange(page: Page, start: number, end: number): Promise<void> {
-  await page.evaluate(({ start, end }) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    if (textarea) {
-      textarea.focus();
-      textarea.setSelectionRange(start, end);
-      return;
-    }
-    // For contenteditable
-    const contentEditable = document.querySelector('[contenteditable="true"]') as HTMLDivElement;
-    if (contentEditable) {
-      contentEditable.focus();
-      const selection = window.getSelection();
-      if (!selection) return;
-      const range = document.createRange();
-      const walker = document.createTreeWalker(contentEditable, NodeFilter.SHOW_TEXT);
-      let charCount = 0;
-      let startSet = false;
-      let node: Node | null = null;
-      while ((node = walker.nextNode())) {
-        const nodeLength = node.textContent?.length || 0;
-        if (!startSet && charCount + nodeLength >= start) {
-          range.setStart(node, start - charCount);
-          startSet = true;
-        }
-        if (startSet && charCount + nodeLength >= end) {
-          range.setEnd(node, end - charCount);
-          selection.removeAllRanges();
-          selection.addRange(range);
-          return;
-        }
-        charCount += nodeLength;
+  await page.evaluate(
+    ({ start, end }) => {
+      const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(start, end);
+        return;
       }
-    }
-  }, { start, end });
+      // For contenteditable
+      const contentEditable = document.querySelector('[contenteditable="true"]') as HTMLDivElement;
+      if (contentEditable) {
+        contentEditable.focus();
+        const selection = window.getSelection();
+        if (!selection) return;
+        const range = document.createRange();
+        const walker = document.createTreeWalker(contentEditable, NodeFilter.SHOW_TEXT);
+        let charCount = 0;
+        let startSet = false;
+        let node: Node | null = null;
+        while ((node = walker.nextNode())) {
+          const nodeLength = node.textContent?.length || 0;
+          if (!startSet && charCount + nodeLength >= start) {
+            range.setStart(node, start - charCount);
+            startSet = true;
+          }
+          if (startSet && charCount + nodeLength >= end) {
+            range.setEnd(node, end - charCount);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return;
+          }
+          charCount += nodeLength;
+        }
+      }
+    },
+    { start, end },
+  );
 }
 
 /** Alias for setSelectionRange for compatibility */
@@ -297,15 +304,20 @@ export const selectRange = setSelectionRange;
 /**
  * Get scroll position of the editor
  */
-export async function getScrollPosition(page: Page): Promise<{ scrollTop: number; scrollLeft: number }> {
+export async function getScrollPosition(
+  page: Page,
+): Promise<{ scrollTop: number; scrollLeft: number }> {
   return page.evaluate(() => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       return { scrollTop: textarea.scrollTop ?? 0, scrollLeft: textarea.scrollLeft ?? 0 };
     }
     const contentEditable = document.querySelector('[contenteditable="true"]') as HTMLDivElement;
     if (contentEditable) {
-      return { scrollTop: contentEditable.scrollTop ?? 0, scrollLeft: contentEditable.scrollLeft ?? 0 };
+      return {
+        scrollTop: contentEditable.scrollTop ?? 0,
+        scrollLeft: contentEditable.scrollLeft ?? 0,
+      };
     }
     return { scrollTop: 0, scrollLeft: 0 };
   });
@@ -316,7 +328,7 @@ export async function getScrollPosition(page: Page): Promise<{ scrollTop: number
  */
 export async function scrollToLine(page: Page, lineNumber: number): Promise<void> {
   await page.evaluate((line) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
+    const textarea = document.querySelector("textarea") as HTMLTextAreaElement;
     if (textarea) {
       textarea.scrollTop = (line - 1) * 20;
       return;
@@ -332,9 +344,9 @@ export async function scrollToLine(page: Page, lineNumber: number): Promise<void
  * Check if the editor is in view-only mode
  */
 export async function isViewMode(page: Page): Promise<boolean> {
-  const textarea = page.locator('textarea');
+  const textarea = page.locator("textarea");
   if (await textarea.isVisible().catch(() => false)) {
-    const isReadonly = await textarea.getAttribute('readonly');
+    const isReadonly = await textarea.getAttribute("readonly");
     return isReadonly !== null;
   }
   const editor = page.locator('[contenteditable="false"]');
@@ -356,7 +368,10 @@ export async function setSyntaxHighlight(page: Page, language: string): Promise<
   await page.waitForTimeout(300);
 
   // Find the language selector button - it shows current language (e.g., "Plain Text")
-  const langButton = page.locator('button').filter({ hasText: /Plain\s*Text|JavaScript|Python|TypeScript|HTML|CSS|JSON/i }).first();
+  const langButton = page
+    .locator("button")
+    .filter({ hasText: /Plain\s*Text|JavaScript|Python|TypeScript|HTML|CSS|JSON/i })
+    .first();
   await langButton.click({ timeout: 5000 });
 
   // Wait for the popover to open and languages to load
@@ -370,7 +385,10 @@ export async function setSyntaxHighlight(page: Page, language: string): Promise<
   }
 
   // Click the language option
-  const langOption = page.locator('[data-value], [role="option"]').filter({ hasText: language }).first();
+  const langOption = page
+    .locator('[data-value], [role="option"]')
+    .filter({ hasText: language })
+    .first();
   await langOption.click({ timeout: 5000 });
 
   // Wait for syntax highlighting to apply and popover to close
@@ -381,7 +399,7 @@ export async function setSyntaxHighlight(page: Page, language: string): Promise<
   await page.waitForTimeout(300);
 
   // Verify the contenteditable element is now visible (syntax mode uses contenteditable)
-  if (language.toLowerCase() !== 'plaintext') {
+  if (language.toLowerCase() !== "plaintext") {
     await page.waitForSelector('[contenteditable="true"]', { timeout: 5000 });
   }
 }
@@ -403,9 +421,13 @@ export async function isInSyntaxHighlightMode(page: Page): Promise<boolean> {
  * This is the only reliable way to add latency to WebSocket connections
  * (CDP network emulation doesn't affect WebSockets).
  */
-export async function setServerLatency(request: APIRequestContext, noteId: string, latencyMs: number): Promise<void> {
+export async function setServerLatency(
+  request: APIRequestContext,
+  noteId: string,
+  latencyMs: number,
+): Promise<void> {
   await request.post(`/api/notes/${noteId}/test-latency`, {
-    data: { latencyMs }
+    data: { latencyMs },
   });
 }
 
@@ -422,12 +444,14 @@ export function generateLongContent(lineCount: number = 100): string {
     if (i % 10 === 0) {
       lines.push(`=== Section ${i / 10} ===`);
     } else if (i % 5 === 0) {
-      lines.push(`Line ${i}: This is a longer line with more content to make scrolling more realistic and test word wrapping.`);
+      lines.push(
+        `Line ${i}: This is a longer line with more content to make scrolling more realistic and test word wrapping.`,
+      );
     } else {
       lines.push(`Line ${i}: Content here`);
     }
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 /**
@@ -436,42 +460,54 @@ export function generateLongContent(lineCount: number = 100): string {
  */
 export function generateCodeContent(lineCount: number = 100): string {
   const lines: string[] = [
-    '// JavaScript code for testing syntax highlight mode - this comment is intentionally long to test horizontal scrolling on both desktop and mobile devices',
-    'const config = {',
+    "// JavaScript code for testing syntax highlight mode - this comment is intentionally long to test horizontal scrolling on both desktop and mobile devices",
+    "const config = {",
     '  name: "test-application-with-a-very-long-name-to-ensure-horizontal-scrolling-works-correctly",',
     '  version: "1.0.0",',
     '  description: "This is a test configuration object with a very long description string that will definitely cause horizontal scrolling in syntax highlight mode"',
-    '};',
-    '',
-    'function processDataWithVeryLongFunctionNameToTestHorizontalScrolling(inputDataArray, configurationOptions, additionalParameters) {',
-    '  const result = [];',
-    '  for (let i = 0; i < inputDataArray.length; i++) {',
-    '    result.push(inputDataArray[i] * 2 + configurationOptions.multiplier + additionalParameters.offset);',
-    '  }',
-    '  return result;',
-    '}',
-    ''
+    "};",
+    "",
+    "function processDataWithVeryLongFunctionNameToTestHorizontalScrolling(inputDataArray, configurationOptions, additionalParameters) {",
+    "  const result = [];",
+    "  for (let i = 0; i < inputDataArray.length; i++) {",
+    "    result.push(inputDataArray[i] * 2 + configurationOptions.multiplier + additionalParameters.offset);",
+    "  }",
+    "  return result;",
+    "}",
+    "",
   ];
 
   for (let i = lines.length; i < lineCount; i++) {
     if (i % 15 === 0) {
-      lines.push('');
-      lines.push(`// === Section ${Math.floor(i / 15)} === This section contains important code that demonstrates the functionality of this module with comprehensive comments`);
-      lines.push(`function section${Math.floor(i / 15)}HandlerWithLongNameForTesting(dataObject, configurationSettings, extraOptions) {`);
+      lines.push("");
+      lines.push(
+        `// === Section ${Math.floor(i / 15)} === This section contains important code that demonstrates the functionality of this module with comprehensive comments`,
+      );
+      lines.push(
+        `function section${Math.floor(i / 15)}HandlerWithLongNameForTesting(dataObject, configurationSettings, extraOptions) {`,
+      );
     } else if (i % 15 === 14) {
-      lines.push('}');
+      lines.push("}");
     } else if (i % 5 === 0) {
-      lines.push(`  // Line ${i}: Processing step with a very long comment that explains what this code does in great detail to ensure horizontal scrolling is tested properly on all devices`);
+      lines.push(
+        `  // Line ${i}: Processing step with a very long comment that explains what this code does in great detail to ensure horizontal scrolling is tested properly on all devices`,
+      );
     } else if (i % 3 === 0) {
-      lines.push(`  const calculatedValue${i} = calculateComplexValueWithManyParameters(${i}, configurationSettings.param1, configurationSettings.param2, extraOptions);`);
+      lines.push(
+        `  const calculatedValue${i} = calculateComplexValueWithManyParameters(${i}, configurationSettings.param1, configurationSettings.param2, extraOptions);`,
+      );
     } else if (i % 7 === 0) {
-      lines.push(`  const message${i} = "This is line ${i} with a very long string value that contains important information and will cause horizontal scrolling in the editor";`);
+      lines.push(
+        `  const message${i} = "This is line ${i} with a very long string value that contains important information and will cause horizontal scrolling in the editor";`,
+      );
     } else {
-      lines.push(`  console.log("Processing line ${i} with standard logging output for debugging purposes");`);
+      lines.push(
+        `  console.log("Processing line ${i} with standard logging output for debugging purposes");`,
+      );
     }
   }
 
-  return lines.join('\n');
+  return lines.join("\n");
 }
 
 // ============================================================================
@@ -493,15 +529,19 @@ export async function createContexts(browser: Browser, count: number): Promise<B
  * Close all browser contexts
  */
 export async function closeContexts(contexts: BrowserContext[]): Promise<void> {
-  await Promise.all(contexts.map(ctx => ctx?.close?.()));
+  await Promise.all(contexts.map((ctx) => ctx?.close?.()));
 }
 
 /**
  * Setup 2 clients connected to the same note
  */
-export async function setup2Clients(browser: Browser, initialContent: string, options?: {
-  secondClientMobile?: boolean;
-}): Promise<{
+export async function setup2Clients(
+  browser: Browser,
+  initialContent: string,
+  options?: {
+    secondClientMobile?: boolean;
+  },
+): Promise<{
   clients: ClientInfo[];
   noteUrl: string;
   cleanup: () => Promise<void>;
@@ -521,8 +561,13 @@ export async function setup2Clients(browser: Browser, initialContent: string, op
   await page1.waitForTimeout(1000);
 
   const clients: ClientInfo[] = [
-    { context: context1, page: page1, name: 'Client1', isMobile: false },
-    { context: context2, page: page2, name: 'Client2', isMobile: options?.secondClientMobile ?? false }
+    { context: context1, page: page1, name: "Client1", isMobile: false },
+    {
+      context: context2,
+      page: page2,
+      name: "Client2",
+      isMobile: options?.secondClientMobile ?? false,
+    },
   ];
 
   const cleanup = async () => {
@@ -536,7 +581,10 @@ export async function setup2Clients(browser: Browser, initialContent: string, op
 /**
  * Setup desktop and mobile clients connected to the same note
  */
-export async function setupDesktopMobileClients(browser: Browser, initialContent: string): Promise<{
+export async function setupDesktopMobileClients(
+  browser: Browser,
+  initialContent: string,
+): Promise<{
   desktop: ClientInfo;
   mobile: ClientInfo;
   noteUrl: string;
@@ -547,14 +595,17 @@ export async function setupDesktopMobileClients(browser: Browser, initialContent
     desktop: result.clients[0],
     mobile: result.clients[1],
     noteUrl: result.noteUrl,
-    cleanup: result.cleanup
+    cleanup: result.cleanup,
   };
 }
 
 /**
  * Setup 3 clients connected to the same note
  */
-export async function setup3Clients(browser: Browser, initialContent: string): Promise<{
+export async function setup3Clients(
+  browser: Browser,
+  initialContent: string,
+): Promise<{
   clients: ClientInfo[];
   noteUrl: string;
   cleanup: () => Promise<void>;
@@ -576,9 +627,9 @@ export async function setup3Clients(browser: Browser, initialContent: string): P
   await page1.waitForTimeout(1000);
 
   const clients: ClientInfo[] = [
-    { context: context1, page: page1, name: 'Client1' },
-    { context: context2, page: page2, name: 'Client2' },
-    { context: context3, page: page3, name: 'Client3' }
+    { context: context1, page: page1, name: "Client1" },
+    { context: context2, page: page2, name: "Client2" },
+    { context: context3, page: page3, name: "Client3" },
   ];
 
   const cleanup = async () => {
@@ -593,7 +644,11 @@ export async function setup3Clients(browser: Browser, initialContent: string): P
 /**
  * Setup multiple clients with different latencies for latency testing
  */
-export async function setupClientsWithLatency(browser: Browser, count: number, latencies: number[]): Promise<ClientSetup[]> {
+export async function setupClientsWithLatency(
+  browser: Browser,
+  count: number,
+  latencies: number[],
+): Promise<ClientSetup[]> {
   const clients: ClientSetup[] = [];
 
   for (let i = 0; i < count; i++) {
@@ -603,7 +658,7 @@ export async function setupClientsWithLatency(browser: Browser, count: number, l
       context,
       page,
       latencyMs: latencies[i] || 100,
-      name: `Client${i + 1}`
+      name: `Client${i + 1}`,
     });
   }
 
@@ -626,14 +681,17 @@ export async function cleanupClientsWithLatency(clients: ClientSetup[]): Promise
 /**
  * Wait for all clients to have the same content (convergence)
  */
-export async function waitForConvergence(clients: { page: Page }[], timeoutMs: number = 10000): Promise<boolean> {
+export async function waitForConvergence(
+  clients: { page: Page }[],
+  timeoutMs: number = 10000,
+): Promise<boolean> {
   const startTime = Date.now();
 
   while (Date.now() - startTime < timeoutMs) {
-    const contents = await Promise.all(clients.map(c => getEditorContent(c.page)));
+    const contents = await Promise.all(clients.map((c) => getEditorContent(c.page)));
 
     // Check if all contents are the same
-    if (contents.every(c => c === contents[0])) {
+    if (contents.every((c) => c === contents[0])) {
       return true;
     }
 
@@ -654,22 +712,22 @@ export async function waitForConvergence(clients: { page: Page }[], timeoutMs: n
 export async function getRemoteCursorPositions(page: Page): Promise<CursorPosition[]> {
   return page.evaluate(() => {
     // Remote cursors have: div.absolute.pointer-events-none.z-50 with inline style
-    const cursorContainers = document.querySelectorAll('.absolute.pointer-events-none.z-50');
+    const cursorContainers = document.querySelectorAll(".absolute.pointer-events-none.z-50");
     const results: { top: number; left: number; label: string }[] = [];
 
     cursorContainers.forEach((container) => {
-      const style = container.getAttribute('style') || '';
+      const style = container.getAttribute("style") || "";
       const topMatch = style.match(/top:\s*([\d.]+)px/);
       const leftMatch = style.match(/left:\s*([\d.]+)px/);
 
       if (topMatch && leftMatch) {
-        const labelEl = container.querySelector('.text-xs.font-medium');
-        const label = labelEl?.textContent || '';
+        const labelEl = container.querySelector(".text-xs.font-medium");
+        const label = labelEl?.textContent || "";
 
         results.push({
           top: parseFloat(topMatch[1]),
           left: parseFloat(leftMatch[1]),
-          label
+          label,
         });
       }
     });
@@ -694,7 +752,7 @@ export async function getRemoteCursorCount(page: Page): Promise<number> {
  * Check if the editor limit banner is visible
  */
 export async function isEditorLimitBannerVisible(page: Page): Promise<boolean> {
-  const banner = page.locator('text=Editor limit reached');
+  const banner = page.locator("text=Editor limit reached");
   return await banner.isVisible().catch(() => false);
 }
 
@@ -702,11 +760,11 @@ export async function isEditorLimitBannerVisible(page: Page): Promise<boolean> {
  * Get the connection status display text from header
  */
 export async function getConnectionStatusText(page: Page): Promise<string> {
-  const statusSpan = page.locator('header .inline-flex span.text-xs');
+  const statusSpan = page.locator("header .inline-flex span.text-xs");
   if (await statusSpan.isVisible().catch(() => false)) {
-    return (await statusSpan.textContent()) ?? '';
+    return (await statusSpan.textContent()) ?? "";
   }
-  return '';
+  return "";
 }
 
 // ============================================================================
@@ -735,7 +793,7 @@ export async function closeOptionsPanel(page: Page): Promise<void> {
  * Set a password on the current note (must have Options panel open)
  */
 export async function setNotePassword(page: Page, password: string): Promise<void> {
-  const passwordInput = page.locator('input#password');
+  const passwordInput = page.locator("input#password");
   await passwordInput.fill(password);
 
   const lockButton = page.locator('form:has(input#password) button[type="submit"]');
@@ -747,12 +805,16 @@ export async function setNotePassword(page: Page, password: string): Promise<voi
 /**
  * Create a password-protected note
  */
-export async function createPasswordProtectedNote(page: Page, content: string, password: string): Promise<string> {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
+export async function createPasswordProtectedNote(
+  page: Page,
+  content: string,
+  password: string,
+): Promise<string> {
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
 
   // Type content
-  const textarea = page.locator('textarea');
+  const textarea = page.locator("textarea");
   await textarea.click();
   await textarea.fill(content);
 
@@ -769,13 +831,17 @@ export async function createPasswordProtectedNote(page: Page, content: string, p
 /**
  * Access a password-protected note by entering the password
  */
-export async function accessProtectedNote(page: Page, url: string, password: string): Promise<void> {
+export async function accessProtectedNote(
+  page: Page,
+  url: string,
+  password: string,
+): Promise<void> {
   await page.goto(url);
-  await page.waitForLoadState('networkidle');
+  await page.waitForLoadState("networkidle");
 
   // Wait for password dialog
   const passwordInput = page.locator('input[type="password"]');
-  await passwordInput.waitFor({ state: 'visible', timeout: 5000 });
+  await passwordInput.waitFor({ state: "visible", timeout: 5000 });
 
   // Enter password
   await passwordInput.fill(password);

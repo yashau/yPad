@@ -2,8 +2,8 @@
  * @fileoverview Utility functions and types for Svelte components.
  */
 
-import { type ClassValue, clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import { type ClassValue, clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
 
 /** Merges Tailwind CSS classes with clsx. */
 export function cn(...inputs: ClassValue[]) {

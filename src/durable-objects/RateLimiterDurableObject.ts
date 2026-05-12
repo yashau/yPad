@@ -51,8 +51,8 @@ export class RateLimiterDurableObject implements DurableObject {
    * Returns 200 if allowed, 429 if rate limited.
    */
   async fetch(request: Request): Promise<Response> {
-    if (request.method === 'POST') {
-      const { endpoint, limit, windowMs } = await request.json() as RateLimitCheckRequest;
+    if (request.method === "POST") {
+      const { endpoint, limit, windowMs } = (await request.json()) as RateLimitCheckRequest;
 
       const now = Date.now();
       let counter = this.counters.get(endpoint);
@@ -67,27 +67,27 @@ export class RateLimiterDurableObject implements DurableObject {
 
       if (counter.count > limit) {
         const retryAfter = Math.ceil((counter.resetAt - now) / 1000);
-        return new Response('Rate limited', {
+        return new Response("Rate limited", {
           status: 429,
           headers: {
-            'Retry-After': String(retryAfter),
-            'X-RateLimit-Limit': String(limit),
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': String(Math.ceil(counter.resetAt / 1000)),
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Limit": String(limit),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": String(Math.ceil(counter.resetAt / 1000)),
           },
         });
       }
 
-      return new Response('OK', {
+      return new Response("OK", {
         status: 200,
         headers: {
-          'X-RateLimit-Limit': String(limit),
-          'X-RateLimit-Remaining': String(limit - counter.count),
-          'X-RateLimit-Reset': String(Math.ceil(counter.resetAt / 1000)),
+          "X-RateLimit-Limit": String(limit),
+          "X-RateLimit-Remaining": String(limit - counter.count),
+          "X-RateLimit-Reset": String(Math.ceil(counter.resetAt / 1000)),
         },
       });
     }
 
-    return new Response('Method not allowed', { status: 405 });
+    return new Response("Method not allowed", { status: 405 });
   }
 }

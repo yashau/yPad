@@ -8,7 +8,7 @@
  * to properly simulate WebSocket delays (CDP network emulation doesn't affect WebSockets).
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 import {
   createNote,
   waitForConnection,
@@ -16,17 +16,16 @@ import {
   getNoteIdFromUrl,
   openOptionsPanel,
   setNotePassword,
-  STATUS_SELECTORS
-} from './utils/test-helpers';
+  STATUS_SELECTORS,
+} from "./utils/test-helpers";
 
 // ============================================================================
 // TESTS
 // ============================================================================
 
-test.describe('Status Indicator - WebSocket Connected', () => {
-
-  test('should hide spinner/check when WebSocket is connected and idle', async ({ page }) => {
-    await createNote(page, 'test content');
+test.describe("Status Indicator - WebSocket Connected", () => {
+  test("should hide spinner/check when WebSocket is connected and idle", async ({ page }) => {
+    await createNote(page, "test content");
     await waitForConnection(page);
 
     // Wait for any UI transitions to settle
@@ -44,20 +43,20 @@ test.describe('Status Indicator - WebSocket Connected', () => {
     await expect(spinner).not.toBeVisible();
   });
 
-  test('should show spinner only after 2 seconds of slow sync', async ({ page, request }) => {
-    const noteUrl = await createNote(page, 'initial content');
+  test("should show spinner only after 2 seconds of slow sync", async ({ page, request }) => {
+    const noteUrl = await createNote(page, "initial content");
     await waitForConnection(page);
     const noteId = getNoteIdFromUrl(noteUrl);
 
     // Set server-side latency (5 seconds - enough to trigger slow sync but not connection lost)
     await setServerLatency(request, noteId, 5000);
 
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await page.keyboard.press('End');
+    await page.keyboard.press("End");
 
     // Type something to trigger sync
-    await page.keyboard.type('x');
+    await page.keyboard.type("x");
 
     // Immediately after typing, spinner should NOT be visible yet (WebSocket hides it initially)
     await page.waitForTimeout(500);
@@ -75,8 +74,11 @@ test.describe('Status Indicator - WebSocket Connected', () => {
     await setServerLatency(request, noteId, 0);
   });
 
-  test('should show check briefly after slow sync completes, then hide', async ({ page, request }) => {
-    const noteUrl = await createNote(page, 'initial');
+  test("should show check briefly after slow sync completes, then hide", async ({
+    page,
+    request,
+  }) => {
+    const noteUrl = await createNote(page, "initial");
     await waitForConnection(page);
     const noteId = getNoteIdFromUrl(noteUrl);
 
@@ -85,10 +87,10 @@ test.describe('Status Indicator - WebSocket Connected', () => {
     // Each message gets delayed, so 2 messages × 1.1s = 2.2s total pending time
     await setServerLatency(request, noteId, 1100);
 
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await page.keyboard.press('End');
-    await page.keyboard.type('y');
+    await page.keyboard.press("End");
+    await page.keyboard.type("y");
 
     // Wait for slow sync to trigger (2+ seconds with multiple delayed messages)
     await page.waitForTimeout(2200);
@@ -110,18 +112,18 @@ test.describe('Status Indicator - WebSocket Connected', () => {
     await setServerLatency(request, noteId, 0);
   });
 
-  test('should show connection lost after 5 seconds of pending', async ({ page, request }) => {
-    const noteUrl = await createNote(page, 'initial');
+  test("should show connection lost after 5 seconds of pending", async ({ page, request }) => {
+    const noteUrl = await createNote(page, "initial");
     await waitForConnection(page);
     const noteId = getNoteIdFromUrl(noteUrl);
 
     // Set extreme server-side latency (10 seconds - simulates connection issues)
     await setServerLatency(request, noteId, 10000);
 
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await page.keyboard.press('End');
-    await page.keyboard.type('z');
+    await page.keyboard.press("End");
+    await page.keyboard.type("z");
 
     // Wait for connection lost threshold (5+ seconds)
     await page.waitForTimeout(5500);
@@ -136,19 +138,17 @@ test.describe('Status Indicator - WebSocket Connected', () => {
     // Clean up: reset latency
     await setServerLatency(request, noteId, 0);
   });
-
 });
 
-test.describe('Status Indicator - Non-WebSocket (Encrypted notes)', () => {
-
-  test('should show persistent check for encrypted notes', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+test.describe("Status Indicator - Non-WebSocket (Encrypted notes)", () => {
+  test("should show persistent check for encrypted notes", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
     // Fill content first
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await textarea.fill('test content for encryption');
+    await textarea.fill("test content for encryption");
 
     // Wait for note to be created
     await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
@@ -158,7 +158,7 @@ test.describe('Status Indicator - Non-WebSocket (Encrypted notes)', () => {
 
     // Open options and set password
     await openOptionsPanel(page);
-    await setNotePassword(page, 'testpassword123');
+    await setNotePassword(page, "testpassword123");
 
     // Wait for encryption to be applied - the encrypted note indicator should appear
     const encryptedIndicator = page.locator('[title*="disabled for encrypted notes"]');
@@ -172,18 +172,16 @@ test.describe('Status Indicator - Non-WebSocket (Encrypted notes)', () => {
     await page.waitForTimeout(2000);
     await expect(checkIcon).toBeVisible();
   });
-
 });
 
-test.describe('Status Indicator - Connection States', () => {
+test.describe("Status Indicator - Connection States", () => {
+  test("should show no spinner or check after WebSocket connects", async ({ page }) => {
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
-  test('should show no spinner or check after WebSocket connects', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
-    await textarea.fill('test');
+    await textarea.fill("test");
 
     // Wait for note creation
     await page.waitForFunction(() => window.location.pathname.length > 1, { timeout: 10000 });
@@ -197,13 +195,12 @@ test.describe('Status Indicator - Connection States', () => {
     await expect(page.locator(STATUS_SELECTORS.check)).not.toBeVisible();
   });
 
-  test('real-time indicator should be visible when WebSocket is connected', async ({ page }) => {
-    await createNote(page, 'hello world');
+  test("real-time indicator should be visible when WebSocket is connected", async ({ page }) => {
+    await createNote(page, "hello world");
     await waitForConnection(page);
 
     // Real-time indicator should be visible
     const realtimeIndicator = page.locator(STATUS_SELECTORS.realtimeIndicator);
     await expect(realtimeIndicator).toBeVisible();
   });
-
 });

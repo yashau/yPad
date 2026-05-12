@@ -7,19 +7,19 @@
  * - Only encrypted blobs are sent to the server
  */
 
-import { test, expect, Page, Request } from '@playwright/test';
+import { test, expect, Page, Request } from "@playwright/test";
 import {
   createPasswordProtectedNote,
   accessProtectedNote,
-  openOptionsPanel
-} from './utils/test-helpers';
+  openOptionsPanel,
+} from "./utils/test-helpers";
 
 // ============================================================================
 // TEST CONSTANTS
 // ============================================================================
 
-const TEST_PASSWORD = 'MySecretPassword123!';
-const TEST_CONTENT = 'This is my super secret note content that should be encrypted';
+const TEST_PASSWORD = "MySecretPassword123!";
+const TEST_CONTENT = "This is my super secret note content that should be encrypted";
 
 // ============================================================================
 // REQUEST CAPTURE UTILITIES (encryption-specific)
@@ -38,10 +38,10 @@ interface CapturedRequest {
 async function setupRequestCapture(page: Page): Promise<CapturedRequest[]> {
   const capturedRequests: CapturedRequest[] = [];
 
-  page.on('request', (request: Request) => {
+  page.on("request", (request: Request) => {
     const url = request.url();
     // Only capture API requests (not static assets)
-    if (url.includes('/api/') || url.includes('/ws')) {
+    if (url.includes("/api/") || url.includes("/ws")) {
       capturedRequests.push({
         url,
         method: request.method(),
@@ -57,7 +57,10 @@ async function setupRequestCapture(page: Page): Promise<CapturedRequest[]> {
 /**
  * Checks if any captured request contains the forbidden string
  */
-function requestsContainString(requests: CapturedRequest[], forbidden: string): CapturedRequest | null {
+function requestsContainString(
+  requests: CapturedRequest[],
+  forbidden: string,
+): CapturedRequest | null {
   for (const req of requests) {
     if (req.postData && req.postData.includes(forbidden)) {
       return req;
@@ -78,9 +81,8 @@ function requestsContainString(requests: CapturedRequest[], forbidden: string): 
 // TESTS
 // ============================================================================
 
-test.describe('E2E Encryption Security Tests', () => {
-
-  test('Password is NEVER sent to the server when creating a protected note', async ({ page }) => {
+test.describe("E2E Encryption Security Tests", () => {
+  test("Password is NEVER sent to the server when creating a protected note", async ({ page }) => {
     const capturedRequests = await setupRequestCapture(page);
 
     await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
@@ -90,18 +92,18 @@ test.describe('E2E Encryption Security Tests', () => {
     expect(leakedRequest).toBeNull();
 
     // Verify we actually made API requests
-    const apiRequests = capturedRequests.filter(r => r.url.includes('/api/notes'));
+    const apiRequests = capturedRequests.filter((r) => r.url.includes("/api/notes"));
     expect(apiRequests.length).toBeGreaterThan(0);
   });
 
-  test('Plaintext content is NEVER sent after enabling password protection', async ({ page }) => {
+  test("Plaintext content is NEVER sent after enabling password protection", async ({ page }) => {
     const capturedRequests = await setupRequestCapture(page);
 
     // Create unprotected note first
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await textarea.click();
     await textarea.fill(TEST_CONTENT);
 
@@ -115,7 +117,7 @@ test.describe('E2E Encryption Security Tests', () => {
     // Now enable password protection
     await openOptionsPanel(page);
 
-    const passwordInput = page.locator('input#password');
+    const passwordInput = page.locator("input#password");
     await passwordInput.fill(TEST_PASSWORD);
 
     const lockButton = page.locator('form:has(input#password) button[type="submit"]');
@@ -132,7 +134,7 @@ test.describe('E2E Encryption Security Tests', () => {
     expect(leakedPasswordRequest).toBeNull();
   });
 
-  test('Decrypted content is NEVER sent when editing a protected note', async ({ page }) => {
+  test("Decrypted content is NEVER sent when editing a protected note", async ({ page }) => {
     // First create a protected note
     const noteUrl = await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
 
@@ -142,14 +144,14 @@ test.describe('E2E Encryption Security Tests', () => {
     await accessProtectedNote(page, noteUrl, TEST_PASSWORD);
 
     // Verify we can see the content (decryption worked)
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await expect(textarea).toHaveValue(TEST_CONTENT, { timeout: 5000 });
 
     // Clear requests before editing
     capturedRequests.length = 0;
 
     // Edit the content
-    const newContent = 'Updated secret content - also should be encrypted';
+    const newContent = "Updated secret content - also should be encrypted";
     await textarea.fill(newContent);
 
     // Wait for auto-save
@@ -167,7 +169,7 @@ test.describe('E2E Encryption Security Tests', () => {
     expect(leakedPassword).toBeNull();
   });
 
-  test('Password is NEVER sent when accessing a protected note', async ({ page }) => {
+  test("Password is NEVER sent when accessing a protected note", async ({ page }) => {
     // First create a protected note
     const noteUrl = await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
 
@@ -178,7 +180,7 @@ test.describe('E2E Encryption Security Tests', () => {
     await accessProtectedNote(page, noteUrl, TEST_PASSWORD);
 
     // Verify content is visible (decryption worked client-side)
-    const textarea = page.locator('textarea');
+    const textarea = page.locator("textarea");
     await expect(textarea).toHaveValue(TEST_CONTENT, { timeout: 5000 });
 
     // Verify password was never sent to server
@@ -186,14 +188,15 @@ test.describe('E2E Encryption Security Tests', () => {
     expect(leakedPassword).toBeNull();
   });
 
-  test('Server only receives encrypted blob, not plaintext', async ({ page }) => {
+  test("Server only receives encrypted blob, not plaintext", async ({ page }) => {
     const capturedRequests = await setupRequestCapture(page);
 
     await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
 
     // Find the PUT/POST request that saved the note
     const saveRequests = capturedRequests.filter(
-      r => r.url.includes('/api/notes') && (r.method === 'POST' || r.method === 'PUT') && r.postData
+      (r) =>
+        r.url.includes("/api/notes") && (r.method === "POST" || r.method === "PUT") && r.postData,
     );
 
     expect(saveRequests.length).toBeGreaterThan(0);
@@ -215,18 +218,20 @@ test.describe('E2E Encryption Security Tests', () => {
     }
   });
 
-  test('WebSocket messages never contain password or plaintext for encrypted notes', async ({ page }) => {
+  test("WebSocket messages never contain password or plaintext for encrypted notes", async ({
+    page,
+  }) => {
     const wsMessages: string[] = [];
 
     // Intercept WebSocket messages
-    page.on('websocket', ws => {
-      ws.on('framesent', frame => {
-        if (typeof frame.payload === 'string') {
+    page.on("websocket", (ws) => {
+      ws.on("framesent", (frame) => {
+        if (typeof frame.payload === "string") {
           wsMessages.push(frame.payload);
         }
       });
-      ws.on('framereceived', frame => {
-        if (typeof frame.payload === 'string') {
+      ws.on("framereceived", (frame) => {
+        if (typeof frame.payload === "string") {
           wsMessages.push(frame.payload);
         }
       });
@@ -237,8 +242,8 @@ test.describe('E2E Encryption Security Tests', () => {
     // Access and edit to trigger WebSocket activity
     await accessProtectedNote(page, noteUrl, TEST_PASSWORD);
 
-    const textarea = page.locator('textarea');
-    await textarea.fill(TEST_CONTENT + ' - additional text');
+    const textarea = page.locator("textarea");
+    await textarea.fill(TEST_CONTENT + " - additional text");
     await page.waitForTimeout(2000);
 
     // Check all WebSocket messages
@@ -248,7 +253,7 @@ test.describe('E2E Encryption Security Tests', () => {
     }
   });
 
-  test('Password hash is not sent to server (true E2E encryption)', async ({ page }) => {
+  test("Password hash is not sent to server (true E2E encryption)", async ({ page }) => {
     const capturedRequests = await setupRequestCapture(page);
 
     await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
@@ -257,13 +262,13 @@ test.describe('E2E Encryption Security Tests', () => {
     for (const req of capturedRequests) {
       if (req.postData) {
         const body = JSON.parse(req.postData);
-        expect(body).not.toHaveProperty('password_hash');
-        expect(body).not.toHaveProperty('password');
+        expect(body).not.toHaveProperty("password_hash");
+        expect(body).not.toHaveProperty("password");
       }
     }
   });
 
-  test('Removing password protection does not leak password', async ({ page }) => {
+  test("Removing password protection does not leak password", async ({ page }) => {
     // Create protected note
     const noteUrl = await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
 
@@ -292,7 +297,7 @@ test.describe('E2E Encryption Security Tests', () => {
     expect(leakedPassword).toBeNull();
   });
 
-  test('Multiple password attempts do not leak password to server', async ({ page }) => {
+  test("Multiple password attempts do not leak password to server", async ({ page }) => {
     // Create protected note
     const noteUrl = await createPasswordProtectedNote(page, TEST_CONTENT, TEST_PASSWORD);
 
@@ -300,13 +305,13 @@ test.describe('E2E Encryption Security Tests', () => {
     const capturedRequests = await setupRequestCapture(page);
 
     await page.goto(noteUrl);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState("networkidle");
 
     const passwordInput = page.locator('input[type="password"]');
     await expect(passwordInput).toBeVisible({ timeout: 5000 });
 
     // Try wrong password
-    const wrongPassword = 'WrongPassword456!';
+    const wrongPassword = "WrongPassword456!";
     await passwordInput.fill(wrongPassword);
 
     const submitBtn = page.locator('button:has-text("Submit")');
@@ -325,5 +330,4 @@ test.describe('E2E Encryption Security Tests', () => {
     const leakedCorrectPassword = requestsContainString(capturedRequests, TEST_PASSWORD);
     expect(leakedCorrectPassword).toBeNull();
   });
-
 });

@@ -6,34 +6,62 @@
  */
 
 export function useSecurity() {
-  let password = $state('');
-  let passwordToSet = $state('');
-  let passwordInput = $state('');
+  let password = $state("");
+  let passwordToSet = $state("");
+  let passwordInput = $state("");
   let passwordRequired = $state(false);
   let hasPassword = $state(false);
   let isEncrypted = $state(false);
-  let passwordError = $state('');
+  let passwordError = $state("");
 
   return {
-    get password() { return password; },
-    set password(value: string) { password = value; },
+    get password() {
+      return password;
+    },
+    set password(value: string) {
+      password = value;
+    },
 
-    get passwordToSet() { return passwordToSet; },
-    set passwordToSet(value: string) { passwordToSet = value; },
+    get passwordToSet() {
+      return passwordToSet;
+    },
+    set passwordToSet(value: string) {
+      passwordToSet = value;
+    },
 
-    get passwordInput() { return passwordInput; },
-    set passwordInput(value: string) { passwordInput = value; },
+    get passwordInput() {
+      return passwordInput;
+    },
+    set passwordInput(value: string) {
+      passwordInput = value;
+    },
 
-    get passwordRequired() { return passwordRequired; },
-    set passwordRequired(value: boolean) { passwordRequired = value; },
+    get passwordRequired() {
+      return passwordRequired;
+    },
+    set passwordRequired(value: boolean) {
+      passwordRequired = value;
+    },
 
-    get hasPassword() { return hasPassword; },
-    set hasPassword(value: boolean) { hasPassword = value; },
+    get hasPassword() {
+      return hasPassword;
+    },
+    set hasPassword(value: boolean) {
+      hasPassword = value;
+    },
 
-    get isEncrypted() { return isEncrypted; },
-    set isEncrypted(value: boolean) { isEncrypted = value; },
+    get isEncrypted() {
+      return isEncrypted;
+    },
+    set isEncrypted(value: boolean) {
+      isEncrypted = value;
+    },
 
-    get passwordError() { return passwordError; },
-    set passwordError(value: string) { passwordError = value; }
+    get passwordError() {
+      return passwordError;
+    },
+    set passwordError(value: string) {
+      passwordError = value;
+    },
   };
 }

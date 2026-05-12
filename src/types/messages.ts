@@ -17,7 +17,7 @@
  * Contains the full Yjs document state.
  */
 export type YjsSyncMessage = {
-  type: 'yjs_sync';
+  type: "yjs_sync";
   /** Base64-encoded full Yjs document state */
   state: string;
   /** Server-assigned client ID for this connection */
@@ -32,7 +32,7 @@ export type YjsSyncMessage = {
  * Client sends a Yjs update to the server.
  */
 export type YjsUpdateMessage = {
-  type: 'yjs_update';
+  type: "yjs_update";
   /** Base64-encoded Yjs update */
   update: string;
   /** Client that originated this update */
@@ -47,7 +47,7 @@ export type YjsUpdateMessage = {
  * Server acknowledges a Yjs update from client.
  */
 export type YjsAckMessage = {
-  type: 'yjs_ack';
+  type: "yjs_ack";
   /** Sequence number of the broadcast */
   seqNum?: number;
 };
@@ -56,7 +56,7 @@ export type YjsAckMessage = {
  * Awareness update for cursor positions and presence.
  */
 export type AwarenessUpdateMessage = {
-  type: 'awareness_update';
+  type: "awareness_update";
   /** Base64-encoded awareness protocol update */
   update: string;
   /** Client that sent this update */
@@ -69,7 +69,7 @@ export type AwarenessUpdateMessage = {
  * Request full Yjs state (for recovery after disconnect).
  */
 export type YjsStateRequestMessage = {
-  type: 'yjs_state_request';
+  type: "yjs_state_request";
   clientId: string;
   sessionId: string;
 };
@@ -78,7 +78,7 @@ export type YjsStateRequestMessage = {
  * Server responds with full Yjs state.
  */
 export type YjsStateResponseMessage = {
-  type: 'yjs_state_response';
+  type: "yjs_state_response";
   /** Base64-encoded full Yjs document state */
   state: string;
   /** Base64-encoded awareness states */
@@ -93,7 +93,7 @@ export type YjsStateResponseMessage = {
  * Server reports an error to the client.
  */
 export type ErrorMessage = {
-  type: 'error';
+  type: "error";
   message: string;
 };
 
@@ -101,7 +101,7 @@ export type ErrorMessage = {
  * Server instructs client to reload the document.
  */
 export type ReloadMessage = {
-  type: 'reload';
+  type: "reload";
   reason: string;
 };
 
@@ -109,14 +109,14 @@ export type ReloadMessage = {
  * Server notifies that the note has expired (max views reached or time expired).
  */
 export type NoteExpiredMessage = {
-  type: 'note_expired';
+  type: "note_expired";
 };
 
 /**
  * Server notifies that the note was deleted.
  */
 export type NoteDeletedMessage = {
-  type: 'note_deleted';
+  type: "note_deleted";
   /** Session ID of the user who deleted the note */
   sessionId?: string;
 };
@@ -125,7 +125,7 @@ export type NoteDeletedMessage = {
  * Server notifies that encryption status changed.
  */
 export type EncryptionChangedMessage = {
-  type: 'encryption_changed';
+  type: "encryption_changed";
   is_encrypted: boolean;
 };
 
@@ -133,7 +133,7 @@ export type EncryptionChangedMessage = {
  * Server notifies that another client updated the note via REST API.
  */
 export type VersionUpdateMessage = {
-  type: 'version_update';
+  type: "version_update";
   version: number;
   message: string;
 };
@@ -142,7 +142,7 @@ export type VersionUpdateMessage = {
  * Server notifies that a user joined the session.
  */
 export type UserJoinedMessage = {
-  type: 'user_joined';
+  type: "user_joined";
   clientId: string;
   /** All currently connected client IDs */
   connectedUsers: string[];
@@ -157,7 +157,7 @@ export type UserJoinedMessage = {
  * Server notifies that a user left the session.
  */
 export type UserLeftMessage = {
-  type: 'user_left';
+  type: "user_left";
   clientId: string;
   /** All currently connected client IDs */
   connectedUsers: string[];
@@ -172,7 +172,7 @@ export type UserLeftMessage = {
  * Broadcast syntax highlighting mode change.
  */
 export type SyntaxChangeMessage = {
-  type: 'syntax_change';
+  type: "syntax_change";
   syntax: string;
   clientId: string;
   seqNum?: number;
@@ -182,7 +182,7 @@ export type SyntaxChangeMessage = {
  * Server acknowledges a syntax change.
  */
 export type SyntaxAckMessage = {
-  type: 'syntax_ack';
+  type: "syntax_ack";
   seqNum: number;
 };
 
@@ -190,7 +190,7 @@ export type SyntaxAckMessage = {
  * Server broadcasts current note status (view count, expiration).
  */
 export type NoteStatusMessage = {
-  type: 'note_status';
+  type: "note_status";
   view_count: number;
   max_views: number | null;
   expires_at: number | null;
@@ -201,7 +201,7 @@ export type NoteStatusMessage = {
  * Sent after sync to check if client can become an active editor.
  */
 export type RequestEditMessage = {
-  type: 'request_edit';
+  type: "request_edit";
   clientId: string;
   sessionId: string;
 };
@@ -210,7 +210,7 @@ export type RequestEditMessage = {
  * Server responds to edit permission request.
  */
 export type RequestEditResponseMessage = {
-  type: 'request_edit_response';
+  type: "request_edit_response";
   /** Whether the client is allowed to edit */
   canEdit: boolean;
   /** Current number of active editors */
@@ -224,7 +224,7 @@ export type RequestEditResponseMessage = {
  * Sent when a viewer becomes an active editor.
  */
 export type EditorCountUpdateMessage = {
-  type: 'editor_count_update';
+  type: "editor_count_update";
   /** Current number of active editors */
   activeEditorCount: number;
   /** Current number of viewers */

@@ -3,106 +3,108 @@
  * Tests both REST API rate limiting and WebSocket rate limiting
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RATE_LIMITS } from '../../config/constants';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { RATE_LIMITS } from "../../config/constants";
 
-describe('RATE_LIMITS configuration', () => {
-  describe('API limits', () => {
-    it('should have CREATE_PER_MINUTE limit', () => {
+describe("RATE_LIMITS configuration", () => {
+  describe("API limits", () => {
+    it("should have CREATE_PER_MINUTE limit", () => {
       expect(RATE_LIMITS.API.CREATE_PER_MINUTE).toBe(10);
       expect(RATE_LIMITS.API.CREATE_PER_MINUTE).toBeGreaterThan(0);
     });
 
-    it('should have READ_PER_MINUTE limit', () => {
+    it("should have READ_PER_MINUTE limit", () => {
       expect(RATE_LIMITS.API.READ_PER_MINUTE).toBe(60);
       expect(RATE_LIMITS.API.READ_PER_MINUTE).toBeGreaterThan(RATE_LIMITS.API.CREATE_PER_MINUTE);
     });
 
-    it('should have UPDATE_PER_MINUTE limit', () => {
+    it("should have UPDATE_PER_MINUTE limit", () => {
       expect(RATE_LIMITS.API.UPDATE_PER_MINUTE).toBe(30);
     });
 
-    it('should have DELETE_PER_MINUTE limit', () => {
+    it("should have DELETE_PER_MINUTE limit", () => {
       expect(RATE_LIMITS.API.DELETE_PER_MINUTE).toBe(20);
     });
 
-    it('should have WS_UPGRADE_PER_MINUTE limit', () => {
+    it("should have WS_UPGRADE_PER_MINUTE limit", () => {
       expect(RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE).toBe(30);
     });
 
-    it('should have sensible relative limits', () => {
+    it("should have sensible relative limits", () => {
       // Read should be highest (most common operation)
       expect(RATE_LIMITS.API.READ_PER_MINUTE).toBeGreaterThan(RATE_LIMITS.API.UPDATE_PER_MINUTE);
       expect(RATE_LIMITS.API.READ_PER_MINUTE).toBeGreaterThan(RATE_LIMITS.API.CREATE_PER_MINUTE);
       expect(RATE_LIMITS.API.READ_PER_MINUTE).toBeGreaterThan(RATE_LIMITS.API.DELETE_PER_MINUTE);
 
       // Create should be lowest (prevents spam)
-      expect(RATE_LIMITS.API.CREATE_PER_MINUTE).toBeLessThanOrEqual(RATE_LIMITS.API.UPDATE_PER_MINUTE);
+      expect(RATE_LIMITS.API.CREATE_PER_MINUTE).toBeLessThanOrEqual(
+        RATE_LIMITS.API.UPDATE_PER_MINUTE,
+      );
     });
   });
 
-  describe('WebSocket limits', () => {
-    it('should have OPS_PER_SECOND limit', () => {
+  describe("WebSocket limits", () => {
+    it("should have OPS_PER_SECOND limit", () => {
       // With Yjs batching (50ms), max updates are ~20/sec
       expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBe(25);
       expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBeGreaterThan(0);
     });
 
-    it('should have reasonable OPS_PER_SECOND for batched Yjs updates', () => {
+    it("should have reasonable OPS_PER_SECOND for batched Yjs updates", () => {
       // With 50ms batching, theoretical max is 20 updates/sec
       // 25 allows some headroom for network timing variations
       expect(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND).toBeGreaterThanOrEqual(20);
     });
 
-    it('should have BURST_ALLOWANCE for rapid editing', () => {
+    it("should have BURST_ALLOWANCE for rapid editing", () => {
       // With Yjs batching, we don't need as many tokens
       expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBe(100);
       expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBeGreaterThan(0);
     });
 
-    it('should have sufficient BURST_ALLOWANCE for normal usage', () => {
+    it("should have sufficient BURST_ALLOWANCE for normal usage", () => {
       // 100 tokens at 25/sec refill = 4 seconds of continuous editing allowed
       expect(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE).toBeGreaterThanOrEqual(50);
     });
 
-    it('should have MAX_MESSAGE_SIZE limit', () => {
+    it("should have MAX_MESSAGE_SIZE limit", () => {
       // Yjs updates can be larger than OT ops, so we use 128KB
       expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBe(131072); // 128KB
     });
 
-    it('should have reasonable MAX_MESSAGE_SIZE', () => {
+    it("should have reasonable MAX_MESSAGE_SIZE", () => {
       // Should be large enough for Yjs updates but not excessive
       expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBeGreaterThanOrEqual(1024); // At least 1KB
       expect(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE).toBeLessThanOrEqual(1024 * 1024); // At most 1MB
     });
   });
 
-  describe('Penalty settings', () => {
-    it('should have DISCONNECT_THRESHOLD', () => {
+  describe("Penalty settings", () => {
+    it("should have DISCONNECT_THRESHOLD", () => {
       expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBe(10);
       expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeGreaterThan(0);
     });
 
-    it('should have reasonable DISCONNECT_THRESHOLD', () => {
+    it("should have reasonable DISCONNECT_THRESHOLD", () => {
       // Should give users several warnings before disconnecting
       expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeGreaterThanOrEqual(5);
       expect(RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD).toBeLessThanOrEqual(15);
     });
 
-    it('should have WARNING_MESSAGE', () => {
-      expect(RATE_LIMITS.PENALTY.WARNING_MESSAGE).toBe('Rate limit exceeded. Please slow down.');
-      expect(typeof RATE_LIMITS.PENALTY.WARNING_MESSAGE).toBe('string');
+    it("should have WARNING_MESSAGE", () => {
+      expect(RATE_LIMITS.PENALTY.WARNING_MESSAGE).toBe("Rate limit exceeded. Please slow down.");
+      expect(typeof RATE_LIMITS.PENALTY.WARNING_MESSAGE).toBe("string");
       expect(RATE_LIMITS.PENALTY.WARNING_MESSAGE.length).toBeGreaterThan(0);
     });
   });
 
-  it('should be immutable (readonly)', () => {
+  it("should be immutable (readonly)", () => {
     // TypeScript's `as const` makes these readonly
     expect(Object.isFrozen(RATE_LIMITS) || true).toBe(true);
   });
 });
 
-describe('Token bucket algorithm', () => {
+describe("Token bucket algorithm", () => {
   // Simulate the token bucket implementation
   interface RateLimitState {
     tokens: number;
@@ -125,10 +127,7 @@ describe('Token bucket algorithm', () => {
     const elapsed = now - state.lastRefill;
     const tokensToAdd = (elapsed / 1000) * config.OPS_PER_SECOND;
 
-    state.tokens = Math.min(
-      config.BURST_ALLOWANCE,
-      state.tokens + tokensToAdd
-    );
+    state.tokens = Math.min(config.BURST_ALLOWANCE, state.tokens + tokensToAdd);
     state.lastRefill = now;
 
     // Check if we have tokens
@@ -142,18 +141,18 @@ describe('Token bucket algorithm', () => {
     return true;
   }
 
-  it('should start with full burst allowance', () => {
+  it("should start with full burst allowance", () => {
     const state = createRateLimitState();
     expect(state.tokens).toBe(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE);
   });
 
-  it('should allow operations when tokens available', () => {
+  it("should allow operations when tokens available", () => {
     const state = createRateLimitState();
     const result = checkRateLimit(state);
     expect(result).toBe(true);
   });
 
-  it('should consume tokens on each operation', () => {
+  it("should consume tokens on each operation", () => {
     const state = createRateLimitState();
     const initialTokens = state.tokens;
 
@@ -161,7 +160,7 @@ describe('Token bucket algorithm', () => {
     expect(state.tokens).toBe(initialTokens - 1);
   });
 
-  it('should deny operations when no tokens', () => {
+  it("should deny operations when no tokens", () => {
     const state = createRateLimitState();
     state.tokens = 0;
     state.lastRefill = Date.now(); // Prevent refill
@@ -170,7 +169,7 @@ describe('Token bucket algorithm', () => {
     expect(result).toBe(false);
   });
 
-  it('should increment violations on denial', () => {
+  it("should increment violations on denial", () => {
     const state = createRateLimitState();
     state.tokens = 0;
     state.lastRefill = Date.now();
@@ -182,7 +181,7 @@ describe('Token bucket algorithm', () => {
     expect(state.violations).toBe(2);
   });
 
-  it('should refill tokens over time', () => {
+  it("should refill tokens over time", () => {
     const state = createRateLimitState();
     state.tokens = 0;
     const startTime = Date.now();
@@ -196,7 +195,7 @@ describe('Token bucket algorithm', () => {
     expect(state.tokens).toBeCloseTo(RATE_LIMITS.WEBSOCKET.OPS_PER_SECOND - 1, 0);
   });
 
-  it('should cap tokens at burst allowance', () => {
+  it("should cap tokens at burst allowance", () => {
     const state = createRateLimitState();
     state.tokens = RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE;
     const startTime = Date.now();
@@ -210,7 +209,7 @@ describe('Token bucket algorithm', () => {
     expect(state.tokens).toBe(RATE_LIMITS.WEBSOCKET.BURST_ALLOWANCE - 1);
   });
 
-  it('should allow burst of operations', () => {
+  it("should allow burst of operations", () => {
     const state = createRateLimitState();
     const now = Date.now();
     let successCount = 0;
@@ -226,7 +225,7 @@ describe('Token bucket algorithm', () => {
     expect(successCount).toBe(100);
   });
 
-  it('should eventually rate limit sustained rapid operations', () => {
+  it("should eventually rate limit sustained rapid operations", () => {
     const state = createRateLimitState();
     const now = Date.now();
     let successCount = 0;
@@ -245,7 +244,7 @@ describe('Token bucket algorithm', () => {
     expect(failCount).toBe(10);
   });
 
-  it('should recover after waiting', () => {
+  it("should recover after waiting", () => {
     const state = createRateLimitState();
     let now = Date.now();
 
@@ -264,7 +263,7 @@ describe('Token bucket algorithm', () => {
   });
 });
 
-describe('Sliding window rate limiting (REST API)', () => {
+describe("Sliding window rate limiting (REST API)", () => {
   // Simulate the sliding window implementation
   interface RateLimitCounter {
     count: number;
@@ -276,7 +275,7 @@ describe('Sliding window rate limiting (REST API)', () => {
     endpoint: string,
     limit: number,
     windowMs: number,
-    now: number = Date.now()
+    now: number = Date.now(),
   ): boolean {
     let counter = counters.get(endpoint);
 
@@ -291,18 +290,18 @@ describe('Sliding window rate limiting (REST API)', () => {
     return counter.count <= limit;
   }
 
-  it('should allow requests within limit', () => {
+  it("should allow requests within limit", () => {
     const counters = new Map<string, RateLimitCounter>();
     const limit = 10;
     const windowMs = 60000;
 
     for (let i = 0; i < limit; i++) {
-      const result = checkSlidingWindowRateLimit(counters, 'POST:/api/notes', limit, windowMs);
+      const result = checkSlidingWindowRateLimit(counters, "POST:/api/notes", limit, windowMs);
       expect(result).toBe(true);
     }
   });
 
-  it('should deny requests over limit', () => {
+  it("should deny requests over limit", () => {
     const counters = new Map<string, RateLimitCounter>();
     const limit = 10;
     const windowMs = 60000;
@@ -310,31 +309,53 @@ describe('Sliding window rate limiting (REST API)', () => {
 
     // Use up the limit
     for (let i = 0; i < limit; i++) {
-      checkSlidingWindowRateLimit(counters, 'POST:/api/notes', limit, windowMs, now);
+      checkSlidingWindowRateLimit(counters, "POST:/api/notes", limit, windowMs, now);
     }
 
     // Next request should be denied
-    const result = checkSlidingWindowRateLimit(counters, 'POST:/api/notes', limit, windowMs, now);
+    const result = checkSlidingWindowRateLimit(counters, "POST:/api/notes", limit, windowMs, now);
     expect(result).toBe(false);
   });
 
-  it('should track different endpoints separately', () => {
+  it("should track different endpoints separately", () => {
     const counters = new Map<string, RateLimitCounter>();
     const now = Date.now();
 
     // Use up POST limit
     for (let i = 0; i < RATE_LIMITS.API.CREATE_PER_MINUTE; i++) {
-      checkSlidingWindowRateLimit(counters, 'POST:/api/notes', RATE_LIMITS.API.CREATE_PER_MINUTE, 60000, now);
+      checkSlidingWindowRateLimit(
+        counters,
+        "POST:/api/notes",
+        RATE_LIMITS.API.CREATE_PER_MINUTE,
+        60000,
+        now,
+      );
     }
 
     // POST should be denied
-    expect(checkSlidingWindowRateLimit(counters, 'POST:/api/notes', RATE_LIMITS.API.CREATE_PER_MINUTE, 60000, now)).toBe(false);
+    expect(
+      checkSlidingWindowRateLimit(
+        counters,
+        "POST:/api/notes",
+        RATE_LIMITS.API.CREATE_PER_MINUTE,
+        60000,
+        now,
+      ),
+    ).toBe(false);
 
     // GET should still work
-    expect(checkSlidingWindowRateLimit(counters, 'GET:/api/notes/:id', RATE_LIMITS.API.READ_PER_MINUTE, 60000, now)).toBe(true);
+    expect(
+      checkSlidingWindowRateLimit(
+        counters,
+        "GET:/api/notes/:id",
+        RATE_LIMITS.API.READ_PER_MINUTE,
+        60000,
+        now,
+      ),
+    ).toBe(true);
   });
 
-  it('should reset after window expires', () => {
+  it("should reset after window expires", () => {
     const counters = new Map<string, RateLimitCounter>();
     const limit = 10;
     const windowMs = 60000;
@@ -342,31 +363,35 @@ describe('Sliding window rate limiting (REST API)', () => {
 
     // Use up the limit
     for (let i = 0; i < limit; i++) {
-      checkSlidingWindowRateLimit(counters, 'POST:/api/notes', limit, windowMs, now);
+      checkSlidingWindowRateLimit(counters, "POST:/api/notes", limit, windowMs, now);
     }
 
     // Should be denied
-    expect(checkSlidingWindowRateLimit(counters, 'POST:/api/notes', limit, windowMs, now)).toBe(false);
+    expect(checkSlidingWindowRateLimit(counters, "POST:/api/notes", limit, windowMs, now)).toBe(
+      false,
+    );
 
     // Wait for window to expire
     now += windowMs + 1;
 
     // Should be allowed again
-    expect(checkSlidingWindowRateLimit(counters, 'POST:/api/notes', limit, windowMs, now)).toBe(true);
+    expect(checkSlidingWindowRateLimit(counters, "POST:/api/notes", limit, windowMs, now)).toBe(
+      true,
+    );
   });
 
-  it('should apply correct limits for each endpoint type', () => {
+  it("should apply correct limits for each endpoint type", () => {
     const counters = new Map<string, RateLimitCounter>();
     const now = Date.now();
     const windowMs = 60000;
 
     // Test each endpoint gets its own limit
     const endpoints = [
-      { path: 'POST:/api/notes', limit: RATE_LIMITS.API.CREATE_PER_MINUTE },
-      { path: 'GET:/api/notes/:id', limit: RATE_LIMITS.API.READ_PER_MINUTE },
-      { path: 'PUT:/api/notes/:id', limit: RATE_LIMITS.API.UPDATE_PER_MINUTE },
-      { path: 'DELETE:/api/notes/:id', limit: RATE_LIMITS.API.DELETE_PER_MINUTE },
-      { path: 'GET:/api/notes/:id/ws', limit: RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE },
+      { path: "POST:/api/notes", limit: RATE_LIMITS.API.CREATE_PER_MINUTE },
+      { path: "GET:/api/notes/:id", limit: RATE_LIMITS.API.READ_PER_MINUTE },
+      { path: "PUT:/api/notes/:id", limit: RATE_LIMITS.API.UPDATE_PER_MINUTE },
+      { path: "DELETE:/api/notes/:id", limit: RATE_LIMITS.API.DELETE_PER_MINUTE },
+      { path: "GET:/api/notes/:id/ws", limit: RATE_LIMITS.API.WS_UPGRADE_PER_MINUTE },
     ];
 
     for (const { path, limit } of endpoints) {
@@ -383,121 +408,121 @@ describe('Sliding window rate limiting (REST API)', () => {
   });
 });
 
-describe('Message size validation', () => {
+describe("Message size validation", () => {
   function isMessageTooLarge(message: object): boolean {
     const messageStr = JSON.stringify(message);
     return messageStr.length > RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE;
   }
 
-  it('should allow small messages', () => {
+  it("should allow small messages", () => {
     const message = {
-      type: 'operation',
-      operation: { type: 'insert', position: 0, text: 'hello' },
+      type: "operation",
+      operation: { type: "insert", position: 0, text: "hello" },
     };
     expect(isMessageTooLarge(message)).toBe(false);
   });
 
-  it('should allow messages up to limit', () => {
+  it("should allow messages up to limit", () => {
     // Create a message just under the limit
-    const padding = 'x'.repeat(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE - 100);
+    const padding = "x".repeat(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE - 100);
     const message = { text: padding };
     expect(isMessageTooLarge(message)).toBe(false);
   });
 
-  it('should reject messages over limit', () => {
+  it("should reject messages over limit", () => {
     // Create a message over the limit
-    const padding = 'x'.repeat(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE + 1);
+    const padding = "x".repeat(RATE_LIMITS.WEBSOCKET.MAX_MESSAGE_SIZE + 1);
     const message = { text: padding };
     expect(isMessageTooLarge(message)).toBe(true);
   });
 
-  it('should handle typical operation messages', () => {
+  it("should handle typical operation messages", () => {
     // Simulate a typical operation message
     const typicalMessage = {
-      type: 'operation',
+      type: "operation",
       operation: {
-        type: 'insert',
+        type: "insert",
         position: 1234,
-        text: 'Some text being inserted into the document',
-        clientId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        text: "Some text being inserted into the document",
+        clientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         version: 42,
       },
       baseVersion: 41,
-      clientId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-      sessionId: 'aaaaaaaa-bbbb-cccc-dddd-ffffffffffff',
+      clientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      sessionId: "aaaaaaaa-bbbb-cccc-dddd-ffffffffffff",
     };
 
     expect(isMessageTooLarge(typicalMessage)).toBe(false);
   });
 });
 
-describe('Disconnect threshold logic', () => {
-  it('should not disconnect on first violation', () => {
+describe("Disconnect threshold logic", () => {
+  it("should not disconnect on first violation", () => {
     const violations = 1;
     const shouldDisconnect = violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD;
     expect(shouldDisconnect).toBe(false);
   });
 
-  it('should not disconnect below threshold', () => {
+  it("should not disconnect below threshold", () => {
     for (let violations = 0; violations < RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD; violations++) {
       const shouldDisconnect = violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD;
       expect(shouldDisconnect).toBe(false);
     }
   });
 
-  it('should disconnect at threshold', () => {
+  it("should disconnect at threshold", () => {
     const violations = RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD;
     const shouldDisconnect = violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD;
     expect(shouldDisconnect).toBe(true);
   });
 
-  it('should disconnect above threshold', () => {
+  it("should disconnect above threshold", () => {
     const violations = RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD + 5;
     const shouldDisconnect = violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD;
     expect(shouldDisconnect).toBe(true);
   });
 });
 
-describe('Session ID extraction', () => {
+describe("Session ID extraction", () => {
   function extractSessionId(
     querySessionId?: string | null,
-    headerSessionId?: string | null
+    headerSessionId?: string | null,
   ): string {
-    return querySessionId || headerSessionId || 'anonymous';
+    return querySessionId || headerSessionId || "anonymous";
   }
 
-  it('should prefer query param session ID', () => {
-    const result = extractSessionId('query-session', 'header-session');
-    expect(result).toBe('query-session');
+  it("should prefer query param session ID", () => {
+    const result = extractSessionId("query-session", "header-session");
+    expect(result).toBe("query-session");
   });
 
-  it('should fall back to header session ID', () => {
-    const result = extractSessionId(null, 'header-session');
-    expect(result).toBe('header-session');
+  it("should fall back to header session ID", () => {
+    const result = extractSessionId(null, "header-session");
+    expect(result).toBe("header-session");
   });
 
-  it('should fall back to anonymous', () => {
+  it("should fall back to anonymous", () => {
     const result = extractSessionId(null, null);
-    expect(result).toBe('anonymous');
+    expect(result).toBe("anonymous");
   });
 
-  it('should handle empty string as falsy', () => {
-    const result = extractSessionId('', 'header-session');
-    expect(result).toBe('header-session');
+  it("should handle empty string as falsy", () => {
+    const result = extractSessionId("", "header-session");
+    expect(result).toBe("header-session");
   });
 
-  it('should use anonymous for all empty', () => {
-    const result = extractSessionId('', '');
-    expect(result).toBe('anonymous');
+  it("should use anonymous for all empty", () => {
+    const result = extractSessionId("", "");
+    expect(result).toBe("anonymous");
   });
 });
 
-describe('Rate limit response headers', () => {
+describe("Rate limit response headers", () => {
   function calculateRetryAfter(resetAt: number, now: number): number {
     return Math.ceil((resetAt - now) / 1000);
   }
 
-  it('should calculate correct Retry-After', () => {
+  it("should calculate correct Retry-After", () => {
     const now = Date.now();
     const resetAt = now + 30000; // 30 seconds from now
 
@@ -505,7 +530,7 @@ describe('Rate limit response headers', () => {
     expect(retryAfter).toBe(30);
   });
 
-  it('should round up Retry-After', () => {
+  it("should round up Retry-After", () => {
     const now = Date.now();
     const resetAt = now + 30500; // 30.5 seconds from now
 
@@ -513,7 +538,7 @@ describe('Rate limit response headers', () => {
     expect(retryAfter).toBe(31);
   });
 
-  it('should handle expired window', () => {
+  it("should handle expired window", () => {
     const now = Date.now();
     const resetAt = now - 1000; // Already expired
 

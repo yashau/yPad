@@ -6,7 +6,7 @@
  * Extracted from the main Durable Object for better code organization.
  */
 
-import { RATE_LIMITS, EDITOR_LIMITS } from '../../../config/constants';
+import { RATE_LIMITS, EDITOR_LIMITS } from "../../../config/constants";
 import type {
   ClientSession,
   YjsUpdateMessage,
@@ -17,14 +17,14 @@ import type {
   RequestEditMessage,
   RequestEditResponseMessage,
   YjsStateRequestMessage,
-} from '../../types/messages';
-import type { NoteSessionContext } from './types';
+} from "../../types/messages";
+import type { NoteSessionContext } from "./types";
 
 /**
  * Encode Uint8Array to base64 string
  */
 function encodeBase64(data: Uint8Array): string {
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < data.length; i++) {
     binary += String.fromCharCode(data[i]);
   }
@@ -67,7 +67,10 @@ function countActiveEditors(sessions: Map<WebSocket, ClientSession>): number {
 /**
  * Get the current editor and viewer counts.
  */
-function getEditorViewerCounts(sessions: Map<WebSocket, ClientSession>): { activeEditorCount: number; viewerCount: number } {
+function getEditorViewerCounts(sessions: Map<WebSocket, ClientSession>): {
+  activeEditorCount: number;
+  viewerCount: number;
+} {
   const activeEditorCount = countActiveEditors(sessions);
   const viewerCount = sessions.size - activeEditorCount;
   return { activeEditorCount, viewerCount };
@@ -80,11 +83,11 @@ function getEditorViewerCounts(sessions: Map<WebSocket, ClientSession>): { activ
 export async function handleRequestEdit(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  _message: RequestEditMessage
+  _message: RequestEditMessage,
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
-    ctx.sendError(ws, 'Unauthorized');
+    ctx.sendError(ws, "Unauthorized");
     return;
   }
 
@@ -97,7 +100,7 @@ export async function handleRequestEdit(
   const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
 
   const response: RequestEditResponseMessage = {
-    type: 'request_edit_response',
+    type: "request_edit_response",
     canEdit,
     activeEditorCount,
     viewerCount,
@@ -113,11 +116,11 @@ export async function handleRequestEdit(
 export async function handleYjsUpdate(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  message: YjsUpdateMessage
+  message: YjsUpdateMessage,
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
-    ctx.sendError(ws, 'Unauthorized');
+    ctx.sendError(ws, "Unauthorized");
     return;
   }
 
@@ -126,7 +129,7 @@ export async function handleYjsUpdate(
   if (!isAlreadyActive) {
     const activeCount = countActiveEditors(ctx.sessions);
     if (activeCount >= EDITOR_LIMITS.MAX_ACTIVE_EDITORS) {
-      ctx.sendError(ws, 'editor_limit_reached');
+      ctx.sendError(ws, "editor_limit_reached");
       return;
     }
   }
@@ -134,7 +137,7 @@ export async function handleYjsUpdate(
   // Check rate limit
   if (!checkRateLimit(session)) {
     if (session.rateLimit.violations >= RATE_LIMITS.PENALTY.DISCONNECT_THRESHOLD) {
-      ws.close(1008, 'Rate limit exceeded');
+      ws.close(1008, "Rate limit exceeded");
       ctx.sessions.delete(ws);
       return;
     }
@@ -166,7 +169,7 @@ export async function handleYjsUpdate(
 
   // Send ACK to sender
   const ackMessage: YjsAckMessage = {
-    type: 'yjs_ack',
+    type: "yjs_ack",
     seqNum: broadcastSeqNum,
   };
   ws.send(JSON.stringify(ackMessage));
@@ -182,7 +185,7 @@ export async function handleYjsUpdate(
 export async function handleAwarenessUpdate(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  message: AwarenessUpdateMessage
+  message: AwarenessUpdateMessage,
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
@@ -199,7 +202,7 @@ export async function handleAwarenessUpdate(
 export async function handleYjsStateRequest(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  _message: YjsStateRequestMessage
+  _message: YjsStateRequestMessage,
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
@@ -208,10 +211,12 @@ export async function handleYjsStateRequest(
 
   // Send full state to the requesting client
   const state = ctx.getYjsState();
-  ws.send(JSON.stringify({
-    type: 'yjs_state_response',
-    state: encodeBase64(state),
-  }));
+  ws.send(
+    JSON.stringify({
+      type: "yjs_state_response",
+      state: encodeBase64(state),
+    }),
+  );
 }
 
 /**
@@ -221,7 +226,7 @@ export async function handleYjsStateRequest(
 export async function handleSyntaxChange(
   ctx: NoteSessionContext,
   ws: WebSocket,
-  message: SyntaxChangeMessage
+  message: SyntaxChangeMessage,
 ): Promise<void> {
   const session = ctx.sessions.get(ws);
   if (!session || !session.isAuthenticated) {
@@ -236,7 +241,7 @@ export async function handleSyntaxChange(
 
   // Send acknowledgment to sender with the sequence number of the broadcast
   const ackMessage: SyntaxAckMessage = {
-    type: 'syntax_ack',
+    type: "syntax_ack",
     seqNum: broadcastSeqNum,
   };
   ws.send(JSON.stringify(ackMessage));
@@ -259,7 +264,7 @@ function checkRateLimit(session: ClientSession): boolean {
 
   session.rateLimit.tokens = Math.min(
     config.BURST_ALLOWANCE,
-    session.rateLimit.tokens + tokensToAdd
+    session.rateLimit.tokens + tokensToAdd,
   );
   session.rateLimit.lastRefill = now;
 
@@ -287,7 +292,7 @@ function getNextSeqNum(ctx: NoteSessionContext): number {
 export function broadcast(
   ctx: NoteSessionContext,
   message: Record<string, unknown>,
-  options?: { excludeClientId?: string; excludeSessionId?: string }
+  options?: { excludeClientId?: string; excludeSessionId?: string },
 ): void {
   const messageStr = JSON.stringify(message);
   for (const [ws, session] of ctx.sessions) {
@@ -307,11 +312,11 @@ export function broadcast(
 export function broadcastYjsUpdate(
   ctx: NoteSessionContext,
   update: string,
-  senderClientId: string
+  senderClientId: string,
 ): number {
   const seqNum = getNextSeqNum(ctx);
   const message: YjsUpdateMessage = {
-    type: 'yjs_update',
+    type: "yjs_update",
     update,
     clientId: senderClientId,
     seqNum,
@@ -329,10 +334,10 @@ export function broadcastYjsUpdate(
 export function broadcastAwarenessUpdate(
   ctx: NoteSessionContext,
   update: string,
-  senderClientId: string
+  senderClientId: string,
 ): void {
   const message: AwarenessUpdateMessage = {
-    type: 'awareness_update',
+    type: "awareness_update",
     update,
     clientId: senderClientId,
     // No seqNum - awareness updates bypass sequence ordering
@@ -346,11 +351,11 @@ export function broadcastAwarenessUpdate(
 export function broadcastSyntaxChange(
   ctx: NoteSessionContext,
   clientId: string,
-  syntax: string
+  syntax: string,
 ): number {
   const seqNum = getNextSeqNum(ctx);
   const message: SyntaxChangeMessage = {
-    type: 'syntax_change',
+    type: "syntax_change",
     clientId,
     syntax,
     seqNum,
@@ -365,10 +370,10 @@ export function broadcastSyntaxChange(
 export function broadcastEncryptionChange(
   ctx: NoteSessionContext,
   is_encrypted: boolean,
-  excludeSessionId?: string
+  excludeSessionId?: string,
 ): void {
   ctx.isEncrypted = is_encrypted;
-  const message = { type: 'encryption_changed' as const, is_encrypted };
+  const message = { type: "encryption_changed" as const, is_encrypted };
   broadcast(ctx, message, { excludeSessionId });
 }
 
@@ -378,12 +383,12 @@ export function broadcastEncryptionChange(
 export function broadcastVersionUpdate(
   ctx: NoteSessionContext,
   version: number,
-  excludeSessionId?: string
+  excludeSessionId?: string,
 ): void {
   const message = {
-    type: 'version_update' as const,
+    type: "version_update" as const,
     version,
-    message: 'Note was updated by another user'
+    message: "Note was updated by another user",
   };
   broadcast(ctx, message, { excludeSessionId });
 }
@@ -391,15 +396,12 @@ export function broadcastVersionUpdate(
 /**
  * Broadcast user joined notification to all clients.
  */
-export function broadcastUserJoined(
-  ctx: NoteSessionContext,
-  joinedClientId: string
-): void {
+export function broadcastUserJoined(ctx: NoteSessionContext, joinedClientId: string): void {
   const seqNum = getNextSeqNum(ctx);
-  const connectedUsers = Array.from(ctx.sessions.values()).map(s => s.clientId);
+  const connectedUsers = Array.from(ctx.sessions.values()).map((s) => s.clientId);
   const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
   const message = {
-    type: 'user_joined' as const,
+    type: "user_joined" as const,
     clientId: joinedClientId,
     connectedUsers,
     activeEditorCount,
@@ -412,15 +414,12 @@ export function broadcastUserJoined(
 /**
  * Broadcast user left notification to remaining clients.
  */
-export function broadcastUserLeft(
-  ctx: NoteSessionContext,
-  leftClientId: string
-): void {
+export function broadcastUserLeft(ctx: NoteSessionContext, leftClientId: string): void {
   const seqNum = getNextSeqNum(ctx);
-  const connectedUsers = Array.from(ctx.sessions.values()).map(s => s.clientId);
+  const connectedUsers = Array.from(ctx.sessions.values()).map((s) => s.clientId);
   const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
   const message = {
-    type: 'user_left' as const,
+    type: "user_left" as const,
     clientId: leftClientId,
     connectedUsers,
     activeEditorCount,
@@ -437,10 +436,10 @@ export function broadcastNoteStatus(
   ctx: NoteSessionContext,
   viewCount: number,
   maxViews: number | null,
-  expiresAt: number | null
+  expiresAt: number | null,
 ): void {
   const message = {
-    type: 'note_status' as const,
+    type: "note_status" as const,
     view_count: viewCount,
     max_views: maxViews,
     expires_at: expiresAt,
@@ -456,7 +455,7 @@ export function broadcastEditorCountUpdate(ctx: NoteSessionContext): void {
   const seqNum = getNextSeqNum(ctx);
   const { activeEditorCount, viewerCount } = getEditorViewerCounts(ctx.sessions);
   const message = {
-    type: 'editor_count_update' as const,
+    type: "editor_count_update" as const,
     activeEditorCount,
     viewerCount,
     seqNum,

@@ -3,67 +3,67 @@
  * Tests core note state management
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Since Svelte 5 runes require special compilation, we'll test the logic directly
 // by simulating the hook behavior
 
-describe('useNoteState logic', () => {
-  describe('session initialization', () => {
+describe("useNoteState logic", () => {
+  describe("session initialization", () => {
     beforeEach(() => {
       // Clear session storage mock
       vi.mocked(sessionStorage.getItem).mockClear();
       vi.mocked(sessionStorage.setItem).mockClear();
     });
 
-    it('should reuse existing session ID from sessionStorage', () => {
-      const existingSessionId = 'existing-session-123';
+    it("should reuse existing session ID from sessionStorage", () => {
+      const existingSessionId = "existing-session-123";
       vi.mocked(sessionStorage.getItem).mockReturnValue(existingSessionId);
 
       // Simulate initializeSession logic
-      const storedId = sessionStorage.getItem('paste-session-id');
-      let sessionId = '';
+      const storedId = sessionStorage.getItem("paste-session-id");
+      let sessionId = "";
 
       if (storedId) {
         sessionId = storedId;
       } else {
         sessionId = crypto.randomUUID();
-        sessionStorage.setItem('paste-session-id', sessionId);
+        sessionStorage.setItem("paste-session-id", sessionId);
       }
 
       expect(sessionId).toBe(existingSessionId);
       expect(sessionStorage.setItem).not.toHaveBeenCalled();
     });
 
-    it('should create new session ID when none exists', () => {
+    it("should create new session ID when none exists", () => {
       vi.mocked(sessionStorage.getItem).mockReturnValue(null);
 
       // Simulate initializeSession logic
-      const storedId = sessionStorage.getItem('paste-session-id');
-      let sessionId = '';
+      const storedId = sessionStorage.getItem("paste-session-id");
+      let sessionId = "";
 
       if (storedId) {
         sessionId = storedId;
       } else {
         sessionId = crypto.randomUUID();
-        sessionStorage.setItem('paste-session-id', sessionId);
+        sessionStorage.setItem("paste-session-id", sessionId);
       }
 
       expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
-      expect(sessionStorage.setItem).toHaveBeenCalledWith('paste-session-id', sessionId);
+      expect(sessionStorage.setItem).toHaveBeenCalledWith("paste-session-id", sessionId);
     });
   });
 
-  describe('note state management', () => {
-    it('should track noteId', () => {
-      let noteId = '';
+  describe("note state management", () => {
+    it("should track noteId", () => {
+      let noteId = "";
 
-      noteId = 'test-note-123';
+      noteId = "test-note-123";
 
-      expect(noteId).toBe('test-note-123');
+      expect(noteId).toBe("test-note-123");
     });
 
-    it('should track currentVersion', () => {
+    it("should track currentVersion", () => {
       let currentVersion = 1;
 
       currentVersion = 5;
@@ -71,7 +71,7 @@ describe('useNoteState logic', () => {
       expect(currentVersion).toBe(5);
     });
 
-    it('should track isInitialLoad', () => {
+    it("should track isInitialLoad", () => {
       let isInitialLoad = false;
 
       isInitialLoad = true;
@@ -79,7 +79,7 @@ describe('useNoteState logic', () => {
       expect(isInitialLoad).toBe(true);
     });
 
-    it('should track isLoading', () => {
+    it("should track isLoading", () => {
       let isLoading = false;
 
       isLoading = true;
@@ -87,15 +87,15 @@ describe('useNoteState logic', () => {
       expect(isLoading).toBe(true);
     });
 
-    it('should track saveStatus', () => {
-      let saveStatus = '';
+    it("should track saveStatus", () => {
+      let saveStatus = "";
 
-      saveStatus = 'Saving...';
+      saveStatus = "Saving...";
 
-      expect(saveStatus).toBe('Saving...');
+      expect(saveStatus).toBe("Saving...");
     });
 
-    it('should track viewMode', () => {
+    it("should track viewMode", () => {
       let viewMode = false;
 
       viewMode = true;
@@ -104,8 +104,8 @@ describe('useNoteState logic', () => {
     });
   });
 
-  describe('max views and expiration', () => {
-    it('should track maxViews', () => {
+  describe("max views and expiration", () => {
+    it("should track maxViews", () => {
       let maxViews: number | null = null;
 
       maxViews = 10;
@@ -113,7 +113,7 @@ describe('useNoteState logic', () => {
       expect(maxViews).toBe(10);
     });
 
-    it('should allow null maxViews', () => {
+    it("should allow null maxViews", () => {
       let maxViews: number | null = 10;
 
       maxViews = null;
@@ -121,15 +121,15 @@ describe('useNoteState logic', () => {
       expect(maxViews).toBeNull();
     });
 
-    it('should track expiresIn', () => {
-      let expiresIn = 'null';
+    it("should track expiresIn", () => {
+      let expiresIn = "null";
 
-      expiresIn = '3600000'; // 1 hour
+      expiresIn = "3600000"; // 1 hour
 
-      expect(expiresIn).toBe('3600000');
+      expect(expiresIn).toBe("3600000");
     });
 
-    it('should track serverMaxViews', () => {
+    it("should track serverMaxViews", () => {
       let serverMaxViews: number | null = null;
 
       serverMaxViews = 100;
@@ -137,7 +137,7 @@ describe('useNoteState logic', () => {
       expect(serverMaxViews).toBe(100);
     });
 
-    it('should track serverViewCount', () => {
+    it("should track serverViewCount", () => {
       let serverViewCount = 0;
 
       serverViewCount = 42;
@@ -145,7 +145,7 @@ describe('useNoteState logic', () => {
       expect(serverViewCount).toBe(42);
     });
 
-    it('should track serverExpiresAt', () => {
+    it("should track serverExpiresAt", () => {
       let serverExpiresAt: number | null = null;
 
       serverExpiresAt = Date.now() + 3600000;
@@ -153,7 +153,7 @@ describe('useNoteState logic', () => {
       expect(serverExpiresAt).toBeGreaterThan(Date.now());
     });
 
-    it('should track isFinalView', () => {
+    it("should track isFinalView", () => {
       let isFinalView = false;
 
       isFinalView = true;
@@ -162,7 +162,7 @@ describe('useNoteState logic', () => {
     });
   });
 
-  describe('save timeout management', () => {
+  describe("save timeout management", () => {
     beforeEach(() => {
       vi.useFakeTimers();
     });
@@ -171,7 +171,7 @@ describe('useNoteState logic', () => {
       vi.useRealTimers();
     });
 
-    it('should set and clear save timeout', () => {
+    it("should set and clear save timeout", () => {
       let saveTimeout: ReturnType<typeof setTimeout> | null = null;
       const callback = vi.fn();
 
@@ -193,7 +193,7 @@ describe('useNoteState logic', () => {
       expect(callback).not.toHaveBeenCalled();
     });
 
-    it('should replace existing timeout when setting new one', () => {
+    it("should replace existing timeout when setting new one", () => {
       let saveTimeout: ReturnType<typeof setTimeout> | null = null;
       const callback1 = vi.fn();
       const callback2 = vi.fn();
@@ -214,12 +214,12 @@ describe('useNoteState logic', () => {
     });
   });
 
-  describe('resetNote', () => {
-    it('should reset all note-related state', () => {
+  describe("resetNote", () => {
+    it("should reset all note-related state", () => {
       // Initial state with values
-      let noteId = 'test-note';
+      let noteId = "test-note";
       let maxViews: number | null = 10;
-      let expiresIn = '3600000';
+      let expiresIn = "3600000";
       let viewMode = true;
       let serverMaxViews: number | null = 100;
       let serverViewCount = 50;
@@ -227,18 +227,18 @@ describe('useNoteState logic', () => {
       let isFinalView = true;
 
       // Reset logic
-      noteId = '';
+      noteId = "";
       maxViews = null;
-      expiresIn = 'null';
+      expiresIn = "null";
       viewMode = false;
       serverMaxViews = null;
       serverViewCount = 0;
       serverExpiresAt = null;
       isFinalView = false;
 
-      expect(noteId).toBe('');
+      expect(noteId).toBe("");
       expect(maxViews).toBeNull();
-      expect(expiresIn).toBe('null');
+      expect(expiresIn).toBe("null");
       expect(viewMode).toBe(false);
       expect(serverMaxViews).toBeNull();
       expect(serverViewCount).toBe(0);
@@ -247,36 +247,38 @@ describe('useNoteState logic', () => {
     });
   });
 
-  describe('state getters and setters', () => {
-    it('should provide getter/setter pairs for all state', () => {
+  describe("state getters and setters", () => {
+    it("should provide getter/setter pairs for all state", () => {
       // Simulate the hook's getter/setter pattern
       const createState = <T>(initial: T) => {
         let value = initial;
         return {
           get: () => value,
-          set: (newValue: T) => { value = newValue; }
+          set: (newValue: T) => {
+            value = newValue;
+          },
         };
       };
 
-      const noteId = createState('');
+      const noteId = createState("");
       const currentVersion = createState(1);
       const isLoading = createState(false);
 
       // Test setters
-      noteId.set('test-123');
+      noteId.set("test-123");
       currentVersion.set(5);
       isLoading.set(true);
 
       // Test getters
-      expect(noteId.get()).toBe('test-123');
+      expect(noteId.get()).toBe("test-123");
       expect(currentVersion.get()).toBe(5);
       expect(isLoading.get()).toBe(true);
     });
   });
 });
 
-describe('useNoteState view tracking logic', () => {
-  it('should calculate remaining views correctly', () => {
+describe("useNoteState view tracking logic", () => {
+  it("should calculate remaining views correctly", () => {
     const serverMaxViews = 10;
     const serverViewCount = 7;
 
@@ -285,7 +287,7 @@ describe('useNoteState view tracking logic', () => {
     expect(remainingViews).toBe(3);
   });
 
-  it('should identify when on last view', () => {
+  it("should identify when on last view", () => {
     const serverMaxViews = 10;
     const serverViewCount = 10;
 
@@ -294,7 +296,7 @@ describe('useNoteState view tracking logic', () => {
     expect(isLastView).toBe(true);
   });
 
-  it('should handle unlimited views', () => {
+  it("should handle unlimited views", () => {
     const serverMaxViews = null;
     const serverViewCount = 1000;
 
@@ -304,8 +306,8 @@ describe('useNoteState view tracking logic', () => {
   });
 });
 
-describe('useNoteState expiration logic', () => {
-  it('should detect expired notes', () => {
+describe("useNoteState expiration logic", () => {
+  it("should detect expired notes", () => {
     const serverExpiresAt = Date.now() - 1000; // 1 second ago
 
     const isExpired = serverExpiresAt !== null && Date.now() > serverExpiresAt;
@@ -313,7 +315,7 @@ describe('useNoteState expiration logic', () => {
     expect(isExpired).toBe(true);
   });
 
-  it('should detect non-expired notes', () => {
+  it("should detect non-expired notes", () => {
     const serverExpiresAt = Date.now() + 3600000; // 1 hour from now
 
     const isExpired = serverExpiresAt !== null && Date.now() > serverExpiresAt;
@@ -321,7 +323,7 @@ describe('useNoteState expiration logic', () => {
     expect(isExpired).toBe(false);
   });
 
-  it('should handle notes without expiration', () => {
+  it("should handle notes without expiration", () => {
     const serverExpiresAt = null;
 
     const isExpired = serverExpiresAt !== null && Date.now() > serverExpiresAt;
@@ -329,7 +331,7 @@ describe('useNoteState expiration logic', () => {
     expect(isExpired).toBe(false);
   });
 
-  it('should calculate time until expiration', () => {
+  it("should calculate time until expiration", () => {
     const serverExpiresAt = Date.now() + 3600000; // 1 hour from now
 
     const timeUntilExpiration = serverExpiresAt - Date.now();

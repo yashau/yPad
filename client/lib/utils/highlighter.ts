@@ -6,7 +6,7 @@
  * (user selects a language or loads a note with a language set).
  */
 
-import type { HLJSApi } from 'highlight.js';
+import type { HLJSApi } from "highlight.js";
 
 /** Cached highlight.js instance */
 let hljsInstance: HLJSApi | null = null;
@@ -30,7 +30,7 @@ export async function getHighlighter(): Promise<HLJSApi> {
   }
 
   // Start loading
-  loadingPromise = import('highlight.js').then((module) => {
+  loadingPromise = import("highlight.js").then((module) => {
     hljsInstance = module.default;
     loadingPromise = null;
     return hljsInstance;
@@ -48,7 +48,7 @@ export async function getHighlighter(): Promise<HLJSApi> {
  * @returns The highlighted HTML or original content
  */
 export function highlightSync(content: string, language: string): string {
-  if (!hljsInstance || language === 'plaintext' || !content) {
+  if (!hljsInstance || language === "plaintext" || !content) {
     return content;
   }
 

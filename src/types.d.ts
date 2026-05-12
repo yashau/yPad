@@ -23,7 +23,7 @@ declare global {
 }
 
 /** Type declarations for fast-diff library. */
-declare module 'fast-diff' {
+declare module "fast-diff" {
   const INSERT = 1;
   const DELETE = -1;
   const EQUAL = 0;

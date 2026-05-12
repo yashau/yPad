@@ -5,9 +5,9 @@
  * Uses Y.Text for plain text collaborative editing.
  */
 
-import * as Y from 'yjs';
-import { Awareness } from 'y-protocols/awareness';
-import * as awarenessProtocol from 'y-protocols/awareness';
+import * as Y from "yjs";
+import { Awareness } from "y-protocols/awareness";
+import * as awarenessProtocol from "y-protocols/awareness";
 
 export interface YjsManagerOptions {
   onLocalUpdate?: (update: Uint8Array) => void;
@@ -22,7 +22,10 @@ export interface YjsManagerOptions {
    * This is critical for cursor preservation - we need to update the content
    * and restore cursor position synchronously, bypassing framework reactivity.
    */
-  getEditorElement?: () => { element: HTMLTextAreaElement | HTMLDivElement | null; isTextarea: boolean };
+  getEditorElement?: () => {
+    element: HTMLTextAreaElement | HTMLDivElement | null;
+    isTextarea: boolean;
+  };
 }
 
 export interface RemoteCursorState {
@@ -51,7 +54,7 @@ export interface SavedCursorState {
  */
 export function encodeBase64(data: Uint8Array): string {
   // Use browser's btoa with proper handling of binary data
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < data.length; i++) {
     binary += String.fromCharCode(data[i]);
   }
@@ -87,7 +90,7 @@ export class YjsManager {
     this.options = options;
     this.updateDebounceMs = options.updateDebounceMs ?? 50;
     this.doc = new Y.Doc();
-    this.text = this.doc.getText('content');
+    this.text = this.doc.getText("content");
     this.awareness = new Awareness(this.doc);
     this.localClientId = this.doc.clientID;
 
@@ -109,13 +112,13 @@ export class YjsManager {
     // Cursor state saved BEFORE any Yjs transaction for restoration after
     let savedRelPosStart: Y.RelativePosition | null = null;
     let savedRelPosEnd: Y.RelativePosition | null = null;
-    let savedSelectionDirection: 'forward' | 'backward' | 'none' | null = null;
+    let savedSelectionDirection: "forward" | "backward" | "none" | null = null;
 
     // CRITICAL: Listen for beforeTransaction to save cursor position BEFORE any changes
     // This is the key to cursor preservation - we must capture the cursor state
     // before Yjs modifies the document, because after the transaction starts,
     // the editor value may already be out of sync with what we're trying to save.
-    this.doc.on('beforeTransaction', () => {
+    this.doc.on("beforeTransaction", () => {
       const editorInfo = this.options.getEditorElement?.();
       if (!editorInfo?.element) return;
 
@@ -149,11 +152,19 @@ export class YjsManager {
 
         // Determine selection direction based on anchor/focus comparison
         if (selection.anchorNode && selection.focusNode) {
-          const anchorOffset = this.getCharacterOffsetForNode(element as HTMLDivElement, selection.anchorNode, selection.anchorOffset);
-          const focusOffset = this.getCharacterOffsetForNode(element as HTMLDivElement, selection.focusNode, selection.focusOffset);
-          savedSelectionDirection = anchorOffset <= focusOffset ? 'forward' : 'backward';
+          const anchorOffset = this.getCharacterOffsetForNode(
+            element as HTMLDivElement,
+            selection.anchorNode,
+            selection.anchorOffset,
+          );
+          const focusOffset = this.getCharacterOffsetForNode(
+            element as HTMLDivElement,
+            selection.focusNode,
+            selection.focusOffset,
+          );
+          savedSelectionDirection = anchorOffset <= focusOffset ? "forward" : "backward";
         } else {
-          savedSelectionDirection = 'forward';
+          savedSelectionDirection = "forward";
         }
 
         // Clamp to valid range
@@ -166,9 +177,9 @@ export class YjsManager {
     });
 
     // Listen for local document updates (to send to server)
-    this.doc.on('update', (update: Uint8Array, origin: unknown) => {
+    this.doc.on("update", (update: Uint8Array, origin: unknown) => {
       // Only send updates that originated locally (not from remote)
-      if (origin !== 'remote' && !this.isApplyingRemote) {
+      if (origin !== "remote" && !this.isApplyingRemote) {
         this.queueUpdate(update);
       }
     });
@@ -201,14 +212,17 @@ export class YjsManager {
 
           // Restore cursor if textarea is focused
           if (isFocused && savedRelPosStart && savedRelPosEnd) {
-            const startPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosStart, this.doc);
+            const startPos = Y.createAbsolutePositionFromRelativePosition(
+              savedRelPosStart,
+              this.doc,
+            );
             const endPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosEnd, this.doc);
 
             if (startPos !== null && endPos !== null) {
               textarea.setSelectionRange(
                 startPos.index,
                 endPos.index,
-                savedSelectionDirection || 'forward'
+                savedSelectionDirection || "forward",
               );
             }
           }
@@ -224,7 +238,10 @@ export class YjsManager {
 
           // Restore cursor if contenteditable is focused
           if (isFocused && savedRelPosStart && savedRelPosEnd) {
-            const startPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosStart, this.doc);
+            const startPos = Y.createAbsolutePositionFromRelativePosition(
+              savedRelPosStart,
+              this.doc,
+            );
             const endPos = Y.createAbsolutePositionFromRelativePosition(savedRelPosEnd, this.doc);
 
             if (startPos !== null && endPos !== null) {
@@ -250,20 +267,25 @@ export class YjsManager {
     });
 
     // Listen for awareness changes (remote cursors display)
-    this.awareness.on('change', () => {
+    this.awareness.on("change", () => {
       this.updateRemoteCursors();
     });
 
     // Listen for local awareness updates (to send to server)
-    this.awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }) => {
-      // Only send if this is a local change (our client ID changed)
-      const changedClients = [...added, ...updated, ...removed];
-      if (changedClients.includes(this.localClientId)) {
-        // Encode and send our awareness state
-        const update = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.localClientId]);
-        this.options.onAwarenessUpdate?.(update);
-      }
-    });
+    this.awareness.on(
+      "update",
+      ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }) => {
+        // Only send if this is a local change (our client ID changed)
+        const changedClients = [...added, ...updated, ...removed];
+        if (changedClients.includes(this.localClientId)) {
+          // Encode and send our awareness state
+          const update = awarenessProtocol.encodeAwarenessUpdate(this.awareness, [
+            this.localClientId,
+          ]);
+          this.options.onAwarenessUpdate?.(update);
+        }
+      },
+    );
   }
 
   /**
@@ -317,13 +339,15 @@ export class YjsManager {
       // Skip local client
       if (clientId === this.localClientId) return;
 
-      const cursor = state.cursor as {
-        anchor?: Y.RelativePosition;
-        head?: Y.RelativePosition;
-        // Legacy support for absolute positions
-        position?: number;
-        selectionEnd?: number;
-      } | undefined;
+      const cursor = state.cursor as
+        | {
+            anchor?: Y.RelativePosition;
+            head?: Y.RelativePosition;
+            // Legacy support for absolute positions
+            position?: number;
+            selectionEnd?: number;
+          }
+        | undefined;
       const user = state.user as { name: string; color: string } | undefined;
 
       if (cursor && user) {
@@ -342,8 +366,11 @@ export class YjsManager {
               // The relative position couldn't be resolved - the referenced item doesn't exist
               // in this document. This can happen if the cursor was set on content that
               // hasn't synced to this client yet. Skip this cursor.
-              console.warn('[YjsManager] Could not resolve relative position for client', clientId,
-                '- item not found in local doc. Skipping cursor.');
+              console.warn(
+                "[YjsManager] Could not resolve relative position for client",
+                clientId,
+                "- item not found in local doc. Skipping cursor.",
+              );
               return;
             }
 
@@ -355,7 +382,7 @@ export class YjsManager {
               selectionEnd = headAbs?.index;
             }
           } catch (e) {
-            console.warn('[YjsManager] Failed to parse cursor JSON, using fallback:', e);
+            console.warn("[YjsManager] Failed to parse cursor JSON, using fallback:", e);
             // Fallback: try using the object directly (old format)
             const anchorAbs = Y.createAbsolutePositionFromRelativePosition(cursor.anchor, this.doc);
             if (anchorAbs === null) {
@@ -377,7 +404,7 @@ export class YjsManager {
           position,
           selectionEnd,
           color: user.color,
-          name: user.name
+          name: user.name,
         });
       }
     });
@@ -405,7 +432,7 @@ export class YjsManager {
       if (content.length > 0) {
         this.text.insert(0, content);
       }
-    }, 'init');
+    }, "init");
   }
 
   /**
@@ -414,7 +441,7 @@ export class YjsManager {
   applyFullState(state: Uint8Array): void {
     this.isApplyingRemote = true;
     try {
-      Y.applyUpdate(this.doc, state, 'remote');
+      Y.applyUpdate(this.doc, state, "remote");
     } finally {
       this.isApplyingRemote = false;
     }
@@ -426,7 +453,7 @@ export class YjsManager {
   applyUpdate(update: Uint8Array): void {
     this.isApplyingRemote = true;
     try {
-      Y.applyUpdate(this.doc, update, 'remote');
+      Y.applyUpdate(this.doc, update, "remote");
     } finally {
       this.isApplyingRemote = false;
     }
@@ -519,9 +546,10 @@ export class YjsManager {
     // Clamp positions to valid range
     const textLength = this.text.length;
     const clampedPosition = Math.max(0, Math.min(position, textLength));
-    const clampedEnd = selectionEnd !== undefined
-      ? Math.max(0, Math.min(selectionEnd, textLength))
-      : clampedPosition;
+    const clampedEnd =
+      selectionEnd !== undefined
+        ? Math.max(0, Math.min(selectionEnd, textLength))
+        : clampedPosition;
 
     // Convert absolute positions to relative positions
     // Relative positions track the logical location even when content changes
@@ -533,9 +561,9 @@ export class YjsManager {
     const anchorJSON = Y.relativePositionToJSON(anchor);
     const headJSON = Y.relativePositionToJSON(head);
 
-    this.awareness.setLocalStateField('cursor', {
+    this.awareness.setLocalStateField("cursor", {
       anchor: anchorJSON,
-      head: headJSON
+      head: headJSON,
     });
   }
 
@@ -543,7 +571,7 @@ export class YjsManager {
    * Set local user info for awareness
    */
   setLocalUser(user: LocalUserState): void {
-    this.awareness.setLocalStateField('user', user);
+    this.awareness.setLocalStateField("user", user);
   }
 
   /**
@@ -585,7 +613,9 @@ export class YjsManager {
         clientIds.push(clientId);
 
         // Read clock (varint) - skip
-        while (pos < update.length && (update[pos++] & 0x80) !== 0) {}
+        while (pos < update.length && (update[pos++] & 0x80) !== 0) {
+          // Skip continuation bytes.
+        }
 
         // Read state length (varint)
         let stateLen = 0;
@@ -605,7 +635,7 @@ export class YjsManager {
     }
 
     // Apply the update
-    awarenessProtocol.applyAwarenessUpdate(this.awareness, update, 'remote');
+    awarenessProtocol.applyAwarenessUpdate(this.awareness, update, "remote");
 
     return clientIds;
   }
@@ -615,7 +645,7 @@ export class YjsManager {
    * This clears their cursor from the display.
    */
   removeAwarenessClient(awarenessClientId: number): void {
-    awarenessProtocol.removeAwarenessStates(this.awareness, [awarenessClientId], 'remote');
+    awarenessProtocol.removeAwarenessStates(this.awareness, [awarenessClientId], "remote");
   }
 
   /**
@@ -636,10 +666,7 @@ export class YjsManager {
    * Get awareness update to send to server
    */
   getAwarenessUpdate(): Uint8Array {
-    return awarenessProtocol.encodeAwarenessUpdate(
-      this.awareness,
-      [this.awareness.clientID]
-    );
+    return awarenessProtocol.encodeAwarenessUpdate(this.awareness, [this.awareness.clientID]);
   }
 
   /**
@@ -648,7 +675,7 @@ export class YjsManager {
   getFullAwarenessState(): Uint8Array {
     return awarenessProtocol.encodeAwarenessUpdate(
       this.awareness,
-      Array.from(this.awareness.getStates().keys())
+      Array.from(this.awareness.getStates().keys()),
     );
   }
 
@@ -675,7 +702,7 @@ export class YjsManager {
     // typing before or after another user's cursor position.
     return {
       anchorRelative: Y.createRelativePositionFromTypeIndex(this.text, clampedStart),
-      headRelative: Y.createRelativePositionFromTypeIndex(this.text, clampedEnd)
+      headRelative: Y.createRelativePositionFromTypeIndex(this.text, clampedEnd),
     };
   }
 
@@ -694,7 +721,7 @@ export class YjsManager {
 
     return {
       start: anchorAbs.index,
-      end: headAbs.index
+      end: headAbs.index,
     };
   }
 
@@ -702,8 +729,15 @@ export class YjsManager {
    * Get character offsets from a Range within a contenteditable element.
    * Walks the DOM tree and counts characters to find absolute positions.
    */
-  private getCharacterOffsetsFromRange(container: HTMLElement, range: Range): { start: number; end: number } {
-    const start = this.getCharacterOffsetForNode(container, range.startContainer, range.startOffset);
+  private getCharacterOffsetsFromRange(
+    container: HTMLElement,
+    range: Range,
+  ): { start: number; end: number } {
+    const start = this.getCharacterOffsetForNode(
+      container,
+      range.startContainer,
+      range.startOffset,
+    );
     const end = this.getCharacterOffsetForNode(container, range.endContainer, range.endOffset);
     return { start: Math.min(start, end), end: Math.max(start, end) };
   }
@@ -712,7 +746,11 @@ export class YjsManager {
    * Get the absolute character offset for a node and offset within a contenteditable.
    * This counts all text characters before the given position.
    */
-  private getCharacterOffsetForNode(container: HTMLElement, targetNode: Node, targetOffset: number): number {
+  private getCharacterOffsetForNode(
+    container: HTMLElement,
+    targetNode: Node,
+    targetOffset: number,
+  ): number {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     let charCount = 0;
     let node: Node | null = null;
@@ -748,7 +786,7 @@ export class YjsManager {
       return node.textContent?.length || 0;
     }
     let length = 0;
-    node.childNodes.forEach(child => {
+    node.childNodes.forEach((child) => {
       length += this.getTextContentLength(child);
     });
     return length;
@@ -777,7 +815,10 @@ export class YjsManager {
   /**
    * Find the DOM node and offset for a given character position.
    */
-  private findNodeAndOffsetAtCharacter(container: HTMLElement, charPosition: number): { node: Node; offset: number } | null {
+  private findNodeAndOffsetAtCharacter(
+    container: HTMLElement,
+    charPosition: number,
+  ): { node: Node; offset: number } | null {
     const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     let charCount = 0;
     let node: Node | null = null;

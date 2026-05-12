@@ -7,6 +7,7 @@ dist
 .DS_Store
 .claude
 wrangler.toml.backup.*
+wrangler.jsonc
 coverage/
 e2e/screenshots/
 test-results/

@@ -5,12 +5,12 @@
  * and state synchronization between client and server.
  */
 
-import { WebSocketClient } from '../realtime/WebSocketClient';
-import { YjsManager } from '../yjs/YjsManager';
-import type { useNoteState } from './useNoteState.svelte';
-import type { useEditor } from './useEditor.svelte';
-import type { useSecurity } from './useSecurity.svelte';
-import type { useCollaboration } from './useCollaboration.svelte';
+import { WebSocketClient } from "../realtime/WebSocketClient";
+import { YjsManager } from "../yjs/YjsManager";
+import type { useNoteState } from "./useNoteState.svelte";
+import type { useEditor } from "./useEditor.svelte";
+import type { useSecurity } from "./useSecurity.svelte";
+import type { useCollaboration } from "./useCollaboration.svelte";
 
 /** Configuration for WebSocket connection hook. */
 export interface WebSocketConfig {
@@ -23,7 +23,11 @@ export interface WebSocketConfig {
   onVersionUpdate?: () => void;
   onNoteDeleted?: (deletedByCurrentUser: boolean) => void;
   onNoteStatus?: (viewCount: number, maxViews: number | null, expiresAt: number | null) => void;
-  onRequestEditResponse?: (canEdit: boolean, activeEditorCount: number, viewerCount: number) => void;
+  onRequestEditResponse?: (
+    canEdit: boolean,
+    activeEditorCount: number,
+    viewerCount: number,
+  ) => void;
   onEditorLimitReached?: () => void;
 }
 
@@ -34,7 +38,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
   function connectWebSocket() {
     if (!noteState.noteId || collaboration.wsClient || noteWasDeleted) return;
 
-    collaboration.connectionStatus = 'connecting';
+    collaboration.connectionStatus = "connecting";
     collaboration.isSyncing = true;
 
     // Create YjsManager for this session
@@ -67,18 +71,18 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       getEditorElement: () => {
         // Return the appropriate editor element based on current mode
         // Plaintext mode uses textarea, syntax highlight mode uses contenteditable div
-        if (editor.syntaxHighlight === 'plaintext') {
+        if (editor.syntaxHighlight === "plaintext") {
           return {
             element: editor.textareaScrollRef,
-            isTextarea: true
+            isTextarea: true,
           };
         } else {
           return {
             element: editor.editorRef,
-            isTextarea: false
+            isTextarea: false,
           };
         }
-      }
+      },
     });
 
     collaboration.yjsManager = yjsManager;
@@ -87,7 +91,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     const userColor = collaboration.getClientColor(noteState.sessionId);
     yjsManager.setLocalUser({
       name: `User ${noteState.sessionId.substring(0, 4)}`,
-      color: userColor
+      color: userColor,
     });
 
     try {
@@ -97,8 +101,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         autoReconnect: false,
         onOpen: () => {
           collaboration.isRealtimeEnabled = true;
-          collaboration.connectionStatus = 'connected';
-          noteState.saveStatus = 'Real-time sync active';
+          collaboration.connectionStatus = "connected";
+          noteState.saveStatus = "Real-time sync active";
         },
         onYjsSync: (state, serverClientId, syntax) => {
           collaboration.clientId = serverClientId;
@@ -169,24 +173,29 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         },
         onClose: () => {
           collaboration.isRealtimeEnabled = false;
-          collaboration.connectionStatus = 'disconnected';
+          collaboration.connectionStatus = "disconnected";
           collaboration.isSyncing = false;
-          noteState.saveStatus = 'Disconnected';
+          noteState.saveStatus = "Disconnected";
           collaboration.wsClient = null;
           collaboration.remoteCursors = new Map();
 
           // Only attempt reconnection if note was not deleted and not encrypted
           if (!noteWasDeleted && !security.isEncrypted) {
             setTimeout(() => {
-              if (noteState.noteId && !collaboration.wsClient && !noteWasDeleted && !security.isEncrypted) {
+              if (
+                noteState.noteId &&
+                !collaboration.wsClient &&
+                !noteWasDeleted &&
+                !security.isEncrypted
+              ) {
                 connectWebSocket();
               }
             }, 2000);
           }
         },
         onError: (error) => {
-          console.error('[WebSocket] error:', error);
-          collaboration.connectionStatus = 'disconnected';
+          console.error("[WebSocket] error:", error);
+          collaboration.connectionStatus = "disconnected";
         },
         onNoteDeleted: (deletedByCurrentUser) => {
           noteWasDeleted = true;
@@ -199,8 +208,8 @@ export function useWebSocketConnection(config: WebSocketConfig) {
             collaboration.yjsManager = null;
           }
           collaboration.isRealtimeEnabled = false;
-          collaboration.connectionStatus = 'disconnected';
-          noteState.saveStatus = '';
+          collaboration.connectionStatus = "disconnected";
+          noteState.saveStatus = "";
           config.onNoteDeleted?.(deletedByCurrentUser);
         },
         onEncryptionChanged: (is_encrypted) => {
@@ -244,11 +253,11 @@ export function useWebSocketConnection(config: WebSocketConfig) {
         onEditorCountUpdate: (activeEditorCount, viewerCount) => {
           noteState.activeEditorCount = activeEditorCount;
           noteState.viewerCount = viewerCount;
-        }
+        },
       });
     } catch (error) {
-      console.error('[WebSocket] Failed to create client:', error);
-      collaboration.connectionStatus = 'disconnected';
+      console.error("[WebSocket] Failed to create client:", error);
+      collaboration.connectionStatus = "disconnected";
       collaboration.isSyncing = false;
     }
   }
@@ -263,7 +272,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
       collaboration.yjsManager = null;
     }
     collaboration.isRealtimeEnabled = false;
-    collaboration.connectionStatus = 'disconnected';
+    collaboration.connectionStatus = "disconnected";
   }
 
   function resetState() {
@@ -342,7 +351,7 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     } else if (activeElement === editor.textareaScrollRef && editor.textareaScrollRef) {
       return {
         start: editor.textareaScrollRef.selectionStart,
-        end: editor.textareaScrollRef.selectionEnd
+        end: editor.textareaScrollRef.selectionEnd,
       };
     }
 
@@ -371,7 +380,12 @@ export function useWebSocketConnection(config: WebSocketConfig) {
    * This replaces the old sendOperation function.
    */
   function applyLocalChange(newContent: string) {
-    if (!collaboration.yjsManager || !collaboration.isRealtimeEnabled || noteState.viewMode || security.isEncrypted) {
+    if (
+      !collaboration.yjsManager ||
+      !collaboration.isRealtimeEnabled ||
+      noteState.viewMode ||
+      security.isEncrypted
+    ) {
       return;
     }
 
@@ -412,6 +426,6 @@ export function useWebSocketConnection(config: WebSocketConfig) {
     sendSyntaxChange,
     sendRequestEdit,
     getCurrentCursorPosition,
-    getCurrentSelectionRange
+    getCurrentSelectionRange,
   };
 }
