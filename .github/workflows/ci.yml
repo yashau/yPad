@@ -38,7 +38,7 @@ jobs:
 
       - name: Build
         env:
-          ABUSE_EMAIL: ${{ vars.ABUSE_EMAIL }}
+          ABUSE_EMAIL: ${{ vars.ABUSE_EMAIL || secrets.ABUSE_EMAIL }}
         run: pnpm run build
 
       - name: Run unit tests
@@ -86,10 +86,14 @@ jobs:
           WRANGLER_D1_DATABASE_NAME: ${{ vars.WRANGLER_D1_DATABASE_NAME }}
           WRANGLER_D1_DATABASE_ID: ${{ vars.WRANGLER_D1_DATABASE_ID }}
           DISABLE_RATE_LIMITS: ${{ vars.DISABLE_RATE_LIMITS }}
-          ABUSE_EMAIL: ${{ vars.ABUSE_EMAIL }}
+          ABUSE_EMAIL: ${{ vars.ABUSE_EMAIL || secrets.ABUSE_EMAIL }}
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || {
             echo "Missing CLOUDFLARE_API_TOKEN secret."
+            exit 1
+          }
+          test -n "$ABUSE_EMAIL" || {
+            echo "Missing ABUSE_EMAIL GitHub Actions variable or secret."
             exit 1
           }
           pnpm run cf:deploy
