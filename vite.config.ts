@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [svelte()],
+  envPrefix: ["VITE_", "ABUSE_"],
   publicDir: "public", // Public assets directory
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

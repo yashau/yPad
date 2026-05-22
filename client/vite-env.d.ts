@@ -4,6 +4,10 @@
 /** App version injected by Vite from package.json */
 declare const __APP_VERSION__: string;
 
+interface ImportMetaEnv {
+  readonly ABUSE_EMAIL?: string;
+}
+
 declare module "*.svelte" {
   import type { ComponentType, SvelteComponent } from "svelte";
   const component: ComponentType;

@@ -9,6 +9,7 @@
   }
 
   let { open = $bindable() }: Props = $props();
+  const abuseEmail = import.meta.env.ABUSE_EMAIL || CONTACT.ABUSE_EMAIL;
 
   $effect(() => {
     if (open) {
@@ -103,7 +104,7 @@
               If you encounter content that violates these terms or is illegal, harmful, or abusive, please report it.
             </p>
             <p>
-              Send abuse reports to: <a href="mailto:{CONTACT.ABUSE_EMAIL}" class="text-primary hover:underline font-medium">{CONTACT.ABUSE_EMAIL}</a>
+              Send abuse reports to: <a href="mailto:{abuseEmail}" class="text-primary hover:underline font-medium">{abuseEmail}</a>
             </p>
             <p>
               Please include the note URL and a brief description of the issue in your report.
